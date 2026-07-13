@@ -7,6 +7,9 @@ basket I'm looking at." Long-only, equal-weight, daily rebalance.
 Reads ~/Omega/data/rdagent/latest.json (signal.basket, the model's BUY names),
 equal-weights the top-K long-only, diffs against the current paper book, and emits
 the BUY/SELL orders + an updated book + a ledger + a one-line result the GUI shows.
+Legs are sized from CURRENT EQUITY (cash + marked book), not --capital, and every
+BUY is floored at available cash (S-2026-07-14: capital-based sizing drove the paper
+cash book negative after losses). --capital still seeds the book and anchors P&L.
 
 REAL-COST CAPTURE (S-2026-06-30): the paper book is run "as if live" so the ledger
 reflects real trading costs. Every fill is charged:
@@ -28,11 +31,13 @@ via --commission-per-share / --commission-min / --commission-max-pct / --slippag
   python execute_basket.py --topk 5 --capital 10000 --mode shadow
 """
 from __future__ import annotations
-import argparse, csv, json, sys
+import argparse, csv, json, os, sys
 import datetime as dt
 from pathlib import Path
 
-DATA = Path.home() / "Omega" / "data" / "rdagent"
+# RDA_DATA_DIR: test-only override so the book can be exercised against a COPY of
+# the state (never set in cron/prod -- default is the live path, behavior unchanged).
+DATA = Path(os.environ.get("RDA_DATA_DIR") or (Path.home() / "Omega" / "data" / "rdagent"))
 LATEST = DATA / "latest.json"
 CLOSE_CANDIDATES = [DATA / "sp500_long_close.csv", DATA / "sp500_close.csv"]
 POS = DATA / "factor_basket_positions.json"   # {sym: shares} long-only
@@ -155,21 +160,10 @@ def main() -> int:
         print(json.dumps({"error": "no close csv found"})); return 1
     closes = latest_closes(close_path)
 
-    target: dict[str, int] = {}
-    skipped = []
-    if not a.flatten:
-        leg = a.capital / len(buys)                   # equal-weight dollar per name
-        for b in buys:
-            sym = b["instrument"]; px = closes.get(sym)
-            if not px or px <= 0: skipped.append(sym); continue
-            target[sym] = int(leg // px)              # whole shares, long-only
-
     cur = json.loads(POS.read_text()) if POS.exists() else {}
-    syms = sorted(set(cur) | set(target))
-    now = dt.datetime.now().astimezone().isoformat(timespec="seconds")
-    asof = meta.get("signal", {}).get("date", "")
 
     # paper cash book -- init from current state, or seed so equity == capital at first run
+    # (loaded BEFORE sizing: legs are sized from current equity, see below)
     if STATE.exists():
         st = json.loads(STATE.read_text())
         cash = float(st.get("cash_usd", a.capital))
@@ -179,14 +173,54 @@ def main() -> int:
         cash = a.capital - cur_mv          # so cash + current market value == capital
         cost_cum = 0.0
 
+    target: dict[str, int] = {}
+    skipped = []
+    sizing_equity = 0.0
+    if not a.flatten:
+        # S-2026-07-14 SIZING FIX: legs are sized from CURRENT EQUITY (cash + marked
+        # value of the open book), NOT the fixed --capital placeholder. Sizing off
+        # initial capital oversized the buy legs after losses and drove paper cash
+        # NEGATIVE (-$97 observed 2026-07-14 04:14). Held names without a fresh close
+        # mark at 0 here -- conservative, and consistent with how deployed/equity
+        # mark them below.
+        held_mv = sum(int(cur.get(s, 0)) * closes.get(s, 0.0) for s in cur)
+        sizing_equity = max(0.0, cash + held_mv)
+        leg = sizing_equity / len(buys)               # equal-weight dollar per name
+        for b in buys:
+            sym = b["instrument"]; px = closes.get(sym)
+            if not px or px <= 0: skipped.append(sym); continue
+            target[sym] = int(leg // px)              # whole shares, long-only
+
+    syms = sorted(set(cur) | set(target))
+    now = dt.datetime.now().astimezone().isoformat(timespec="seconds")
+    asof = meta.get("signal", {}).get("date", "")
+
     orders = []
     cost_today = 0.0
-    for sym in syms:
-        delta = target.get(sym, 0) - int(cur.get(sym, 0))
+    capped = []
+    # S-2026-07-14 CASH FLOOR: fill SELLs before BUYs so sale proceeds fund the buys,
+    # then trim any BUY whose notional+cost exceeds available cash. A sizing decision
+    # can never drive the paper cash book negative again.
+    deltas = {s: target.get(s, 0) - int(cur.get(s, 0)) for s in syms}
+    for sym in sorted(syms, key=lambda s: (deltas[s] > 0, s)):
+        delta = deltas[sym]
         if delta == 0: continue
         px = closes.get(sym, 0.0)
         if px <= 0:                       # no fresh price -> never sell/buy at $0; keep the slot
             target[sym] = int(cur.get(sym, 0)); skipped.append(sym); continue
+        if delta > 0:                     # cash floor: shrink the buy to what cash affords
+            want = delta
+            while delta > 0:
+                n = delta * px
+                c = fill_cost(delta, n, a.commission_per_share, a.commission_min,
+                              a.commission_max_pct, a.slippage_bps)
+                if n + c <= cash: break
+                delta -= 1
+            if delta < want:
+                capped.append({"sym": sym, "want": want, "filled": delta})
+                target[sym] = int(cur.get(sym, 0)) + delta
+                if target[sym] <= 0: target.pop(sym, None)
+                if delta == 0: continue
         side = "BUY" if delta > 0 else "SELL"
         notional = abs(delta) * px
         cost = fill_cost(delta, notional, a.commission_per_share, a.commission_min,
@@ -267,6 +301,7 @@ def main() -> int:
         "orders": [{"sym": o[2], "side": o[3], "shares": o[4], "price": o[5],
                     "notional": o[6], "cost": o[7]} for o in orders],
         "book": target, "positions": positions, "skipped_no_price": skipped,
+        "sizing_equity_usd": round(sizing_equity, 0), "buys_cash_capped": capped,
     }
     RESULT.write_text(json.dumps(result, indent=2))
     print(json.dumps(result))
