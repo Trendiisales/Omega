@@ -39,6 +39,7 @@ run() {  # tier  name  cmd...
 echo "🩺 OMEGA STALENESS SCAN — $(date '+%Y-%m-%d %H:%M') — registry: STALENESS_REGISTRY.md"
 run LIVE     "feeds"       $PY "$ROOT/tools/feeds_selftest.py" --quiet
 run LIVE     "protection"  $PY "$ROOT/tools/protection_selftest.py" --quiet
+run LIVE     "deploy-drift" bash "$ROOT/tools/deploy_drift_check.sh"   # RED if running binary != origin/main (undeployed commits)
 run ADVISORY "feedpath"    $PY "$ROOT/tools/feedpath_selftest.py"
 [ -f "$ROOT/tools/data_health_monitor.py" ] && run ADVISORY "data-health(research)" $PY "$ROOT/tools/data_health_monitor.py" --quiet
 
