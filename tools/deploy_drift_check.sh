@@ -30,10 +30,20 @@ fi
 # normalize to comparable short length
 BOXN="${BOX:0:7}"
 if git merge-base --is-ancestor "$BOX" origin/main 2>/dev/null && [[ "$BOXN" != "${ORIGIN:0:7}" ]]; then
-    N=$(git rev-list --count "${BOX}..origin/main" 2>/dev/null || echo "?")
-    echo "DEPLOY-DRIFT: ❌ RED — running binary $BOXN is $N commit(s) BEHIND origin/main $ORIGIN."
-    echo "  Undeployed commits (NOT live on $HOST):"
-    git log --oneline "${BOX}..origin/main" 2>/dev/null | sed 's/^/    /'
+    # Only build-relevant paths require a box redeploy. Tooling/docs/backtest commits run
+    # from the Mac repo and are NEVER baked into the box binary -> not drift (avoid crying
+    # wolf on every script/doc commit = alarm fatigue). Build inputs = include/, src/, CMake.
+    BUILD_CHANGES=$(git diff --name-only "${BOX}..origin/main" 2>/dev/null \
+        | grep -E '^(include/|src/|CMakeLists\.txt|cmake/|.*\.hpp$|.*\.cpp$)' || true)
+    if [[ -z "$BUILD_CHANGES" ]]; then
+        echo "DEPLOY-DRIFT: ✅ in sync (binary-wise) — box $BOXN behind origin $ORIGIN by tooling/docs only, no build inputs changed."
+        exit 0
+    fi
+    N=$(printf '%s\n' "$BUILD_CHANGES" | wc -l | tr -d ' ')
+    echo "DEPLOY-DRIFT: ❌ RED — running binary $BOXN is BEHIND origin/main $ORIGIN with $N undeployed BUILD file(s):"
+    printf '%s\n' "$BUILD_CHANGES" | sed 's/^/    /'
+    echo "  Undeployed commits touching the binary:"
+    git log --oneline "${BOX}..origin/main" -- include/ src/ CMakeLists.txt 2>/dev/null | sed 's/^/    /'
     echo "  -> run: bash tools/omega_deploy.sh   (then re-check)"
     exit 1
 fi
