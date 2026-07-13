@@ -170,9 +170,22 @@ try:
 except Exception:
     pass
 out["inbound"] = rows[-500:]
-# journal DESK_EXPORT lines (last 24h) — the export hook's own record
+# journal DESK_EXPORT lines — the export hook's own record. Window = last 24h,
+# but never earlier than the newest inbound-csv reset backup: a desk P&L zero
+# renames the csv away, so pre-reset journal lines have no csv rows to match
+# (S-2026-07-14 false-WARN: 12 pre-reset journal lines vs 0 post-reset rows).
 try:
-    j24 = subprocess.run(["journalctl", "-u", "chimera", "--since", "-24 hours", "--no-pager"],
+    import glob, time
+    reset_ts = 0.0
+    for g in glob.glob("/home/jo/ChimeraCrypto/data/chimera_inbound.csv.*"):
+        try: reset_ts = max(reset_ts, os.path.getmtime(g))
+        except OSError: pass
+    # +1s: rename preserves mtime, so a backup's mtime == the LAST pre-reset export's
+    # own write time — without the bump that boundary line still false-counts.
+    since_epoch = int(max(time.time() - 86400, reset_ts + 1.0))
+    out["export_window_start"] = since_epoch
+    j24 = subprocess.run(["journalctl", "-u", "chimera", "--since", "@%d" % since_epoch,
+                          "--no-pager"],
                          capture_output=True, text=True, timeout=60).stdout
     out["desk_export_24h"] = sum(1 for ln in j24.splitlines() if "[DESK_EXPORT]" in ln)
 except Exception:
@@ -467,7 +480,10 @@ def main() -> int:
         recon("chimera", chim_rows, vps.get("chimera_inbound") if "__err__" not in vps else None,
               GRACE_CHIMERA_S, "chimera", 1)
         de = chim.get("desk_export_24h", -1)
-        chim_24h = sum(1 for (ts, _, _) in chim_rows if ts >= day_ago)
+        # window start = max(24h ago, newest csv reset backup) — computed by the probe so
+        # a desk P&L zero doesn't leave pre-reset journal lines with no csv rows to match.
+        w0 = max(day_ago, int(chim.get("export_window_start", 0)))
+        chim_24h = sum(1 for (ts, _, _) in chim_rows if ts >= w0)
         if de >= 0 and de != chim_24h:
             rec("WARN", "TRADE-RECON", "chimera: journal [DESK_EXPORT]=%d vs inbound csv rows=%d in 24h "
                 "(export hook / csv divergence)" % (de, chim_24h))
