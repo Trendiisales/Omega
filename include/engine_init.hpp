@@ -5494,8 +5494,11 @@ static void init_engines(const std::string& cfg_path)
             g_xau_brc.symbol      = "XAUUSD";
             g_xau_brc.engine_name = "XauBracketCascade";
             g_xau_brc.shadow_mode = true;
-            g_xau_brc.enabled     = true;
-            g_xau_brc.lot         = 1.0;
+            // S-2026-07-13 SAFETY: same failure class as XauUpJump — jump→bracket cascade with
+            // lot=1.0 (FULL 100oz gold ~$408k → −30bp = −$1,227/trade) AND per-tick stop OFF.
+            // DISABLED pending a viability backtest; lot pre-fixed 0.01 so re-enable is safe.
+            g_xau_brc.enabled     = false;
+            g_xau_brc.lot         = 0.01;
             // seed from the AUTO-REFRESHED gold H1 warmup (seed_refresh.py phase-2 rewrites it
             // from MGC every deploy; MGC-vs-spot basis killed by the engine's rebase). A private
             // "_BRC" CSV here would rot outside the refresh map -- the S-2026-07-12c stale-seed
@@ -5535,8 +5538,8 @@ static void init_engines(const std::string& cfg_path)
                     bc.e->boff        = 0.001;
                     bc.e->ttl         = 48;
                     bc.e->shadow_mode = true;
-                    bc.e->enabled     = true;
-                    bc.e->lot         = 1.0;
+                    bc.e->enabled     = false;  // S-2026-07-13 SAFETY: 100× lot bug + jump-cascade failure class (DISABLED pending viability BT)
+                    bc.e->lot         = 0.01;
                     bc.e->entry_blocked = []() { return omega::gold_regime().long_blocked(); };
                     bc.e->seed_from_csv(omega::resolve_seed_path(bc.seed));
                     auto* eng = bc.e; const char* nm = bc.name;
@@ -5595,7 +5598,10 @@ static void init_engines(const std::string& cfg_path)
                     x.e->ttl         = (x.tf >= 14400) ? 12 : 48;   // same bars the BT used per TF
                     x.e->shadow_mode = true;
                     x.e->enabled     = true;
-                    x.e->lot         = 1.0;
+                    x.e->lot         = 1.0;   // index convention: lot 1.0 is $-normalized for SP/NQ/M2K
+                    if (std::string(x.sym) == "XAUUSD") {   // S-2026-07-13 SAFETY: XAU H4 bracket had the
+                        x.e->enabled = false; x.e->lot = 0.01;  // 100× gold lot bug (100oz) -> DISABLE + fix size
+                    }
                     if (x.gate == 0)      x.e->entry_blocked = []() { return omega::gold_regime().long_blocked(); };
                     else if (x.gate == 1) x.e->entry_blocked = []() { return g_regime_spx.long_blocked(); };
                     else if (x.gate == 2) x.e->entry_blocked = []() { return g_regime_ndx.long_blocked(); };
