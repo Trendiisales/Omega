@@ -119,12 +119,12 @@ _TF = {
     "M5": ("5 mins","10 D"), "M10": ("10 mins","15 D"), "M15": ("15 mins","20 D"), "M30": ("30 mins","40 D"),
     "H1": ("1 hour","90 D"), "M240": ("4 hours","300 D"), "H4": ("4 hours","300 D"), "D1": ("1 day","5 Y"),
 }
-_GOLD_TFS = ["M5", "M10", "M15", "M30", "H1", "H4", "D1"]   # M10 added S-2026-07-12d (XauBracketCascade_M10 seed)
+_GOLD_TFS = ["M5", "M15", "M30", "H1", "H4", "D1"]   # M10 dropped S-2026-07-13 (only consumer XauBracketCascade_M10 culled)
 _INDEX = {
-    "NAS100": (("CME","NQ"),      ["H1","M30","M15","M5","D1","H4"]),  # D1 S-2026-07-12c; H4 S-2026-07-12e (BrkCascade_USTEC_H4 seed)
+    "NAS100": (("CME","NQ"),      ["H1","M30","M15","M5","D1"]),  # D1 S-2026-07-12c; H4 dropped S-2026-07-13 (BrkCascade culled)
     "USTEC":  (("CME","NQ"),      ["D1"]),                        # S-2026-07-12c: warmup_USTEC_D1 had NO refresh path (43d old, 8+ consumers)
-    "US500":  (("CME","ES"),      ["H1","D1","H4"]),              # H4 added S-2026-07-12e (BrkCascade_US500_H4 seed)
-    "M2K":    (("CME","M2K"),     ["H1"]),                        # S-2026-07-13: warmup_M2K_H1 had NO refresh path (manual Jul-9 pull, 5d gate, 4 M2K cascade cells + FxLadder seed from it)
+    "US500":  (("CME","ES"),      ["H1","D1"]),                   # H4 dropped S-2026-07-13 (BrkCascade culled)
+    "M2K":    (("CME","M2K"),     ["H1"]),                        # S-2026-07-13: warmup_M2K_H1 refresh kept (FxLadder M2K seeds from it; cascade cells culled)
     "GER40":  (("EUREX","DAX"),   ["H1","H4","M30","M15","D1"]),
     "UK100":  (("ICEEU","Z"),     ["M30","M240","D1"]),
     "DJ30":   (("CBOT","YM"),     ["H1","D1"]),

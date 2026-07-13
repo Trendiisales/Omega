@@ -193,44 +193,8 @@ static omega::IndexBearShortEngine g_idx_bear_short_sp;  // US500 risk-off SHORT
 static omega::MondayRiskOnEngine g_monday_nas;   // Monday risk-on calendar anomaly (NAS100) -- 2026-06-07 (t2.59 WR67% SMA50-gated), shadow
 static omega::MondayRiskOnEngine g_monday_gbp;   // Monday risk-on (GBPUSD) t2.04 WR71%
 static omega::MondayRiskOnEngine g_monday_aud;   // Monday risk-on (AUDUSD) t2.45 WR65%
-#include "BeCascadeEngines.hpp"
-static omega::XsBeCascadeEngine g_xsbec_ustec;      // S-2026-07-12b crypto BE-cascade port, USTEC.F D1 W=10 thr=2% (OOS +553%/PF7.7 rand-z3.2), shadow
-static omega::XsBeCascadeEngine g_xsbec_us500;      // S-2026-07-12b US500.F D1 W=10 thr=3% (OOS +329%/PF16.5 rand-z2.8), shadow
-static omega::XsBeCascadeEngine g_xsbec_dj30;       // S-2026-07-12b DJ30.F D1 W=10 thr=4% (OOS +220%/PF5.5 rand-z2.3), shadow
-static omega::XauBracketCascadeEngine g_xau_brc;    // S-2026-07-12c gold two-sided OCO bracket + BE-cascade, H1 W=240 thr=2% b=0.3% (bear 2013/2015 +39/+29 vs long-only bleed), shadow
-static omega::XauBracketCascadeEngine g_xau_brc_m5;  // S-2026-07-12d intraday M5 W=144(12h) thr=0.5% b=0.1%, gold_regime bull-gated (bull +203 PF1.56, bear22 gated -1.7), shadow
-static omega::XauBracketCascadeEngine g_xau_brc_m10; // S-2026-07-12d intraday M10 W=72 thr=0.5% b=0.1%, bull-gated (bull +173 PF1.50, bear22 gated -2.5), shadow
-static omega::XauBracketCascadeEngine g_xau_brc_m15; // S-2026-07-12d intraday M15 W=48 thr=0.5% b=0.1%, bull-gated (bull +164 PF1.50, bear22 gated -1.2), shadow (M30 tested PF1.24 2x+31 = too thin, operator dropped)
-// S-2026-07-12e extension wave (operator "wire in all that pass"): gated OCO bracket + cascade
-// on indices (own H1 regime brains below) + gold H4. All PASS net+/PF>=1.3/2x+/both-halves+ 22-26.
-static omega::XauBracketCascadeEngine g_brc_sp_h1;   // US500.F H1 W=480 thr=3% b=0.3% gated (+129 PF2.00 2x+123, halves +51/+78), shadow
-static omega::XauBracketCascadeEngine g_brc_nq_h1;   // USTEC.F H1 W=240 thr=3% (+149 PF1.54 2x+139, halves +44/+106), shadow
-static omega::XauBracketCascadeEngine g_brc_sp_h4;   // US500.F H4 W=120 thr=2% (+90 PF1.64 2x+84, halves +20/+70), shadow
-static omega::XauBracketCascadeEngine g_brc_nq_h4;   // USTEC.F H4 W=60 thr=3% (+119 PF1.53 2x+111, halves +9/+110), shadow
-static omega::XauBracketCascadeEngine g_xau_brc_h4;  // XAUUSD H4 W=120 thr=2% (+134 PF1.77 2x+127, halves +46/+88; gold_regime gate), shadow
-static omega::RegimeState g_regime_spx;              // US500 price-regime brain (EMA200/50 H1) for the SPX bracket gates
-static omega::RegimeState g_regime_ndx;              // USTEC price-regime brain for the NQ bracket gates
-// S-2026-07-12h M2K micro-Russell cascade cells (operator: "2x mimic engines, maybe 4x") —
-// 4 passing cells wired as a mini-grid (crypto-grid pattern, live shadow picks the winner).
-// CAVEAT on record: 2024-07..2026-07 sample only (no bear year; n 12-19 windows/cell).
-static omega::XauBracketCascadeEngine g_brc_m2k_a;   // M2K H1 W=360 thr=2% (+91 PF5.34 2x+88, halves +52/+38), gated shadow
-static omega::XauBracketCascadeEngine g_brc_m2k_b;   // M2K H1 W=360 thr=3% (+73 PF4.13 2x+71, halves +64/+9), gated shadow
-static omega::XauBracketCascadeEngine g_brc_m2k_c;   // M2K H1 W=480 thr=2% (+91 PF3.78 2x+89, halves +48/+43), gated shadow
-static omega::XauBracketCascadeEngine g_brc_m2k_d;   // M2K H1 W=480 thr=3% (+95 PF4.24 2x+93, halves +56/+40), gated shadow
-static omega::RegimeState g_regime_m2k;              // M2K price-regime brain (bear gate for all 4 cells)
-// S-2026-07-13 gold intraday up-jump + SHORT down-jump engines (tf_secs + dir + hard stop).
-// Backtested (Crypto coldcut, REAL column): gold long 30m/2h/70bp +489 PF2.67 worst-90; gold
-// short 30m/1h/50bp full +7480 PF11 but vol-concentrated (6mo honest PF1.4 +145%). Shadow.
-static omega::XauUpJumpIntradayEngine g_xuji_xau_m5l;   // gold LONG M5  W24 thr0.5% lc50
-static omega::XauUpJumpIntradayEngine g_xuji_xau_m15l;  // gold LONG M15 W8  thr0.5% lc70
-static omega::XauUpJumpIntradayEngine g_xuji_xau_m30l;  // gold LONG M30 W4  thr0.5% lc70 (best long)
-static omega::XauUpJumpIntradayEngine g_xuji_xau_h1l;   // gold LONG H1  W6  thr0.5% lc100
-static omega::XauUpJumpIntradayEngine g_xuji_xau_m30s;  // gold SHORT M30 W2 thr0.5% lc50 (best short, shadow-caveated)
-static omega::XauUpJumpIntradayEngine g_xuji_xau_m5s;   // gold SHORT M5  W12 thr0.5% lc50
-static omega::XauUpJumpIntradayEngine g_xuji_ndx_h1s;   // NDX SHORT H1  W2 thr0.5% lc50
-// S-2026-07-13b robust index H1 longs (CLEAN data; intraday index blocked on 92d gap in tick file)
-static omega::XauUpJumpIntradayEngine g_xuji_ndx_h1l;   // NDX LONG H1  W2 thr0.5% lc30 (+659 PF2.19 both-regimes)
-static omega::XauUpJumpIntradayEngine g_xuji_spx_h1l;   // SPX LONG H1  W2 thr0.5% lc30 (+401 PF2.10 balanced)
+// (BeCascade/BrkCascade/XauUpJump instances + their SPX/NDX/M2K regime brains removed
+//  S-2026-07-13 code cull — operator: NO up-jump on ANY engine; families disabled 0c247c70.)
 static omega::IndexSessionEngine g_idxsess_sp;     // US500.F  (S&P)
 static omega::IndexSessionEngine g_idxsess_nas;    // NAS100   (NASDAQ)
 static omega::IndexSessionEngine g_idxsess_ger40;  // GER40    (DAX)

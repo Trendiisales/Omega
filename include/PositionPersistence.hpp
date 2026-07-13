@@ -342,76 +342,7 @@ inline void register_position_persistence() {
         return omega::bigcap_momo_ibkr::restore_position(ps);
     });
 
-    // ---- BeCascade ports (S-2026-07-12b/c): multi-leg cascade books ----
-    // One snapshot per open leg ("<base>#<k>", k=0 parent); sl/tp transport mfe/arm.
-    // Closer: whole-book flatten via the engine's own _close_all (books TradeRecords).
-    wire_multicell(g_xsbec_ustec, "XsBeCascade_USTEC.F", "USTEC.F");
-    wire_multicell(g_xsbec_us500, "XsBeCascade_US500.F", "US500.F");
-    wire_multicell(g_xsbec_dj30,  "XsBeCascade_DJ30.F",  "DJ30.F");
-    wire_multicell(g_xau_brc,     "XauBracketCascade",   "XAUUSD");
-    wire_multicell(g_xau_brc_m5,  "XauBracketCascade_M5",  "XAUUSD");
-    wire_multicell(g_xau_brc_m10, "XauBracketCascade_M10", "XAUUSD");
-    wire_multicell(g_xau_brc_m15, "XauBracketCascade_M15", "XAUUSD");
-    wire_multicell(g_xau_brc_h4,  "XauBracketCascade_H4",  "XAUUSD");
-    wire_multicell(g_brc_sp_h1,   "BrkCascade_US500_H1",   "US500.F");
-    wire_multicell(g_brc_nq_h1,   "BrkCascade_USTEC_H1",   "USTEC.F");
-    wire_multicell(g_brc_sp_h4,   "BrkCascade_US500_H4",   "US500.F");
-    wire_multicell(g_brc_nq_h4,   "BrkCascade_USTEC_H4",   "USTEC.F");
-    wire_multicell(g_brc_m2k_a,   "BrkCascade_M2K_360_2",  "M2K");
-    wire_multicell(g_brc_m2k_b,   "BrkCascade_M2K_360_3",  "M2K");
-    wire_multicell(g_brc_m2k_c,   "BrkCascade_M2K_480_2",  "M2K");
-    wire_multicell(g_brc_m2k_d,   "BrkCascade_M2K_480_3",  "M2K");
-    // S-2026-07-13 gold intraday up-jump + short + NDX short
-    wire_multicell(g_xuji_xau_m5l,  "XauUpJump_XAU_M5L",  "XAUUSD");
-    wire_multicell(g_xuji_xau_m15l, "XauUpJump_XAU_M15L", "XAUUSD");
-    wire_multicell(g_xuji_xau_m30l, "XauUpJump_XAU_M30L", "XAUUSD");
-    wire_multicell(g_xuji_xau_h1l,  "XauUpJump_XAU_H1L",  "XAUUSD");
-    wire_multicell(g_xuji_xau_m30s, "XauUpJump_XAU_M30S", "XAUUSD");
-    wire_multicell(g_xuji_xau_m5s,  "XauUpJump_XAU_M5S",  "XAUUSD");
-    wire_multicell(g_xuji_ndx_h1s,  "XauUpJump_NDX_H1S",  "USTEC.F");
-    wire_multicell(g_xuji_ndx_h1l,  "XauUpJump_NDX_H1L",  "USTEC.F");
-    wire_multicell(g_xuji_spx_h1l,  "XauUpJump_SPX_H1L",  "US500.F");
-    {
-        struct BcCloser { const char* base; const char* sym; std::function<bool(double,double,const char*)> fc; };
-        static const BcCloser bcs[] = {
-            { "XsBeCascade_USTEC.F", "USTEC.F", [](double b,double a,const char* r){ return g_xsbec_ustec.force_close_all_at(b,a,r); } },
-            { "XsBeCascade_US500.F", "US500.F", [](double b,double a,const char* r){ return g_xsbec_us500.force_close_all_at(b,a,r); } },
-            { "XsBeCascade_DJ30.F",  "DJ30.F",  [](double b,double a,const char* r){ return g_xsbec_dj30.force_close_all_at(b,a,r); } },
-            // NOTE ordering: the closer matches by BASE PREFIX (rfind(base,0)==0), so the
-            // M5/M10/M15 entries MUST come before the bare "XauBracketCascade" or its prefix
-            // would swallow their snapshots ("XauBracketCascade_M5#0" starts with it).
-            { "XauBracketCascade_M5",  "XAUUSD", [](double b,double a,const char* r){ return g_xau_brc_m5.force_close_all_at(b,a,r); } },
-            { "XauBracketCascade_M10", "XAUUSD", [](double b,double a,const char* r){ return g_xau_brc_m10.force_close_all_at(b,a,r); } },
-            { "XauBracketCascade_M15", "XAUUSD", [](double b,double a,const char* r){ return g_xau_brc_m15.force_close_all_at(b,a,r); } },
-            { "XauBracketCascade_H4",  "XAUUSD", [](double b,double a,const char* r){ return g_xau_brc_h4.force_close_all_at(b,a,r); } },
-            { "XauBracketCascade",   "XAUUSD",  [](double b,double a,const char* r){ return g_xau_brc.force_close_all_at(b,a,r); } },
-            { "BrkCascade_US500_H1", "US500.F", [](double b,double a,const char* r){ return g_brc_sp_h1.force_close_all_at(b,a,r); } },
-            { "BrkCascade_USTEC_H1", "USTEC.F", [](double b,double a,const char* r){ return g_brc_nq_h1.force_close_all_at(b,a,r); } },
-            { "BrkCascade_US500_H4", "US500.F", [](double b,double a,const char* r){ return g_brc_sp_h4.force_close_all_at(b,a,r); } },
-            { "BrkCascade_USTEC_H4", "USTEC.F", [](double b,double a,const char* r){ return g_brc_nq_h4.force_close_all_at(b,a,r); } },
-            { "BrkCascade_M2K_360_2", "M2K", [](double b,double a,const char* r){ return g_brc_m2k_a.force_close_all_at(b,a,r); } },
-            { "BrkCascade_M2K_360_3", "M2K", [](double b,double a,const char* r){ return g_brc_m2k_b.force_close_all_at(b,a,r); } },
-            { "BrkCascade_M2K_480_2", "M2K", [](double b,double a,const char* r){ return g_brc_m2k_c.force_close_all_at(b,a,r); } },
-            { "BrkCascade_M2K_480_3", "M2K", [](double b,double a,const char* r){ return g_brc_m2k_d.force_close_all_at(b,a,r); } },
-            { "XauUpJump_XAU_M5L",  "XAUUSD",  [](double b,double a,const char* r){ return g_xuji_xau_m5l.force_close_all_at(b,a,r); } },
-            { "XauUpJump_XAU_M15L", "XAUUSD",  [](double b,double a,const char* r){ return g_xuji_xau_m15l.force_close_all_at(b,a,r); } },
-            { "XauUpJump_XAU_M30L", "XAUUSD",  [](double b,double a,const char* r){ return g_xuji_xau_m30l.force_close_all_at(b,a,r); } },
-            { "XauUpJump_XAU_H1L",  "XAUUSD",  [](double b,double a,const char* r){ return g_xuji_xau_h1l.force_close_all_at(b,a,r); } },
-            { "XauUpJump_XAU_M30S", "XAUUSD",  [](double b,double a,const char* r){ return g_xuji_xau_m30s.force_close_all_at(b,a,r); } },
-            { "XauUpJump_XAU_M5S",  "XAUUSD",  [](double b,double a,const char* r){ return g_xuji_xau_m5s.force_close_all_at(b,a,r); } },
-            { "XauUpJump_NDX_H1S",  "USTEC.F", [](double b,double a,const char* r){ return g_xuji_ndx_h1s.force_close_all_at(b,a,r); } },
-            { "XauUpJump_NDX_H1L",  "USTEC.F", [](double b,double a,const char* r){ return g_xuji_ndx_h1l.force_close_all_at(b,a,r); } },
-            { "XauUpJump_SPX_H1L",  "US500.F", [](double b,double a,const char* r){ return g_xuji_spx_h1l.force_close_all_at(b,a,r); } },
-        };
-        for (const auto& bc : bcs) {
-            g_open_positions.register_closer(
-                [&bc](const omega::PositionSnapshot& ps, const char* reason) -> bool {
-                    if (ps.engine.rfind(bc.base, 0) != 0) return false;   // base or base#k
-                    double b, a; if (!acct_book_px(bc.sym, b, a)) return false;
-                    return bc.fc(b, a, reason);
-                });
-        }
-    }
+    // (BeCascade/BrkCascade/XauUpJump multicell wires removed S-2026-07-13 code cull — families deleted.)
 
     // Coverage now: every position-holding engine on the dashboard persists/resumes.
     // Mandate: any NEW engine MUST add persist_save/persist_restore + a wire here

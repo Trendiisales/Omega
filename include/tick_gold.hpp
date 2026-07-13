@@ -26,24 +26,7 @@ static void on_tick_gold(
     //   (sustained-bear long-block). Self-contained (no external feed) -> cannot
     //   silently degrade to all-clear in a real bear. See RegimeState.hpp.
     omega::gold_regime().on_tick(bid, ask, omega::pg::_pg_now_ms());
-    {   // S-2026-07-12c two-sided OCO bracket + BE-cascade (shadow)
-        g_xau_brc.on_tick(bid, ask, omega::pg::_pg_now_ms());
-        g_engine_heartbeat.pulse("XauBracketCascade");
-        // S-2026-07-13 gold intraday up-jump LONG + SHORT down-jump engines (hard-stopped)
-        { const int64_t nm = omega::pg::_pg_now_ms();
-          g_xuji_xau_m5l.on_tick(bid, ask, nm);  g_engine_heartbeat.pulse("XauUpJump_XAU_M5L");
-          g_xuji_xau_m15l.on_tick(bid, ask, nm); g_engine_heartbeat.pulse("XauUpJump_XAU_M15L");
-          g_xuji_xau_m30l.on_tick(bid, ask, nm); g_engine_heartbeat.pulse("XauUpJump_XAU_M30L");
-          g_xuji_xau_h1l.on_tick(bid, ask, nm);  g_engine_heartbeat.pulse("XauUpJump_XAU_H1L");
-          g_xuji_xau_m30s.on_tick(bid, ask, nm); g_engine_heartbeat.pulse("XauUpJump_XAU_M30S");
-          g_xuji_xau_m5s.on_tick(bid, ask, nm);  g_engine_heartbeat.pulse("XauUpJump_XAU_M5S"); }
-        // S-2026-07-12d bull-gated intraday instances (M30 dropped by operator)
-        g_xau_brc_m5.on_tick(bid, ask, omega::pg::_pg_now_ms());  g_engine_heartbeat.pulse("XauBracketCascade_M5");
-        g_xau_brc_m10.on_tick(bid, ask, omega::pg::_pg_now_ms()); g_engine_heartbeat.pulse("XauBracketCascade_M10");
-        g_xau_brc_m15.on_tick(bid, ask, omega::pg::_pg_now_ms()); g_engine_heartbeat.pulse("XauBracketCascade_M15");
-        // S-2026-07-12e gold H4 gated variant
-        g_xau_brc_h4.on_tick(bid, ask, omega::pg::_pg_now_ms());  g_engine_heartbeat.pulse("XauBracketCascade_H4");
-    }
+    // (XauBracketCascade + gold up-jump dispatch removed S-2026-07-13 code cull — families deleted.)
     // 2026-06-17: macro-hostile tightening ON TOP of the price core. Fail-safe --
     //   g_macro_gold_gate.hostile() returns false on disabled/missing/stale feed,
     //   so this can only ADD a long block when real yields + dollar rise hard,
