@@ -228,7 +228,14 @@ def check_jo_engine():
         return dict(name="jo.engine", ok=False, age=None, limit=2, sev="MED", detail=f"jo_state.json: {e} [Jo engine not run?]")
 
 # ── run ───────────────────────────────────────────────────────────────────────
-checks = [check_feed(f) for f in FEEDS] + [check_ibkrcrypto(), check_vix_engine(), check_rdagent_basket()]
+# S-2026-07-13: check_ibkrcrypto() RETIRED from the scan. The ibkrcrypto book was
+# consolidated to ~/Crypto (01-07) then the whole crypto system moved to josgp1; the
+# Mac state.json it read is frozen/retired, so this check FAILed on age (>2h) on EVERY
+# run -> a permanent data-health RED that was pure noise (alarm fatigue hiding real
+# stale feeds). The LIVE crypto book is monitored separately via the Chimera crypto
+# heartbeat (feeds_selftest 'crypto book heartbeat') + NDX daily freshness (tick NDX
+# daily). Function kept for reference; no longer enrolled.
+checks = [check_feed(f) for f in FEEDS] + [check_vix_engine(), check_rdagent_basket()]
 
 # AUTO-REFRESH (--fix): for each stale feed with a refresh command, run it, then re-check that feed
 if FIX:
