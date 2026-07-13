@@ -311,6 +311,21 @@ def us_index_market_open(now=None):
     return True
 
 
+# Per-telemetry-key liveness window (UTC). US index/gold futures run ~24h (Sun 22:00
+# reopen) -> us_index_market_open. GER40/DAX has its OWN session: the engine's boot
+# heartbeat registers `session=07-22 UTC` (Ger40 live_required only 07-22 UTC), so a
+# 0 quote OUTSIDE that window is HONEST, not a divergence. Applying the US 24h window
+# to ger30 cried wolf every Sun22:00-Mon07:00 (false RED). Match the engine's session.
+def key_market_open(key, now=None):
+    now = now or dt.datetime.now(dt.timezone.utc)
+    if key == "ger30":
+        wd, hr = now.weekday(), now.hour
+        if wd >= 5:            # Sat/Sun closed
+            return False
+        return 7 <= hr < 22    # GER40 feed session 07-22 UTC (matches boot heartbeat)
+    return us_index_market_open(now)
+
+
 def main() -> int:
     checks = []
     red = warn = 0
@@ -539,7 +554,8 @@ def main() -> int:
         rec("FAIL", "SYMBOL-COV", "engines: /api/telemetry unreachable: %s" % served_tm.get("__err__", "?"))
     else:
         unmapped, dead_keys, dark_quotes = [], [], []
-        open_now = us_index_market_open()
+        open_now = us_index_market_open()   # for the PASS/SKIP summary wording
+        any_open = False
         for g in enabled:
             key = "__none__"
             for pat, k in ENGINE_TELEM_KEY:
@@ -553,8 +569,12 @@ def main() -> int:
                 continue
             if (key + "_bid") not in served_tm:
                 dead_keys.append("%s->%s" % (g, key))
-            elif open_now and float(served_tm.get(key + "_bid", 0)) <= 0:
-                dark_quotes.append("%s->%s" % (g, key))
+            else:
+                k_open = key_market_open(key)   # per-symbol session (GER40 != US 24h)
+                any_open = any_open or k_open
+                if k_open and float(served_tm.get(key + "_bid", 0)) <= 0:
+                    dark_quotes.append("%s->%s" % (g, key))
+        open_now = open_now or any_open
         if dead_keys:
             rec("FAIL", "SYMBOL-COV", "engines: telemetry MISSING quote keys for enabled engines: %s" % ",".join(dead_keys))
         if dark_quotes:

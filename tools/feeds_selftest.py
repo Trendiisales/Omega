@@ -39,6 +39,15 @@ VPS_LOG_ROOT = r"C:\Omega\logs"
 # the retired shadow box pending decommission). All live-path checks poll THIS host.
 VPS_HOST = "omega-new"
 
+# Producer scheduled-tasks whose SILENT DISABLE freezes a data feed. The 2026-07-13
+# incident: OmegaStockMoverFeed was left Disabled during the 07-07/07-10 box migration,
+# so the bigcap daily-close feed froze at 07-09 and NOTHING caught it until the DATA
+# aged past its cap 3 days later. This guard catches the disable at the TASK level the
+# moment it happens (RED), not 3 days downstream. State==Disabled => RED; also flags a
+# task that never ran (last=1999). All are re-armed with StartWhenAvailable so a missed
+# fire (reboot/migration) auto-catches-up instead of waiting for the next weekday.
+CRITICAL_FEED_TASKS = ["OmegaStockMoverFeed", "OmegaSeedRefresh", "OmegaMacroGoldGate"]
+
 
 def _easter(year: int) -> dt.date:
     # Anonymous Gregorian computus -> Easter Sunday. Needed for Good Friday (NYSE closed).
@@ -422,6 +431,53 @@ FEEDS = [
 ]
 
 
+def vps_feed_task_health() -> list[tuple[str, str, str]]:
+    """ONE `ssh omega-new` call. For each CRITICAL_FEED_TASKS producer, returns
+    (task, status, detail). A Disabled state => RED (the exact 2026-07-13 failure:
+    a producer disabled during migration froze its feed for days, invisible until
+    the data aged out). A missing task or never-run (last=1999) => RED too. This is
+    the task-level early-warning that complements the downstream data-age checks.
+    ssh MUST start literally `ssh omega-new`. Returns a single RED row on ssh failure."""
+    names = ",".join(f"'{t}'" for t in CRITICAL_FEED_TASKS)
+    ps = (
+        f"foreach($n in @({names})){{"
+        f"$t=Get-ScheduledTask -TaskName $n -ErrorAction SilentlyContinue;"
+        f"if($null-eq$t){{Write-Output ($n+[char]9+'MISSING'+[char]9+'-')}}"
+        f"else{{$i=Get-ScheduledTaskInfo -TaskName $n -ErrorAction SilentlyContinue;"
+        f"Write-Output ($n+[char]9+$t.State+[char]9+$i.LastRunTime)}}}}"
+    )
+    try:
+        r = subprocess.run(
+            ["ssh", VPS_HOST, "powershell", "-NoProfile", "-Command", ps],
+            capture_output=True, text=True, timeout=45,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return [("feed-producer-tasks", "RED", f"ssh {VPS_HOST} failed -- producer states unverifiable")]
+    if r.returncode != 0:
+        return [("feed-producer-tasks", "RED", f"ssh {VPS_HOST} rc={r.returncode} -- producer states unverifiable")]
+    out: list[tuple[str, str, str]] = []
+    seen = set()
+    for ln in r.stdout.splitlines():
+        parts = ln.strip().split("\t")
+        if len(parts) < 2:
+            continue
+        name, state = parts[0].strip(), parts[1].strip()
+        last = parts[2].strip() if len(parts) > 2 else "-"
+        seen.add(name)
+        if state == "Disabled":
+            out.append((name, "RED", f"scheduled task DISABLED -- feed will freeze silently (re-enable + StartWhenAvailable)"))
+        elif state == "MISSING":
+            out.append((name, "RED", f"scheduled task MISSING on {VPS_HOST} -- producer never installed"))
+        elif last.startswith("11/30/1999") or last in ("", "-"):
+            out.append((name, "RED", f"scheduled task never ran (last={last}) -- producer wired but idle"))
+        else:
+            out.append((name, "PASS", f"task {state}, last ran {last}"))
+    for t in CRITICAL_FEED_TASKS:
+        if t not in seen:
+            out.append((t, "RED", f"no state returned -- producer unverifiable"))
+    return out
+
+
 def main() -> int:
     quiet = "--quiet" in sys.argv
     today = dt.date.today()
@@ -488,6 +544,15 @@ def main() -> int:
     if stock_row[0] != "PASS":
         live_red += 1
 
+    # ── VPS producer scheduled-task health (catches a silent DISABLE at the source) ──
+    # Runs every day incl. weekend: a task Disabled on Saturday is still a Monday-morning
+    # stale feed. This is the guard the operator asked for after the 07-13 StockMoverFeed
+    # was found Disabled since the migration with nothing flagging it.
+    task_rows = vps_feed_task_health()
+    for _tname, _tstat, _td in task_rows:
+        if _tstat != "PASS":
+            live_red += 1
+
     if not quiet:
         verdict = "RED — LIVE FEED STALE" if live_red else ("AMBER — research stale" if res_red else "GREEN — all feeds fresh")
         mark = {"GREEN": "GREEN", "AMBER": "AMBER", "RED": "RED"}
@@ -504,6 +569,8 @@ def main() -> int:
         if exec_row:
             print(f"  {exec_row[0]:7} [vps-exec] {'ibkr_exec_status':24} {exec_row[1]}")
         print(f"  {stock_row[0]:7} [vps-stock] {'stock_daily_book':24} {stock_row[1]}")
+        for tname, tstat, tdetail in task_rows:
+            print(f"  {tstat:7} [vps-task ] {tname:24} {tdetail}")
         if live_red:
             print("  -> A LIVE feed is stale: fix the feeder BEFORE trusting any signal/telemetry.")
         elif res_red:
