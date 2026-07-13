@@ -2257,9 +2257,18 @@ static void init_engines(const std::string& cfg_path)
             for (const char* nm : BC2_UNIV) {
                 omega::BigCapImpulseSym::Config c;
                 c.sym = nm; c.live_sym = nm;   // equities: live order symbol == ticker
-                // loose-ride cfg (validated): thr 2% / new-20d-high / gb90 / 60d cap /
+                // loose-ride cfg (validated): thr 2% / gb90 / 60d cap /
                 // -15% catastrophe / 20bp RT / $10k notional. UNGATED, LONG-only.
-                c.thr = 0.02; c.hi_window = 20; c.gb = 0.90; c.max_hold = 60;
+                // S-2026-07-14d: 20d-high gate DROPPED (operator "if the daily shows
+                // more than 2% we should trade that stock"). hi_window=1 degenerates
+                // the new-high check (a +2% close always >= the prior close) => pure
+                // 2%-only trigger. VALIDATED backtest/bigcap_2pct_only_bt.py on the
+                // bigcap_ride_harder_bt.py machinery (45 names, RT 20bp): windows
+                // 943->1820; PARENT +4885% PF1.91 all-6 + 2x PASS (was +3340%/2.42);
+                // wired MIMIC cell be0.5/pend5 +6761% PF1.69 worst -28.5% all-6 + 2x
+                // PASS, ex-best(MU) +5819%/1.63 PASS. Trade-off accepted: ~2x trades,
+                // lower PF, worst clip -21.9% -> -28.5%.
+                c.thr = 0.02; c.hi_window = 1; c.gb = 0.90; c.max_hold = 60;
                 c.catastrophe = 15.0; c.rt_cost_bp = 20.0; c.notional = 10000.0;
                 // S-2026-07-13s BE-MIMIC legs (operator "trade it hard... with mimic engines,
                 // same for the other bigcap engines"): 2 pending legs per impulse window —
