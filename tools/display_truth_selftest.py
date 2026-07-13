@@ -130,15 +130,22 @@ try:
         m = re.search(r"chimera\[(\d+)\]: \[CLIP-INIT\] (\S+) -> det=(\d+)h/\+(\d+(?:\.\d+)?)%", ln)
         if m:
             by_pid.setdefault(m.group(1), {})[m.group(2)] = [int(m.group(3)), float(m.group(4))]
-        else:
-            m2 = re.search(r"chimera\[(\d+)\]: \[CLIP-INIT\]", ln)
-            if m2:
-                by_pid.setdefault(m2.group(1), {})
+            continue
+        # S-2026-07-14g: CAMPAIGN books boot with [CAMP-INIT] not [CLIP-INIT]
+        # (S-2026-07-13 campaign architecture, REGISTRY CAMPAIGN-MGR wired=4).
+        # Without this the 4 live CAMP cells were classed as desk GHOSTS -> false RED.
+        m = re.search(r"chimera\[(\d+)\]: \[CAMP-INIT\] (\S+) W=(\d+) thr=\+(\d+(?:\.\d+)?)%", ln)
+        if m:
+            by_pid.setdefault(m.group(1), {})[m.group(2)] = [int(m.group(3)), float(m.group(4))]
+            continue
+        m2 = re.search(r"chimera\[(\d+)\]: \[(?:CLIP|CAMP)-INIT\]", ln)
+        if m2:
+            by_pid.setdefault(m2.group(1), {})
     if by_pid:
-        # journal is time-ordered; the pid of the LAST CLIP-INIT line = current roster
+        # journal is time-ordered; the pid of the LAST init line = current roster
         last_pid = None
         for ln in j.splitlines():
-            m = re.search(r"chimera\[(\d+)\]: \[CLIP-INIT\]", ln)
+            m = re.search(r"chimera\[(\d+)\]: \[(?:CLIP|CAMP)-INIT\]", ln)
             if m:
                 last_pid = m.group(1)
         clips = by_pid.get(last_pid, {})
@@ -308,6 +315,12 @@ def us_index_market_open(now=None):
         return False          # Sun UTC: reopen ~22:00 but bar/quote warm-up; skip honestly
     if wd == 4 and hr >= 22:
         return False
+    # S-2026-07-14g: daily settlement break 21:00-22:00 UTC (17:00-18:00 ET) — CME
+    # futures/CFD feeds go silent, XAUUSD [STALE-RESUB] fires, quotes read 0. A 0
+    # quote in this hour is HONEST, not a divergence (2026-07-14 09:09+09:40 NZ runs
+    # both hit this window right after deploys and cried RED on 11-15 healthy engines).
+    if hr == 21:
+        return False
     return True
 
 
@@ -322,7 +335,11 @@ def key_market_open(key, now=None):
         wd, hr = now.weekday(), now.hour
         if wd >= 5:            # Sat/Sun closed
             return False
-        return 7 <= hr < 22    # GER40 feed session 07-22 UTC (matches boot heartbeat)
+        return 7 <= hr < 21    # GER40 feed session 07-22 UTC (boot heartbeat) MINUS the
+                               # 21-22 UTC settlement break — BlackBull DAX CFD quotes
+                               # stop with the US break (observed dark 21:5x UTC 07-14
+                               # while every other check passed; same class as hr==21
+                               # exemption in us_index_market_open)
     return us_index_market_open(now)
 
 
