@@ -277,3 +277,34 @@ RULE (non-negotiable):
    re-pull a clean month) until it passes the gate — do NOT bypass it.
 3. A staged file carries a `<dest>.certified` stamp (source + sha). No stamp = not certified =
    its backtest result is VOID. Never present a green whose data lacks the stamp.
+4. GATE HEURISTIC IS LOCALITY-AWARE (fixed 2026-07-13, same session as this rule): the
+   original ">3x global median = glitch" check false-rejected any legit multi-year trend
+   (XAGUSD 22->119 over 2022-26 tripped it; the file was clean — 0 row-to-row jumps >15%,
+   matches an independent IBKR L2 capture at 76.11 on 2026-05-26, gold/silver ratio 56-82
+   throughout). Now: >3x jump vs PREVIOUS row = FAIL, >50x off global median = FAIL
+   (x1000 block), >3x off global median alone = WARN. Synthetic x1000 corruption (scattered
+   + block) verified still REJECTED. This is a GATE fix, not an override — rule 1-3 stand.
+
+## 11. SILVER (XAGUSD) XauTrendFollow chassis + mimic ladder — DEAD, no wire (S-2026-07-13)
+
+Certified data: `backtest/data/XAGUSD_2022_2026.{h1,h4}.csv` (+.certified stamps), staged
+after the locality-aware gate fix above. The 2025-26 silver rally (36->94 peak 119->62) is
+REAL — verified 3 independent ways (bar continuity, second build <0.3% diff, IBKR L2 capture).
+The old +1645% silver "z=5" up-jump result stays VOID regardless (up-jump family banned
+everywhere, S-2026-07-13m).
+
+Harness: `backtest/clip_path_xag_tf.cpp` (real XauTf 4h/D1/2h engine classes over XAG bars —
+chassis is ATR/EMA-relative so scale-free; half-spread 0.0125 USD, cost_rt=3bp+spread/px)
+-> `mimic_ladder_overlay.py`. Verdict:
+- PARENT streams gross-positive (4h +163% gross/+86% net, D1 +123% net) but ALL fail all-6:
+  every dollar of edge is the 2025-26 parabola; the 2022-24 half is decisively negative
+  (4h WF-H1 -76% on n~326, D1 bear-slice -263%). One-regime wonder.
+- MIMIC legs (shipped GoldTrendMimicLadder mechanism incl BE-ENTRY pend): shipped gold params
+  FAIL hard (-68..-146%/leg); full 864-config sweep (arm x lc x cap x gb x be_entry, 4h+D1)
+  = ZERO all-6 passes. A mimic cannot clip a one-regime parent into an edge.
+- 2h overtrades (1667 trades, ~12bp avg cost = 198% cumulative drag): net negative gross-of-edge.
+
+Kill is mechanism-faithful (real engine classes, certified data, shipped mimic mechanism,
+shipped params inside the sweep). Consistent with the §5 BeFloor XAG RETIRED verdict. Do not
+re-open without a NEW basis (different chassis family or a genuine silver-native edge, judged
+on BOTH the 2022-24 range AND a post-rally regime).

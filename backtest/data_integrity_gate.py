@@ -20,6 +20,15 @@
 # 10GB+ files in minutes, not an OOM grind. A gate too slow/heavy to run is a
 # gate that gets skipped.
 #
+# GLITCH CHECK IS LOCALITY-AWARE (fixed 2026-07-13): the old check flagged any
+# price >3x the GLOBAL file median, which false-rejected every legitimate
+# multi-year trend (XAGUSD 22->119 over 2022-2026 tripped it; the file was
+# clean — verified bar-continuous and matching an independent IBKR L2 capture).
+# A real x1000 glitch is a LOCAL discontinuity: a row ~1000x off its
+# NEIGHBORS. So: >3x jump vs the previous row = hard fail (no market moves 3x
+# tick-to-tick), >50x off global median = hard fail (catches x1000 blocks),
+# >3x off global median alone = WARN only (that's just a trending market).
+#
 # Usage: data_integrity_gate.py <file.csv> [expected_price_lo] [expected_price_hi]
 # Auto-detects HISTDATA (YYYYMMDD HHMMSSmmm,bid,ask) and MS_TS (ts_ms,c1,c2).
 import sys, statistics, datetime
@@ -61,6 +70,7 @@ def main():
     prev_ts = None; first_ts = None; last_ts = None
     max_gap_h = 0.0; nonmono = 0; max_back_h = 0.0
     neg_spr = 0; zero_spr = 0
+    prev_mid = None; local_jumps = 0; jump_examples = []
     px_samp = []; spr_samp = []; dt_samp = []   # decimating reservoirs (full-file)
     CAP = 4000
     strides = {'px': 1, 'spr': 1, 'dt': 1}
@@ -112,6 +122,13 @@ def main():
                     if gh > max_gap_h: max_gap_h = gh
                     if 0 < d <= DT_MAX_MS: reservoir(dt_samp, d, 'dt')
             prev_ts = ts
+            if prev_mid is not None and prev_mid > 0 and mid > 0:
+                r_jump = mid/prev_mid
+                if r_jump > 3.0 or r_jump < 1.0/3.0:
+                    local_jumps += 1
+                    if len(jump_examples) < 3:
+                        jump_examples.append(f"{datetime.datetime.fromtimestamp(ts/1000, datetime.timezone.utc):%Y-%m-%d %H:%M} {prev_mid:.4g}->{mid:.4g}")
+            prev_mid = mid
             reservoir(px_samp, mid, 'px')
             if spr > 0: reservoir(spr_samp, spr, 'spr')
 
@@ -124,10 +141,19 @@ def main():
     span_days = (last_ts-first_ts)/86400000.0
 
     fails = []; warns = []
-    # 1. price magnitude / x1000 glitch (vs sampled median)
-    glitch = sum(1 for m in px_samp if m > 3*med or (m > 0 and m < med/3))
-    if glitch > len(px_samp)*0.0005: fails.append(f"PRICE GLITCH: {glitch}/{len(px_samp)} sampled ticks off >3x median {med:.2f} (x1000 bug?)")
-    elif glitch > 0: warns.append(f"{glitch} sampled price outliers (>3x median)")
+    # 1. price glitch — LOCALITY-AWARE (2026-07-13). A real x1000 row is a local
+    #    discontinuity vs its neighbors; a 3x move over years is just a market.
+    #    (a) any row >3x jump vs the PREVIOUS row = hard fail
+    #    (b) any sampled price >50x off the global median = hard fail (x1000 block)
+    #    (c) >3x off global median = WARN only (trend, not corruption)
+    if local_jumps > 0:
+        fails.append(f"PRICE GLITCH: {local_jumps} row-to-row jumps >3x (x1000 bug?) e.g. {'; '.join(jump_examples)}")
+    extreme = sum(1 for m in px_samp if m > 50*med or (m > 0 and m < med/50))
+    if extreme > 0:
+        fails.append(f"PRICE GLITCH: {extreme}/{len(px_samp)} sampled prices >50x off median {med:.2f} (x1000 block?)")
+    stretch = sum(1 for m in px_samp if m > 3*med or (m > 0 and m < med/3))
+    if stretch > 0 and not fails:
+        warns.append(f"{stretch}/{len(px_samp)} sampled prices >3x off global median {med:.2f} — big multi-year range (verified locally continuous, not glitch)")
     # 2. expected band
     if lo and hi and not (lo <= med <= hi): fails.append(f"PRICE BAND: median {med:.2f} outside [{lo},{hi}]")
     # 3. spread / column order
