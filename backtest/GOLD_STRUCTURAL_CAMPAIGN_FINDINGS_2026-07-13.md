@@ -135,3 +135,49 @@ Repro:
   clang++ -O2 -std=c++17 -o backtest/gold_pullback_core_bt backtest/gold_pullback_core_bt.cpp
   env <cell-envs-above> PADS=6,10 ./backtest/gold_pullback_core_bt /Users/jo/Tick/xau_h2013_m1.csv
   env <cell-envs> DUMP=/tmp/e.csv ... ; env <cell-envs> MODE=RANDOM SPEC=/tmp/e.csv SEEDS=200 SEEDNETS=/tmp/r.txt ...
+
+---
+
+# PART 3 — WIRE PRECONDITIONS CLOSED + ENGINE WIRED SHADOW (session z, 2026-07-13)
+
+Operator order (13y handoff): "Run the additivity backtest and wire the gold engine if it passes."
+
+## Precondition 1 — ADDITIVITY vs live gold book: PASS
+Incumbent faithful dumps over the same 2024-26 window (2yr_XAUUSD_tick_fresh.h1/h4/m30,
+prod configs, per-engine rider_dump harnesses): TF1h n=268, TF4h n=399, TFD1 n=119,
+GVB n=38, TB30 n=770. D1-ANCH dump: harness re-run reproduces n=21 +2301bp PF2.59 exactly.
+- Time overlap IS high (union same-dir 84% of D1-ANCH open time) — expected, the TF book is
+  near-always-in-market. Overlap is not the additivity criterion; the PnL stream is:
+- Daily MTM PnL corr (both books marked at daily M1 closes): vs ALL-incumbent combined
+  r=−0.066; weekly r=−0.113; conditional on D1-ANCH-active days r=−0.133. Per book:
+  TF1h −0.063, TF4h +0.096, TFD1 −0.177, GVB +0.054, TB30 +0.006.
+- Incumbents' 10 worst MTM days: D1-ANCH negative on only 1/10 (and +613bp on one).
+- Vol-normalized 50/50 combine: ret/DD 2.44 (incumbents alone) → 6.11 (combined).
+- Same-dir stacking risk exists trade-by-trade (2026-03-06 L −282bp while book long):
+  sizing note stands (worst −352bp), shadow 0.01.
+Scripts: scratchpad additivity.py / additivity_mtm.py / additivity_cond.py (session z).
+
+## Precondition 2 — May-Jul 2026 revalidation: RUN (data now published)
+histdata XAUUSD T 202603-202606 fetched (get.php tk flow) → xau_h2026mar_jun_m1.csv
+(115,395 bars 2026-03-01..06-26, integrity-gate CERTIFIED; also xau_h2026mayjun_m1.csv).
+Frozen cell on Mar-Jun: n=4 +1239bp PF5.74 @pad6 (L1 +301, S3 +938).
+- Cross-feed parity vs duka overlap: 03-16 S identical to the minute (+1021bp both feeds,
+  same stop 245bp); 04-20 S same day/stop, gross 191 vs 197 (histdata fixed-EST DST hour
+  offset); 03-30 L same event, feed-granularity variation (+307 vs +236).
+- NEW OOS window May-Jun: ONE trade (2026-05-05 S −255bp gross = a normal stop-out inside
+  the −352bp design worst), June quiet. n=1 = no statistical power either way; nothing
+  contradicts the cell. Forward shadow ledger is the continuing revalidation.
+
+## WIRED (S-2026-07-13z, SHADOW 0.01)
+`include/GoldCampaignD1AnchEngine.hpp` — faithful M1-path port of the frozen cell
+(tick→UTC-M1 internal aggregation == research-file semantics; detector on closed M1 bars;
+anchor stop; 250bp-armed 24h rolling trail; MAX_HOLD 10d; ExecutionCostGuard on entry;
+auto-retirement latch −1725bp = 2x worst pooled DD; persistence wire_cross; M1 warm-seed
+phase1/signal_discovery/warmup_XAUUSD_M1.csv 32,877 bars May-25..Jun-26 2026; heartbeat).
+REAL-ENGINE PARITY (backtest/gold_campaign_parity.cpp): 2024-26 20/20 closed trades match
+the harness dump to the entry-second/side/±0.5bp (21st = open-at-EOF, harness end-flush);
+2013 era 12 trades +1122bp@pad6 EXACT; 2022 era 11 trades −68bp EXACT.
+Deviations from harness (stated): no GAPCLOSE data-gap flush (live market closure ≠ data
+gap; MAX_HOLD covers), entry/exit fills at REAL bid/ask instead of c∓spr/2 (identical in
+parity mode by construction), detection paused while position open (equivalent — BT anchors
+during an open window are gated by ts ≥ last_exit anyway).

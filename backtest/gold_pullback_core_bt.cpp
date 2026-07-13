@@ -503,8 +503,8 @@ int main(int argc, char** argv){
         report("ALL  ", trades);
         // dump entries for RANDOM matching
         if(getenv("DUMP")){ FILE* d=fopen(getenv("DUMP"),"w");
-            fprintf(d,"ts_in,side,stop_bp,hod,gross_bp,month\n");  // cols 5+ ignored by RANDOM reader
-            for(auto&t:trades) fprintf(d,"%.0f,%d,%.2f,%d,%.2f,%d\n",t.ts_in,t.side,t.stop_bp,t.hod,t.gross_bp,t.month);
+            fprintf(d,"ts_in,side,stop_bp,hod,gross_bp,month,ts_out\n");  // cols 5+ ignored by RANDOM reader
+            for(auto&t:trades) fprintf(d,"%.0f,%d,%.2f,%d,%.2f,%d,%.0f\n",t.ts_in,t.side,t.stop_bp,t.hod,t.gross_bp,t.month,t.ts_out);
             fclose(d); }
     } else {
         // RANDOM: read entry spec, sample matched entries per seed

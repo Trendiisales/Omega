@@ -1055,6 +1055,21 @@ static omega::CalendarTomEngine g_tom_xau("XAUUSD");   // S-2026-06-21b: gold TO
 // CalendarTom pattern) from tick_gold.hpp; config + seed in engine_init.hpp.
 #include "GoldTsmomD1V2Engine.hpp"
 static omega::GoldTsmomD1V2Engine g_gold_tsmom_d1;
+
+// S-2026-07-13z: GoldCampaignD1Anch -- Gold Structural Campaign CORE, family 1
+// (first-pullback continuation) at the D1-ANCHOR scale, the ONE Stage-A pass
+// after tick/H4 CORE-FAIL on cost-vs-risk geometry (backtest/GOLD_STRUCTURAL_
+// CAMPAIGN_FINDINGS_2026-07-13.md Part 2). Frozen cell: 200-500bp impulse /
+// 6-72h, 20-45% pullback, 2h-break entry, ANCHOR stop (med 213-251bp = cost
+// 3-8% of risk), 250bp-armed 24h trail. POOLED n=60 5 eras: PF2.14@8bp,
+// matched-random z=+3.22, halves 2.06/2.23, plateau 13/13. Additivity vs the
+// live gold book PROVEN (daily MTM corr -0.066, 50/50 ret/DD 2.44->6.11).
+// Symmetric L/S, NO regime gate (direction adapts by construction). Tick-driven
+// (internal UTC-M1 agg == research-file semantics) from tick_gold.hpp; config +
+// M1 warm-seed in engine_init.hpp. REAL-engine parity vs the frozen-cell dump
+// EXACT (20/20 closed trades to the entry-second, 3 eras).
+#include "GoldCampaignD1AnchEngine.hpp"
+static omega::GoldCampaignD1AnchEngine g_gold_campaign_d1;
 // S-2026-06-03: GoldSeasonal -- XAUUSD early-week long seasonality (Mon+Tue).
 //   +24%/yr Sharpe 1.84 (daily sim) / +24.5% Sharpe 1.88 (M5 engine-driven, real
 //   21:00 break), win 61%, +ve every year 2024/25/26, both WF halves+, cost-robust

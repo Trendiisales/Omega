@@ -1726,6 +1726,10 @@ static void on_tick_gold(
     // directions, monthly rebalance. Internal UTC-D1 aggregation (CalendarTom pattern).
     g_gold_tsmom_d1.on_tick(bid, ask, now_ms_g, handle_closed_trade);
     g_engine_heartbeat.pulse("GoldTsmomD1V2");
+    // S-2026-07-13z GoldCampaignD1Anch: structural campaign CORE (D1-anchor first-pullback,
+    // symmetric L/S). Internal UTC-M1 aggregation; detector runs on closed M1 bars only.
+    g_gold_campaign_d1.on_tick(bid, ask, now_ms_g, handle_closed_trade);
+    g_engine_heartbeat.pulse("GoldCampaignD1Anch");
     // S-2026-06-19: TrendRider companion on the D1 host (shadow).
     g_rider_d1.on_host(g_xau_tf_d1.pos, bid, ask, now_ms_g, bracket_on_close);
     g_engine_heartbeat.pulse("RiderD1");  // S-2026-06-29 ENABLED+NO_PULSE fix

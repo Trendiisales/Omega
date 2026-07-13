@@ -3062,6 +3062,32 @@ static void init_engines(const std::string& cfg_path)
                         std::printf("[OMEGA-INIT] GoldTsmomD1V2 (D1 TSMOM {42,63,84} vol-targeted, both directions) -- shadow, warm-seeded\n");
                     }
 
+                    // S-2026-07-13z: GoldCampaignD1Anch -- Gold Structural Campaign CORE
+                    //   (family 1 first-pullback at D1-ANCHOR scale), the one Stage-A pass
+                    //   of the 13v/13x program (backtest/GOLD_STRUCTURAL_CAMPAIGN_FINDINGS_
+                    //   2026-07-13.md Part 2, harness gold_pullback_core_bt.cpp frozen cell).
+                    //   POOLED n=60 over 5 eras (2013/2015/2022/2023-24/2024-26, ~5.7yr):
+                    //   PF2.18@6bp/2.14@8/2.02@14, win 63%, worst -352bp, maxDD 861bp,
+                    //   matched-random z=+3.22, halves 2.06/2.23, plateau 13/13 neighbors+.
+                    //   Wire preconditions CLOSED S-2026-07-13z: (1) ADDITIVITY vs live gold
+                    //   book proven -- daily MTM PnL corr -0.066 vs TF1h/4h/D1+GVB+TB30
+                    //   faithful dumps 2024-26, incumbents' 10 worst days: negative 1/10,
+                    //   50/50 vol-normalized ret/DD 2.44 -> 6.11; (2) May-Jun-2026 histdata
+                    //   revalidation run (202605/06 published): Mar-Jun n=4 +1239bp PF5.74,
+                    //   the one new OOS trade (May short) -261bp within design bounds.
+                    //   REAL-engine parity vs frozen-cell dump EXACT (20/20 closed, 3 eras).
+                    //   ~9 trades/yr BY DESIGN; sizing respects worst -352bp -> SHADOW 0.01.
+                    //   Auto-retirement latch -1725bp banked (2x worst pooled DD).
+                    {
+                        g_gold_campaign_d1.enabled     = true;
+                        g_gold_campaign_d1.shadow_mode = true;   // shadow until the live ledger proves it
+                        g_gold_campaign_d1.lot         = 0.01;
+                        g_gold_campaign_d1.init();
+                        g_gold_campaign_d1.seed_m1_from_csv("phase1/signal_discovery/warmup_XAUUSD_M1.csv");  // prints the [SEED] line
+                        g_engine_heartbeat.register_engine("GoldCampaignD1Anch", g_gold_campaign_d1.enabled, 3600, 0, 24);
+                        std::printf("[OMEGA-INIT] GoldCampaignD1Anch (structural campaign CORE, D1-anchor pullback, symmetric L/S) -- shadow, warm-seeded\n");
+                    }
+
                     // S-2026-06-03: GoldSeasonal (XAUUSD early-week long, Mon+Tue). The one
                     //   new gold edge found after exhausting price/book signals — calendar
                     //   axis. +24.5%/yr Sharpe 1.88 engine-driven on M5 (real 21:00 daily

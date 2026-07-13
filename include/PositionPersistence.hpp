@@ -292,6 +292,11 @@ inline void register_position_persistence() {
     // feed (decl in globals.hpp to beat this header in include order).
     wire_cross(g_gold_tsmom_d1, "GoldTsmomD1V2",      "XAUUSD");
     wire_cross(g_mgc_slowdon,   "MgcSlowDonchian30m", "MGC");
+    // S-2026-07-13z GoldCampaignD1Anch: 5-9 day structural holds -- an orphaned
+    // open leg would lose its anchor stop + armed-trail state across a restart
+    // (hwm carried in the tp field; the 24h trail queue rebuilds from live bars,
+    // the persisted stop level itself is monotonic so no protection regresses).
+    wire_cross(g_gold_campaign_d1, "GoldCampaignD1Anch", "XAUUSD");
     // S-2026-07-11 GOLD PHASE 1b: BOTH GoldVolBreakoutM30 instances. The spot
     // instance was LIVE (S-2026-07-01 cutover) yet still sat on the persistence
     // audit's "dormant" allowlist -- a stale exemption hiding a real gap; the
