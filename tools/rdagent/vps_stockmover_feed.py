@@ -20,9 +20,15 @@ sometimes gets; on total failure the last-good CSV is left untouched (book simpl
 from __future__ import annotations
 import os, sys, time, datetime as dt, tempfile
 
+# S-2026-07-13: roster MUST equal the ladder engine's registered names, else the
+# unpulled names FREEZE (bars carried-forward stale) and RED the stock_daily_book
+# content check. WDC STX DD TPR BMY SWKS were registered in the engine (45 names) but
+# missing here (39) -> they were one-time-backfilled 07-10 then re-froze 2 days later.
+# Added so all 45 refresh DAILY. Keep this list == the engine roster on any change.
 BIGCAP = ("NVDA AMD AVGO MU MRVL SMCI ARM PLTR TSLA META NFLX CRWD SHOP COIN MSTR "
           "SNOW NOW PANW UBER ABNB DELL ORCL QCOM INTC AMZN GOOGL MSFT AAPL CRM ADBE "
-          "IONQ RGTI QBTS ASTS RKLB NBIS CRWV ALAB CRDO").split()
+          "IONQ RGTI QBTS ASTS RKLB NBIS CRWV ALAB CRDO "
+          "WDC STX DD TPR BMY SWKS").split()
 
 # VPS path (C:\Omega\data\rdagent). Overridable via env for a Mac dry-run.
 OUT = os.environ.get("STOCKMOVER_CSV",
@@ -68,7 +74,7 @@ def main():
     age = (today - fresh.index.max().date()).days
     ncov = int(fresh.iloc[-1].notna().sum())
     if age > 5 or ncov < 20:
-        print(f"[vps-stockmover] STALE/THIN (age={age}d cov={ncov}/39) -> KEEP cached", flush=True)
+        print(f"[vps-stockmover] STALE/THIN (age={age}d cov={ncov}/{len(BIGCAP)}) -> KEEP cached", flush=True)
         return 3
     # merge with any existing slim CSV so the history extends (newest cells win)
     if os.path.exists(OUT):
@@ -81,7 +87,7 @@ def main():
     fd = tempfile.NamedTemporaryFile("w", delete=False, dir=os.path.dirname(OUT), newline="")
     fresh.to_csv(fd); fd.close(); os.replace(fd.name, OUT)
     print(f"[vps-stockmover] wrote {fresh.shape[1]} names x {fresh.shape[0]} rows through "
-          f"{fresh.index.max().date()} (cov={ncov}/39) -> {OUT}", flush=True)
+          f"{fresh.index.max().date()} (cov={ncov}/{len(BIGCAP)}) -> {OUT}", flush=True)
     return 0
 
 
