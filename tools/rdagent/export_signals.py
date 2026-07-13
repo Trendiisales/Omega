@@ -337,7 +337,9 @@ def main():
     ap.add_argument("--universe", default="BIGCAP")
     ap.add_argument("--topk", type=int, default=5)
     ap.add_argument("--cost-bps", type=float, default=10.0)
-    ap.add_argument("--gate", type=float, default=0.05, help="min day-return to qualify as a mover")
+    ap.add_argument("--gate", type=float, default=0.03, help="min day-return to qualify as a mover "
+                    "(0.05 -> 0.03 operator test S-2026-07-14: 5% + new-20d-high fired ~0 in the "
+                    "corrective tape; 3% matches the validated stockmover gate.thr=0.03)")
     ap.add_argument("--contin-k", type=int, default=20, help="new K-day-high continuation lookback")
     ap.add_argument("--factors", default=None)
     ap.add_argument("--provenance", default="bar-replay")
