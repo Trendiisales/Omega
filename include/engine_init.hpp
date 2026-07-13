@@ -5474,7 +5474,7 @@ static void init_engines(const std::string& cfg_path)
                 x.e->thr         = x.thr;
                 x.e->W           = 10;
                 x.e->shadow_mode = true;
-                x.e->enabled     = true;
+                x.e->enabled     = false;  // S-2026-07-13 operator: NO up-jump, any engine. XsBeCascade = D1 up-jump BE-cascade -> DISABLED.
                 x.e->lot         = 1.0;
                 x.e->seed_from_csv(omega::resolve_seed_path(x.d1));
                 auto* eng = x.e; const char* symc = x.sym;
@@ -5597,10 +5597,10 @@ static void init_engines(const std::string& cfg_path)
                     x.e->boff        = 0.003;
                     x.e->ttl         = (x.tf >= 14400) ? 12 : 48;   // same bars the BT used per TF
                     x.e->shadow_mode = true;
-                    x.e->enabled     = true;
+                    x.e->enabled     = false;  // S-2026-07-13 operator: NO up-jump, any engine. BrkCascade = jump->bracket cascade -> DISABLED (all SP/NQ/M2K/XAU).
                     x.e->lot         = 1.0;   // index convention: lot 1.0 is $-normalized for SP/NQ/M2K
-                    if (std::string(x.sym) == "XAUUSD") {   // S-2026-07-13 SAFETY: XAU H4 bracket had the
-                        x.e->enabled = false; x.e->lot = 0.01;  // 100× gold lot bug (100oz) -> DISABLE + fix size
+                    if (std::string(x.sym) == "XAUUSD") {   // XAU H4 also had the 100× gold lot bug
+                        x.e->lot = 0.01;
                     }
                     if (x.gate == 0)      x.e->entry_blocked = []() { return omega::gold_regime().long_blocked(); };
                     else if (x.gate == 1) x.e->entry_blocked = []() { return g_regime_spx.long_blocked(); };
