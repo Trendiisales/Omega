@@ -171,8 +171,8 @@ public:
     // desk JSON: REAL forward clips only ($0 until first live clip).
     std::string json() const {
         std::ostringstream o; o << std::fixed;
-        double ret = 0, ret_real = 0; int clips = 0, wins = 0;
-        for (size_t i = 0; i < books_.size(); ++i) { ret += books_[i].ret; ret_real += books_[i].ret_real;
+        double ret_real = 0; int clips = 0, wins = 0;
+        for (size_t i = 0; i < books_.size(); ++i) { ret_real += books_[i].ret_real;
             clips += books_[i].clips; wins += books_[i].wins; }
         o << "{\"tag\":\"" << cfg_.trigger_tag << "\",\"sym\":\"" << cfg_.live_sym << "\",\"shadow\":true,";
         o.precision(0); o << "\"notional\":" << cfg_.notional << ",\"open\":" << open_count_() << ",";

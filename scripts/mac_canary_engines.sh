@@ -19,7 +19,10 @@
 set -u
 INCLUDE="-Iinclude"
 STD="-std=c++20"
-WARN="-Wall -Wextra -Wno-unused-variable -Wno-unused-but-set-variable -Wno-c++20-extensions"
+# -Werror=unused-*: MSVC builds with /WX where C4189 (unused local) is a hard error;
+# clang defaulting these to off let unused locals pass canary then break the VPS build
+# (memory: project-msvc-c4189-canary-gap). Keep as errors to match MSVC.
+WARN="-Wall -Wextra -Werror=unused-variable -Werror=unused-but-set-variable -Wno-c++20-extensions"
 
 # Headers to canary-check (target = file containing the issue class we missed)
 # Self-contained or only depend on L2Globals/CellPrimitives/TradeLedger:
