@@ -114,6 +114,9 @@ struct IbkrExecutionEngine : public DefaultEWrapper {
             spec_[om] = s; ibkr_to_omega_[s.ibkr_symbol] = om;
         };
         add("XAUUSD",  {"GC",     "FUT",  "COMEX",    "USD", 1.0});
+        // Micro gold (10oz) for the small-notional mimic books (S-2026-07-14 operator
+        // sizing: 1 MGC). Distinct omega sym so everything routed on "XAUUSD" stays GC.
+        add("XAUUSD.M",{"MGC",    "FUT",  "COMEX",    "USD", 1.0});
         add("US500.F", {"ES",     "FUT",  "CME",      "USD", 1.0});
         add("USTEC.F", {"NQ",     "FUT",  "CME",      "USD", 1.0});
         add("NAS100",  {"NQ",     "FUT",  "CME",      "USD", 1.0});

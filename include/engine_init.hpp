@@ -1670,20 +1670,42 @@ static void init_engines(const std::string& cfg_path)
             // in profit; lc 1.5-10 identical) -- kept as the free backstop.
             // rt_cost_bp = the per-symbol REAL cost the backtest debited (XAU 2*1.5bp comm
             // + $0.30 spread ~= 4.2bp -> 5; USTEC 2*0.5bp + 2pt spread ~= 2.1bp -> 3).
-            // Close-grade H4; intrabar re-check owed before LIVE sizing. SHADOW.
-            {   omega::GoldTrendMimicBook::Config c; c.trigger_tag="XAU_4h_DonchN20"; c.live_sym="XAUUSD";
+            // Intrabar re-check PAID S-2026-07-14 (c235ca72) + resting-order revalidation
+            // + bear-gate study (d99f5677 findings doc): XAU book LIVE below; USTEC dead.
+            // XAU_4h_DonchN20 LIVE FLIP (S-2026-07-14, operator: "wire resting + size 1 MGC"
+            // with a bear-gate proviso). Validated backtest/XAU_DONCH20_RESTING_REVALIDATION_
+            // 2026-07-14.md: resting-order/M1 reproduces +11.3%/leg PF1.58; with the H1-SMA200
+            // regime gate (G-H1-SMA200) = +13.9%/leg PF2.79 DD-2.6, calendar-2022 -1.9 -> +0.3,
+            // 2x-cost PF2.22, slip-robust (3bp/fill still PF1.90), house gate PASS all 4.
+            // Size honest expectation: +12-13%/leg PF~2.4-2.6 slip-adjusted, worst leg -2.05%.
+            // resting_exec: tick-driven synthetic stops (entry AT the BE-level cross, exits AT
+            // the trail/lc cross, booked at actual price) -- market-at-close FAILS WF-H1.
+            // live_sym XAUUSD.M -> IBKR MGC front-month (10oz micro), 1 contract per leg
+            // (operator sizing; worst-case DD ~-$2,100 at $4k gold). rt_cost_bp=5 kept as the
+            // conservative book debit (real MGC ~0.6bp + IBKR CFD ~3.7bp both under it).
+            {   omega::GoldTrendMimicBook::Config c; c.trigger_tag="XAU_4h_DonchN20"; c.live_sym="XAUUSD.M";
                 c.legs={{"T",0.10}};
-                c.arm_pct=0.25; c.lc_pct=2.0; c.cap_bars=30; c.rt_cost_bp=5.0; c.be_entry_pct=1.0; c.pend_bars=6; gm.add(std::move(c)); }
+                c.arm_pct=0.25; c.lc_pct=2.0; c.cap_bars=30; c.rt_cost_bp=5.0; c.be_entry_pct=1.0; c.pend_bars=6;
+                c.resting_exec=true; c.bull_only=true; c.live_book=true;
+                c.notional=40000.0;  // 1 MGC = 10oz x ~$4k -- desk USD honest at this size
+                c.lot=1.0;  // 1 MGC contract (10oz micro future, NOT a 100oz CFD lot) LOT-GATE-OK operator S-2026-07-14 sizing order, revalidation GREEN
+                gm.add(std::move(c)); }
+            // XAU-H1 SMA200 regime gate seed (bear-gate proviso): warm from boot, 1101-bar CSV.
+            gm.seed_xau_regime_h1_csv(omega::resolve_seed_path("phase1/signal_discovery/warmup_XAUUSD_H1.csv"));
             // USTEC_4h_ZMR book REMOVED here S-2026-07-14 (intrabar FAIL, see verdict above).
             gm.set_exec(
                 [](const std::string& sym, bool is_long, double lots, double px)->std::string { return send_live_order(sym, is_long, lots, px); },
                 [](const std::string& sym, bool orig_is_long, double lots, double px, const std::string& token){ send_live_order(sym, !orig_is_long, lots, px, token); },
-                [](const std::string& sym, double tp_dist_pts, double lots)->bool { return ExecutionCostGuard::is_viable(sym.c_str(), 0.30, tp_dist_pts, lots, 2.0); },
+                [](const std::string& sym, double tp_dist_pts, double lots)->bool {
+                    // XAUUSD.M (micro-gold mimic order sym) prices off the MGC cost row
+                    // ($10/pt, lot = contracts); everything else passes through unchanged.
+                    const char* cs = (sym == "XAUUSD.M") ? "MGC" : sym.c_str();
+                    return ExecutionCostGuard::is_viable(cs, 0.30, tp_dist_pts, lots, 2.0); },
                 [](const std::string& engine, const std::string& sym, bool is_long, double entry_px, double exit_px, double lots, int64_t entry_ts, int64_t exit_ts, const char* reason){
                     omega::TradeRecord tr; tr.engine=engine; tr.symbol=sym; tr.side=is_long?"LONG":"SHORT";
                     tr.entryPrice=entry_px; tr.exitPrice=exit_px; tr.size=lots; tr.entryTs=entry_ts; tr.exitTs=exit_ts;
                     tr.exitReason=reason; tr.pnl=(is_long?(exit_px-entry_px):(entry_px-exit_px))*lots; handle_closed_trade(tr); });
-            printf("[OMEGA-INIT][SEED] GoldTrendMimicLadder wired: 8 trigger books (XauTf4h 4-leg, XauTf2h 2-leg, MgcFastDon 2-leg, XauTfD1 2-leg, NAS100/US500/DJ30 Turtle 2-leg, survivor XAU_4h_DonchN20 1-leg; USTEC_4h_ZMR disabled S-14 intrabar FAIL), specific native feeds, SHADOW, deploy-forward\n");
+            printf("[OMEGA-INIT][SEED] GoldTrendMimicLadder wired: 8 trigger books (XauTf4h 4-leg, XauTf2h 2-leg, MgcFastDon 2-leg, XauTfD1 2-leg, NAS100/US500/DJ30 Turtle 2-leg SHADOW; survivor XAU_4h_DonchN20 1-leg LIVE resting-exec 1 MGC + H1-SMA200 bear-gate; USTEC_4h_ZMR disabled S-14 intrabar FAIL), specific native feeds, deploy-forward\n");
             fflush(stdout);
         }
 

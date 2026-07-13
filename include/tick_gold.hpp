@@ -7,6 +7,7 @@
 // without another refactor. Engine behaviour is UNCHANGED in Session 9.
 #include "gold_coordinator.hpp"
 #include "PortfolioGuard.hpp"  // S48: portfolio-level kill-switch + sizing helpers
+#include "GoldTrendMimicLadder.hpp"  // S-2026-07-14: XAU-H1 regime gate feed at H1 close
 
 // -- XAUUSD -------------------------------------------------
 static void on_tick_gold(
@@ -853,6 +854,9 @@ static void on_tick_gold(
             // GoldVolBreakoutM30Engine: H1 EMA200+slope trend gate (S-2026-06-03).
             // Must run on every H1 close before the M30 entry path uses trend_.
             g_gold_volbrk_m30.on_h1_close(s_cur_h1.close);
+            // GoldTrendMimic XAU-H1 SMA200 regime gate (S-2026-07-14): feeds the bull_only
+            // mimic books (XAU_4h_DonchN20 bear-gate proviso). Seeded at boot; cheap.
+            omega::gold_trend_mimic().xau_regime_h1_close(s_cur_h1.close);
             // H1 bar close dispatch: management always runs; entry only when slot is clear
             if (g_h1_swing_gold.has_open_position()) {
                 g_h1_swing_gold.on_h1_bar(

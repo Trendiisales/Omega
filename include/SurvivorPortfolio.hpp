@@ -369,15 +369,20 @@ public:
     void on_tick(const std::string& sym, double bid, double ask, int64_t now_ms,
                  const SpxOverlay& spx, CloseCb cb,
                  const std::function<bool(const char*, int)>& side_taken = {}) noexcept {
+        if (sym != cfg.symbol) return;
+        const double mid = 0.5 * (bid + ask);
+        if (mid <= 0) return;
+        // SURVIVOR-CELL MIMIC tick feed (S-2026-07-14 resting-exec): the mimic book is an
+        // INDEPENDENT engine -- its resting BE-entry / synthetic-stop exits need every tick
+        // even when this cell is disabled or flat, so this sits ABOVE the zombie gate.
+        // No-op inside the registry for non-resting books / unknown tags / pre-arm.
+        omega::gold_trend_mimic().on_tick(cfg.tag, mid, now_ms / 1000);
         // S-2026-06-11 zombie hardening: a disabled cell must still MANAGE an
         // open position (aggregate bars so the bar-count timeout advances + run
         // manage_position) or the position freezes forever — this early-return
         // used to sit before manage. Disabled now blocks ENTRIES only
         // (evaluate_signal stays gated on st.enabled below).
         if (!st.enabled && !st.pos_active) return;
-        if (sym != cfg.symbol) return;
-        const double mid = 0.5 * (bid + ask);
-        if (mid <= 0) return;
         const int64_t now_s = now_ms / 1000;
 
         // Aggregate into current bar
