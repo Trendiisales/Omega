@@ -266,7 +266,7 @@ a{color:var(--blu);text-decoration:none}
      was stranded on the Mac-only :7799 page). Pushed via push_basket_to_desk.sh. ═══ -->
 <div class="pan">
   <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px">
-    <span class="lbl">STOCK BASKET — rdagent day-mover model · shadow paper $10k · BUY = day-mover at new high (bull regime)</span>
+    <span class="lbl">STOCK BASKET — rdagent day-mover model · shadow paper $10k · ONLY BUY/held rows trade — rest = ranking context</span>
     <span id="rdainfo" class="lbl" style="margin-left:auto">…</span>
   </div>
   <div style="overflow:auto;max-height:300px;font-size:9.5px"><table id="rdatab" style="width:100%"><tr><td class="l d">loading…</td></tr></table></div>
@@ -919,7 +919,11 @@ function pollRdagent(){
        displayed value comes from the SAME file the paper fills wrote (content-parity). */
     var posBy={};(book.positions||[]).forEach(function(p){if(p&&p.sym)posBy[p.sym]=p;});
     var hdr='<tr><th>#</th><th class="l">name</th><th>action</th><th>price</th><th>conf</th><th>5d</th><th>20d</th><th>pos P&amp;L</th></tr>';
-    var rows=basket.slice(0,23).map(function(b){
+    /* S-2026-07-15e (operator): the flat 23-row ranking read as "we trade ALL of these,
+       including the red ones". Only action==='BUY' rows are ever bought (execute_basket
+       filters on it); everything else is model-ranking CONTEXT. Partition: held/BUY rows
+       on top, explicit NOT-TRADED divider, context rows dimmed below. */
+    var mkRow=function(b,dim){
       var buy=b.action==='BUY';
       var act=buy?'<span class="g">BUY</span>':'<span class="d">—</span>';
       var c5=safe(b.ret_5d)*100, c20=safe(b.ret_20d)*100;
@@ -930,11 +934,19 @@ function pollRdagent(){
         pnlCell='<span style="color:'+pcol+'">'+(pp>=0?'+':'')+'$'+fmt2(pp,0)+'</span>'
                +' <span class="d" style="font-size:9px">'+esc(p.shares)+'sh@'+fmt2(safe(p.avg_cost),2)+'</span>';
       }
-      return '<tr'+(buy?' style="background:rgba(40,160,90,0.12)"':'')+'><td class="num">'+esc(b.rank)+'</td><td class="l">'+esc(b.instrument||'')+
+      var sty=buy?' style="background:rgba(40,160,90,0.12)"':(dim?' style="opacity:0.45"':'');
+      return '<tr'+sty+'><td class="num">'+esc(b.rank)+'</td><td class="l">'+esc(b.instrument||'')+
         '</td><td>'+act+'</td><td class="num">'+fmt2(safe(b.price),2)+'</td><td class="num">'+esc(b.percentile)+
         '</td><td class="num" style="color:'+col5+'">'+(c5>=0?'+':'')+fmt2(c5,1)+'%</td><td class="num" style="color:'+col20+'">'+(c20>=0?'+':'')+fmt2(c20,1)+'%</td><td class="num">'+pnlCell+'</td></tr>';
-    }).join('');
-    el2.innerHTML=hdr+rows;
+    };
+    var traded=[], ctx=[];
+    basket.slice(0,23).forEach(function(b){
+      var p=posBy[b.instrument];
+      if(b.action==='BUY'||(p&&p.shares))traded.push(b); else ctx.push(b);
+    });
+    var div='<tr><td colspan="8" class="d" style="text-align:center;font-size:9px;padding:2px 0;border-top:1px solid rgba(255,255,255,0.10)">▼ ranking context only — NOT traded (BUY/held rows above are the whole book)</td></tr>';
+    el2.innerHTML=hdr+traded.map(function(b){return mkRow(b,false);}).join('')
+                 +(ctx.length?div+ctx.map(function(b){return mkRow(b,true);}).join(''):'');
   }).catch(function(){});
 }
 setInterval(pollRdagent,5000);pollRdagent();
