@@ -61,7 +61,7 @@
 #     --max-pos 10: V1 row count <= V2 row count. Strictly greater = surprise.
 #
 # Run on Mac (no arguments needed once tick CSVs are at the default paths):
-#   cd ~/omega_repo
+#   cd ~/Omega
 #   cp /path/to/this/smoke_test_part_L.sh .   # or run from outputs/ directly
 #   chmod +x smoke_test_part_L.sh
 #   ./smoke_test_part_L.sh
@@ -86,7 +86,7 @@
 
 set -uo pipefail   # not -e: we want to keep going on individual symbol failures
 
-REPO="${REPO:-$HOME/omega_repo}"
+REPO="${REPO:-$HOME/Omega}"
 BUILD_DIR="${BUILD_DIR:-$REPO/build}"
 VREV="${VREV:-$BUILD_DIR/VWAPReversionBacktest}"
 TCELL="${TCELL:-$BUILD_DIR/TsmomCellBacktest}"

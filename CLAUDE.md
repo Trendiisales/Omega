@@ -346,12 +346,17 @@ for f in include/*.hpp; do
     if ! grep -q "OmegaCostGuard" "$f"; then echo "UNGATED: $f"; fi
   fi
 done
-# Expect ONLY (updated S-2026-06-10 after the 21-engine cost-gate fix):
+# Expect ONLY (updated S-2026-07-14 audit; original list S-2026-06-10 after
+# the 21-engine cost-gate fix):
 #   False positives (not entry paths): PositionPersistence, engine_init,
 #     SweepableEngines, SweepableEnginesCRTP, PumpScalpEngine (equity feed;
 #     CFD cost table not applicable -- gate lives in pump backtest model),
 #     LatencyEdgeEngines (manage-only since S13), IndexSessionEngine (all
-#     instances disabled).
+#     instances disabled), StockDipTurtleEngine (ENABLED but gated -- its
+#     ExecutionCostGuard gate is INJECTED via gate_fn from engine_init.hpp,
+#     enforced at StockDipTurtleEngine.hpp:401, so this literal grep can't
+#     see it), NqMomentumEngine + SqueezeSlingshotEngine (tombstoned, never
+#     instantiated; headers remain on disk).
 #   DISABLED engines (must gain a gate before any re-enable): ConnorsRSI2,
 #     NasBbRevLongH1, RSIExtremeTurn,
 #     Us303BarMomH1, Xau3BarMomGatedH4, XauBBScalpD1, XauDonchian55GatedM30,
@@ -363,8 +368,10 @@ done
 
 # 2. GoldEngineStack chokepoint audit
 grep -nE "\.open\(" include/GoldEngineStack.hpp
-# Expect exactly two hits: L50 include comment + the gated
-# pos_mgr_.open() call site. Any third hit needs investigation.
+# Expect exactly ONE actual call site (the gated pos_mgr_.open()); all other
+# hits must be comments (as of 2026-07-14: 3 grep hits = L50 include comment
+# + L4229 comment + the single gated call at ~L4248). A second CODE hit
+# needs investigation.
 ```
 
 ## Cost-Gate Semantics (often confused)
@@ -413,8 +420,9 @@ It is now a **build gate**, not a rule:
   mandated pre-commit canary — so a non-compliant new engine cannot be
   committed.
 
-Backfill debt: effectively closed — as of 2026-07-12 the canary reports
-86 engines annotated, 3 legacy backfill-owed, 0 violations (the original
+Backfill debt: effectively closed — as of 2026-07-14 the canary reports
+87 engines annotated, 3 legacy backfill-owed (DonchianEngine,
+EmaPullbackEngine, TrendRiderEngine), 0 violations (the original
 2026-06-19 figure was 81 owed; burned down since). Finish the last 3
 opportunistically when touching each engine.
 

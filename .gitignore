@@ -274,3 +274,25 @@ cot/
 
 # graphify knowledge-graph build artifacts
 graphify-out/
+
+# ── Backtest compiled binaries + data dirs (2026-07-14 audit) ─────────────────
+# Extensionless Mach-O backtest binaries built ad-hoc in backtest/ (source .cpp
+# stays tracked; binary never). Explicit list -- add new ones here when built.
+backtest/_mimicext/
+backtest/data/
+backtest/__pycache__/
+backtest/gold_pullback_core_bt
+backtest/goldpanic_intrabar_vs_h1
+backtest/idxbear_intrabar_vs_h1
+backtest/index_turtle_d1_audit
+backtest/mgc_fastdon_bt
+backtest/mgc_intrabar_vs_barclose
+backtest/mgc_tf_feed_parity
+backtest/xag_tf_dump
+backtest/xau_bracket_becascade_bt
+backtest/xau_bracket_tf_bt
+backtest/xau_tf1h_rider_dump
+backtest/xau_tf2h_rider_dump
+backtest/xau_tf4h_rider_dump
+backtest/xau_tf_4h2h_bt
+backtest/xau_tick_to_m1

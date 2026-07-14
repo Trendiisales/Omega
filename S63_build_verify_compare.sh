@@ -8,7 +8,7 @@
 # or revert to 0.0 (plumbing-only).
 #
 # Usage:
-#   bash ~/omega_repo/S63_build_verify_compare.sh [tick_csv]
+#   bash ~/Omega/S63_build_verify_compare.sh [tick_csv]
 #
 # Default tick file: ~/tick/data/xauusd_2024_2025.csv (same default as the
 # build_mac.sh / run_grid.sh in this repo). Override with a path arg to
@@ -20,7 +20,7 @@
 # The data/l2_ticks_*.csv files (14 columns) are NOT compatible and will
 # produce "[ERROR] No valid ticks parsed."
 #
-# Outputs (all in /Users/jo/omega_repo/outputs/):
+# Outputs (all in /Users/jo/Omega/outputs/):
 #   s63_baseline_trades.csv   raw trade tape, pre-S63 binary
 #   s63_patched_trades.csv    raw trade tape, post-S63 binary
 #   s63_baseline_report.csv   per-engine aggregate, pre-S63
@@ -32,7 +32,7 @@
 # ============================================================================
 
 set -e
-cd "$HOME/omega_repo"
+cd "$HOME/Omega"
 
 TICK_FILE="${1:-$HOME/tick/data/xauusd_2024_2025.csv}"
 OUT="outputs"
@@ -272,7 +272,7 @@ PY
 S63_TICK="$TICK_FILE" python3 - <<PYEND
 import os
 print("=== [S63] summary preview ===")
-with open(os.path.expanduser("~/omega_repo/$OUT/s63_compare_summary.md")) as f:
+with open(os.path.expanduser("~/Omega/$OUT/s63_compare_summary.md")) as f:
     print(f.read())
 PYEND
 
