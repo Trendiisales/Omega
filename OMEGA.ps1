@@ -897,7 +897,8 @@ function Invoke-Restart {
 
 # S-2026-06-29: run a python step with a HARD timeout so a dead IBKR connection (data farms
 # OFF on weekends / gateway down) cannot hang the whole deploy at [2b]. ROOT CAUSE of the
-# 11min+ "down" reports: rebuild_warmups.py / refresh_warmup_seeds.py connect to IB Gateway and
+# 11min+ "down" reports: the seed refreshers (now tools/seed_refresh.py; the pre-fold
+# rebuild_warmups.py / refresh_warmup_seeds.py are deleted) connect to IB Gateway and
 # block forever when the farms are off, stalling the deploy BEFORE the build. On timeout we kill
 # the py process TREE (py.exe launcher spawns python.exe child) and return $false so the caller
 # falls back to the committed git-snapshot seeds -- the intended NON-FATAL behavior.

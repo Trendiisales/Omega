@@ -47,13 +47,23 @@ LEGACY_FILE='scripts/adverse_protection_legacy.txt'
 # bash-3.2 compatible (macOS default — no associative arrays)
 is_legacy(){ [ -f "$LEGACY_FILE" ] && grep -qxF "$1" "$LEGACY_FILE"; }
 
+# S-2026-07-14 (latent-class sweep item 7): glob widened -- multi-engine headers
+# (*Engines.hpp: CrossAsset/HTFSwing/Sweepable/LatencyEdge) and *Stack.hpp
+# (GoldEngineStack, LIVE g_gold_stack) hold inline position-opening classes but
+# were NEVER scanned by the original include/*Engine.hpp glob. All five that trip
+# ENTRY_RE are pre-gate legacy files, grandfathered in $LEGACY_FILE (backfill
+# owed) -- NOT annotated, because the mandate forbids recording a verdict whose
+# backtest was never run. Any NEW opener class added to these files still needs
+# its own ADVERSE-PROTECTION: tag (one tag anywhere in the file satisfies the
+# whole file -- a known granularity limit; prefer per-class tags when backfilling).
 fails=0; warns=0; ok=0
-for h in include/*Engine.hpp; do
+for h in include/*Engine.hpp include/*Engines.hpp include/*Stack.hpp; do
   [ -f "$h" ] || continue
   grep -Eq "$ENTRY_RE" "$h" || continue          # not a position-opener
   base="$(basename "$h" .hpp)"
   if grep -q "$TAG" "$h"; then ok=$((ok+1)); continue; fi
   if is_legacy "$base"; then
+    echo "LEGACY (backfill owed): $h — grandfathered, no ADVERSE-PROTECTION: verdict yet."
     warns=$((warns+1)); continue                 # grandfathered — backfill owed
   fi
   echo "VIOLATION: $h opens a position but has no '$TAG' verdict and is not grandfathered."

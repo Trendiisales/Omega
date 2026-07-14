@@ -1,10 +1,44 @@
 # adverse_protection_legacy.txt -- grandfather list for the adverse-protection mandate.
 #
-# BACKFILL COMPLETE (S-2026-06-24n): all formerly-grandfathered engines now carry an
-# in-file ADVERSE-PROTECTION: verdict (audit = 85 annotated / 0 legacy-owed). This list
-# is intentionally EMPTY. A NEW position-opening engine with no ADVERSE-PROTECTION:
-# comment now FAILS the canary outright -- adding its basename here to dodge the check
-# is a deliberate red flag (do not). Annotate the backtested verdict instead.
+# WHAT THIS IS: engines/headers that pre-date the 2026-06-19 gate and still owe a
+# BACKTESTED ADVERSE-PROTECTION: verdict. Entries here are reported by
+# scripts/adverse_protection_audit.sh as "legacy (backfill owed)" WARNINGS -- they
+# do NOT fail the build. This list is NOT empty (a prior header claimed "backfill
+# complete / intentionally EMPTY" while 3 entries sat below it -- fixed S-2026-07-14,
+# latent-class sweep item 8a). Current count: 8 entries.
+#
+# RULES:
+#   * Grandfathering is for PRE-GATE code only. A NEW position-opening engine with
+#     no ADVERSE-PROTECTION: comment FAILS the canary outright -- adding its basename
+#     here to dodge the check is a deliberate red flag (do not). Backtest the
+#     protection step and annotate the verdict instead.
+#   * Do NOT add a fake ADVERSE-PROTECTION: annotation to burn down this list --
+#     the tag asserts a backtest that was actually run. Backfill = run the sweep,
+#     record the verdict in the header, then delete the entry here.
+#   * Matching is exact basename (grep -xF); one entry per line, comments ignored.
+#
+# --- original 3 single-engine legacy holdouts (grandfathered 2026-06-19) ---
 DonchianEngine
 EmaPullbackEngine
 TrendRiderEngine
+# --- multi-engine headers, first scanned S-2026-07-14 when the audit glob was
+#     widened to *Engines.hpp/*Stack.hpp (latent-class sweep item 7). All pre-gate;
+#     zero ADVERSE-PROTECTION: tags at time of adding. Backfill = per-class verdicts.
+# GoldEngineStack: LIVE g_gold_stack; opener hits = legs_ book entry (~L3701
+#   GOLD-STACK-ENTRY) + pyramid add (~L3603) -- real position-opening paths.
+GoldEngineStack
+# CrossAssetEngines: many inline engines, real pos_.open() entry paths (+ some
+#   hits are persistence-restore blocks, not entries).
+CrossAssetEngines
+# HTFSwingEngines: real pos_.active=true entry paths (~L373, ~L802); other hits
+#   are persistence-restore blocks.
+HTFSwingEngines
+# SweepableEngines: confirm_fill()/_enter() set pos.active=true -- position-opening
+#   code (sweep-harness twins of live engines; listed as cost-gate false-positives
+#   in CLAUDE.md, but for THIS audit the opener code is real).
+SweepableEngines
+# LatencyEdgeEngines: manage-only in live since S13 (per CLAUDE.md standing-audit
+#   notes), but the entry code still exists and trips ENTRY_RE (LePositionManager::
+#   open ~L191, pos_mgr_.open(sig,..) ~L409/~L628) -- dormant, still owed a verdict
+#   or removal if ever re-armed.
+LatencyEdgeEngines

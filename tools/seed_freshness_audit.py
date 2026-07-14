@@ -149,7 +149,22 @@ for f in src:
         if "signal_discovery" in p or "warmup" in p.lower() or "tsmom" in p.lower() or "/data/" in p or p.startswith("data/"):
             if EXCLUDE.search(p): continue          # drop output sinks + template artifacts
             seed_paths.add(p)
-seed_paths |= survivor_seeds(REPO)   # dynamic Survivor paths -- invisible to the literal scan
+# Dynamic Survivor paths -- invisible to the literal scan. PARSER-BLINDNESS GUARD
+# (S-2026-07-14, latent-class sweep item 8c): if SurvivorPortfolio.hpp still exists but the
+# SURV_ADD regex parses ZERO active add() entries, the roster format has drifted out from
+# under the parser and the audit is BLIND to every dynamic Survivor seed -- the exact failure
+# class this parser was built to fix (warmup_USTEC.F_H4 rotted 94d unseen). Fail LOUDLY
+# (exit 3, structural) instead of silently passing with zero coverage.
+_surv_paths = survivor_seeds(REPO)
+_surv_hpp = os.path.join(REPO, "include", "SurvivorPortfolio.hpp")
+if not _surv_paths and os.path.exists(_surv_hpp):
+    print(f"[P1-PARSER-BLIND] SURV_ADD parser matched ZERO active add() entries in {_surv_hpp}.")
+    print( "                  Either the add({...}) roster format changed (fix the SURV_ADD regex in")
+    print( "                  tools/seed_freshness_audit.py) or the roster was intentionally emptied")
+    print( "                  (then update this guard). Until fixed the")
+    print( "                  audit is blind to ALL dynamic Survivor seeds -- refusing to pass silently.")
+    sys.exit(3)
+seed_paths |= _surv_paths
 
 def last_ts(path):
     """last data row's epoch (sec). handles sec or ms; first column = ts."""

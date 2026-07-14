@@ -999,7 +999,7 @@ try {
     $staleN = if ($sumLine -match 'STALE\(enabled\):\s*(\d+)') { $Matches[1] } else { "?" }
     if ($rc -eq 1) {
         Add-Result "Seed Freshness" "WARN" "$staleN stale ENABLED-engine warm-seed(s) -- gate boots blind to current price" `
-            "Refresh: python tools\refresh_warmup_seeds.py 4002 (needs IBKR gateway 4002 live)"
+            "Refresh: python tools\seed_refresh.py --only ibkr (needs IBKR gateway 4002 live)"
     } elseif ($rc -eq 2) {
         # S-2026-07-01: audit exit 2 = REQUIRED generated file missing. Today that means
         # data\risk_monitor_thresholds.csv is absent -> RiskMonitor loads 0 rows -> on_fire()
