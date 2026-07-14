@@ -126,7 +126,17 @@ int main(int argc, char** argv){
     std::map<std::string,Stat> cells;
     const int N=(int)bars.size(); const int mid=N/2;
     int idx=0;
+    // S-2026-07-14bb (mimic validation): env DUMP_ENTRIES=1 -> one
+    // "ENTRY|MgcTf1h|cell|dir|entry_px|entry_ts" line per closed record so the
+    // BE-mimic harness consumes the REAL engine entry stream. entryTs is the
+    // ORIGINAL open bar ts (unchanged by pyramid adds); entryPrice is the
+    // pyramid-weighted avg -- the mimic prep step re-derives the open-bar
+    // trigger px (bar close + spread) from entryTs. Default OFF.
+    const bool DUMP_ENTRIES = getenv("DUMP_ENTRIES") && atoi(getenv("DUMP_ENTRIES"))!=0;
     auto cb=[&](const omega::TradeRecord& tr){
+        if(DUMP_ENTRIES)
+            std::printf("ENTRY|MgcTf1h|%s|%+d|%.2f|%lld\n", tr.engine.c_str(),
+                        tr.side=="LONG"?+1:-1, tr.entryPrice, (long long)tr.entryTs);
         const double contracts = tr.size / 0.01;              // 0.01 lot == 1 MGC
         const double usd = tr.pnl*1000.0                      // pts*size -> $ at $10/pt/contract
                          - (COMM_PT + SLIP_PT) * contracts * USD_PER_PT_MGC;

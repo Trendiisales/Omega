@@ -49,6 +49,11 @@
 
 static double COST_RT = 0.41;         // points round-trip, 1x basis
 static const double USD_PER_PT = 10.0; // 1 MGC = 10oz, $10 per 1.0pt
+// S-2026-07-14bb (mimic validation): env DUMP_ENTRIES=1 -> print one
+// "ENTRY|mech|cfg|dir|entry_px|entry_ts" line per trade so the BE-mimic
+// harness (gold_newengine_mimic_bt.cpp) can consume the REAL entry stream
+// instead of re-implementing signals. Default OFF -> output unchanged.
+static bool DUMP_ENTRIES = false;
 
 struct Bar { int64_t ts; double o,h,l,c; };
 
@@ -159,6 +164,10 @@ static int month_slot(int64_t ts){
 }
 
 static void finish(Report& r, const std::vector<Trade>& trades){
+    if(DUMP_ENTRIES)
+        for(const auto& t : trades)
+            std::printf("ENTRY|%s|%s|%+d|%.2f|%lld\n",
+                        r.mech, r.cfg.c_str(), t.dir, t.entry, (long long)t.ets);
     for(const auto& t : trades){
         double usd1 = (t.pts_net) * USD_PER_PT;
         double usd2 = (t.pts_net - COST_RT) * USD_PER_PT; // extra cost => 2x total
@@ -381,6 +390,7 @@ static void print_monthly(const Report& r){
 int main(int argc, char** argv){
     const char* path = argc>1? argv[1] : "backtest/data/mgc_30m_spliced_2024_2026.csv";
     if(getenv("COST_RT")) COST_RT=atof(getenv("COST_RT"));
+    DUMP_ENTRIES = getenv("DUMP_ENTRIES") && atoi(getenv("DUMP_ENTRIES"))!=0;
     auto m30=load_csv(path);
     auto h1=to_h1(m30);
     std::printf("[GOLD-SHORTTF-BOTHWAYS] bars: m30=%zu h1=%zu  COST_RT=%.2fpt ($%.2f/RT per 1 MGC)  2x=%.2fpt\n",
