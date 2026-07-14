@@ -1781,10 +1781,14 @@ static void init_engines(const std::string& cfg_path)
                     // ($10/pt, lot = contracts); everything else passes through unchanged.
                     const char* cs = (sym == "XAUUSD.M") ? "MGC" : sym.c_str();
                     return ExecutionCostGuard::is_viable(cs, 0.30, tp_dist_pts, lots, 2.0); },
-                [](const std::string& engine, const std::string& sym, bool is_long, double entry_px, double exit_px, double lots, int64_t entry_ts, int64_t exit_ts, const char* reason){
+                [](const std::string& engine, const std::string& sym, bool is_long, double entry_px, double exit_px, double lots, int64_t entry_ts, int64_t exit_ts, const char* reason, double mfe_pct, double mae_pct){
                     omega::TradeRecord tr; tr.engine=engine; tr.symbol=sym; tr.side=is_long?"LONG":"SHORT";
                     tr.entryPrice=entry_px; tr.exitPrice=exit_px; tr.size=lots; tr.entryTs=entry_ts; tr.exitTs=exit_ts;
-                    tr.exitReason=reason; tr.pnl=(is_long?(exit_px-entry_px):(entry_px-exit_px))*lots; handle_closed_trade(tr); });
+                    tr.exitReason=reason; tr.pnl=(is_long?(exit_px-entry_px):(entry_px-exit_px))*lots;
+                    // mimic legs track excursion as signed % of entry; ledger convention is
+                    // positive magnitudes in price units x size (S-2026-07-15 mfe/mae=0 fix)
+                    tr.mfe=(mfe_pct/100.0)*entry_px*lots; tr.mae=(std::fabs(mae_pct)/100.0)*entry_px*lots;
+                    handle_closed_trade(tr); });
             printf("[OMEGA-INIT][SEED] GoldTrendMimicLadder wired: 15 trigger books (XauTf4h 4-leg, XauTf2h 2-leg, MgcFastDon 2-leg, XauTfD1 2-leg, NAS100/US500/DJ30 Turtle 2-leg SHADOW; survivor XAU_4h_DonchN20 1-leg LIVE resting-exec 1 MGC + H1-SMA200 bear-gate; USTEC_4h_ZMR disabled S-14 intrabar FAIL; S-14bc BE-mimics be0.10 2-leg x5: MgcTf1h/GoldKeltM30/GoldTfBw1040/GoldTfBw20100/GoldDonH1 SHADOW; S-14 sub-30m re-open x2: GoldDon15m arm1.0/lc0.5 + GoldDon10m arm1.0/lc1.0 SHADOW 1m-truth-validated), specific native feeds, deploy-forward\n");
             fflush(stdout);
         }

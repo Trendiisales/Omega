@@ -29,6 +29,7 @@
 //   (armed leg stop >= entry) + window-cap flush. The PASS figures above are net
 //   of the loss-cut. Books in RETURN units (USD = ret * notional/clip).
 // =============================================================================
+#include <algorithm>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -93,8 +94,11 @@ public:
     using OpenFn   = std::function<std::string(const std::string&, bool, double, double)>;
     using CloseFn  = std::function<void(const std::string&, bool, double, double, const std::string&)>;
     using GateFn   = std::function<bool(const std::string&, double, double)>;
+    // trailing mfe_pct/mae_pct: leg peak / trough as SIGNED % of entry (mae_pct <= 0);
+    // added S-2026-07-15 so ledger rows stop reporting mfe/mae=0 on mimic clips.
     using LedgerFn = std::function<void(const std::string&, const std::string&, bool,
-                                        double, double, double, int64_t, int64_t, const char*)>;
+                                        double, double, double, int64_t, int64_t, const char*,
+                                        double, double)>;
     void set_exec(OpenFn o, CloseFn c, GateFn g, LedgerFn l) {
         open_fn_ = std::move(o); close_fn_ = std::move(c); gate_fn_ = std::move(g); ledger_fn_ = std::move(l);
     }
@@ -151,7 +155,7 @@ public:
             if (L.pending) {   // synthetic resting STOP at the BE level: enter AT the cross
                 const double lvl = L.trig * (1.0 + L.dir * cfg_.be_entry_pct / 100.0);
                 if ((L.dir > 0 && px >= lvl) || (L.dir < 0 && px <= lvl)) {
-                    L.entry = px; L.pending = false; L.bars = 0; L.peak = 0.0;
+                    L.entry = px; L.pending = false; L.bars = 0; L.peak = 0.0; L.trough = 0.0;
                     L.armed = false; L.entry_ts = ts_sec;
                     if (open_fn_ && gate_fn_) { const double tp = L.entry * (cfg_.arm_pct / 100.0);
                         if (gate_fn_(cfg_.live_sym, tp, cfg_.lot))
@@ -164,7 +168,8 @@ public:
                 still.push_back(std::move(L)); continue;
             }
             const double ret = L.dir * (px / L.entry - 1.0) * 100.0;
-            if (ret > L.peak) L.peak = ret;
+            if (ret > L.peak)   L.peak   = ret;
+            if (ret < L.trough) L.trough = ret;
             const double gb = cfg_.legs[(L.li >= 0 && L.li < (int)cfg_.legs.size()) ? L.li : 0].gb;
             bool closed = false;
             if (!L.armed) {
@@ -198,7 +203,7 @@ public:
                 const double fret = L.dir * (fav / L.trig - 1.0) * 100.0;
                 if (fret >= cfg_.be_entry_pct) {                       // BE made -> ENTER at the BE level
                     L.entry = L.trig * (1.0 + L.dir * cfg_.be_entry_pct / 100.0);
-                    L.pending = false; L.bars = 0; L.peak = 0.0; L.armed = false; L.entry_ts = ts_sec;
+                    L.pending = false; L.bars = 0; L.peak = 0.0; L.trough = 0.0; L.armed = false; L.entry_ts = ts_sec;
                     if (open_fn_ && gate_fn_) { const double tp = L.entry * (cfg_.arm_pct / 100.0);
                         if (gate_fn_(cfg_.live_sym, tp, cfg_.lot)) L.token = open_fn_(cfg_.live_sym, L.dir > 0, cfg_.lot, L.entry); }
                     std::printf("[GMIMIC][%s] BE-ENTER %s @%.2f (trig %.2f)\n",
@@ -215,7 +220,8 @@ public:
             bool closed = false;
             for (int k = 0; k < 3 && !closed; ++k) {
                 const double ret = L.dir * (seq[k] / L.entry - 1.0) * 100.0;   // % return at this extreme
-                if (ret > L.peak) L.peak = ret;
+                if (ret > L.peak)   L.peak   = ret;
+                if (ret < L.trough) L.trough = ret;
                 if (!L.armed) {
                     if (ret <= -cfg_.lc_pct) { book_clip_(L, -cfg_.lc_pct, ts_sec, "LOSS_CUT"); closed = true; break; }
                     if (L.peak >= cfg_.arm_pct) L.armed = true;
@@ -259,6 +265,7 @@ private:
     bool   bull_ = true;
     bool   ext_regime_ = false;   // true once the registry regime feed has spoken
     struct Leg { int dir = 0, li = 0, bars = 0, pbars = 0; double entry = 0, peak = 0, trig = 0;
+                 double trough = 0;   // min signed ret% seen (MAE); NOT persisted -> resets on restart
                  bool armed = false, open = false, pending = false;
                  int64_t entry_ts = 0; std::string token; };
     std::vector<Leg> legs_;
@@ -284,7 +291,8 @@ private:
         }
         if (!L.token.empty() && close_fn_) close_fn_(cfg_.live_sym, L.dir > 0, cfg_.lot, fill, L.token);
         if (ledger_fn_) ledger_fn_(leg_engine_(L.li), cfg_.live_sym, L.dir > 0, L.entry, fill, cfg_.lot,
-                                   L.entry_ts, ts_sec, reason);
+                                   L.entry_ts, ts_sec, reason,
+                                   std::max(L.peak, ret_pct), std::min(L.trough, std::min(ret_pct, 0.0)));
         L.open = false; L.token.clear();
         append_closed_(Closed{L.li, L.entry, fill, r_real, L.entry_ts, ts_sec, reason});
         save_book_();
