@@ -94,7 +94,7 @@ int main(int argc, char* argv[])
     // dead. The [MGC-FEED] poll heartbeat (MgcFastDonchianFeed.hpp) confirms reads.
     g_mgc_fastdon.enabled     = true;
     g_mgc_fastdon.shadow_mode = false;  // S-2026-07-01: LIVE on IBKR 4002 paper (operator all-engines cutover)
-    g_mgc_fastdon.lot         = 1.0;   // S-2026-06-26 operator: deploy at lot size 1 (= 1 MGC micro, $10/pt). SHADOW. Re-look + scale if the live ledger proves it (memory project-revisit-scale-mgcfastdon-bigcapmomo).
+    g_mgc_fastdon.lot         = 1.0;   // LOT-GATE-OK: lot = CONTRACTS here; 1.0 = 1 MGC micro (10oz, $10/pt), the smallest unit. S-2026-06-26 operator: deploy at lot size 1. SHADOW. Re-look + scale if the live ledger proves it (memory project-revisit-scale-mgcfastdon-bigcapmomo).
     g_mgc_fastdon.Nin = 40; g_mgc_fastdon.Nout = 20; g_mgc_fastdon.Kov = 1.5;  // S-2026-06-23: 20/10 -> 40/20 (faithful-best PF1.74 vs 1.54, 2x-cost-robust)
     g_mgc_fastdon.use_hvn_skip = true;
     g_mgc_fastdon.l2_gate_ = 0.30;  // S-2026-06-23 L2 CONFIRMATION GATE (active, conservative): block a long breakout only when the live MGC book is strongly ask-heavy (bid-share<0.30). OBI showed ask-heavy -> -0.031pt fwd, so this cuts the worst book-against entries. SHADOW -> forward-validates on the ledger; set 0.0 to disable. Inert in backtest (set_l2_imb never called).
@@ -112,7 +112,7 @@ int main(int argc, char* argv[])
     //    Auto-retirement latch -400pt (2x the -188pt worst BT DD episode).
     g_mgc_slowdon.enabled     = true;
     g_mgc_slowdon.shadow_mode = true;   // shadow until the live ledger proves it
-    g_mgc_slowdon.lot         = 1.0;    // 1 MGC micro = 10oz = $10/pt (smallest unit)
+    g_mgc_slowdon.lot         = 1.0;    // LOT-GATE-OK: lot = CONTRACTS; 1 MGC micro = 10oz = $10/pt (smallest unit)
     // S-2026-07-11 GOLD PHASE 1b (roadmap deployment item 4): RE-CELLED 40/20 ->
     // 55/27. Phase 1 confirmed the wired system ran BOTH Donchian siblings on the
     // SAME 40/20 horizon (g_mgc_fastdon was bumped 20/10->40/20 on S-2026-06-23,
@@ -149,7 +149,7 @@ int main(int argc, char* argv[])
     // emission -- that is the honest contract value, not a size-up decision.
     g_mgc_volbrk.ledger_symbol = "MGC";
     g_mgc_volbrk.engine_tag    = "MgcVolBreakoutM30_imp2.0_stop1.5_trail3.0_BEoff";
-    g_mgc_volbrk.lot         = 1.0;    // 1 MGC micro = 10oz = $10/pt (smallest tradeable unit)
+    g_mgc_volbrk.lot         = 1.0;    // LOT-GATE-OK: lot = CONTRACTS; 1 MGC micro = 10oz = $10/pt (smallest tradeable unit)
     g_mgc_volbrk.min_qty     = 1.0;
     g_mgc_volbrk.qty_step    = 1.0;
     g_mgc_volbrk.max_spread  = 1.50;   // MGC futures pts (looser than spot gold $)
@@ -188,7 +188,7 @@ int main(int argc, char* argv[])
     //    that mis-scaled both cost and gross ~10x in dollars.
     g_mgc_tf_4h.enabled      = true;
     g_mgc_tf_4h.shadow_mode  = true;
-    g_mgc_tf_4h.lot          = 1.0;    // 1 MGC micro = 10 oz = $10/pt (tick_value_multiplier("MGC"))
+    g_mgc_tf_4h.lot          = 1.0;    // LOT-GATE-OK: lot = CONTRACTS; 1 MGC micro = 10 oz = $10/pt (tick_value_multiplier("MGC"))
     g_mgc_tf_4h.max_spread   = 1.50;   // MGC futures pts (matches volbrk/fastdon)
     g_mgc_tf_4h.LOSS_CUT_PCT = 1.5;
     g_mgc_tf_4h.cell_enable_mask   = 0xC9;
@@ -205,7 +205,7 @@ int main(int argc, char* argv[])
     omega::warmup_or_die(g_mgc_tf_4h, "MgcTF4h");
     g_mgc_tf_2h.enabled      = true;
     g_mgc_tf_2h.shadow_mode  = true;
-    g_mgc_tf_2h.lot          = 1.0;
+    g_mgc_tf_2h.lot          = 1.0;    // LOT-GATE-OK: lot = CONTRACTS; 1 MGC micro = 10oz = $10/pt (smallest unit)
     g_mgc_tf_2h.max_spread   = 1.50;
     // LOSS-CUT OFF on the MGC 2h -- NOT the spot 0.5%. Parity harness
     // (backtest/mgc_tf_feed_parity.cpp, production feed path over MGC 30m

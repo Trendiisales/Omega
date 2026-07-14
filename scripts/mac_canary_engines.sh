@@ -214,12 +214,16 @@ bash "$(dirname "$0")/persistence_audit.sh" || exit 1
 # the −$3,953 up-jump incident shipped XAUUSD engines at lot=1.0 — 100x the 0.01
 # desk convention — and NO gate existed to catch it. Any gold-symbol engine
 # (line mentions xau/gold/xag/mgc, case-insensitive) assigning .lot > 0.05 in
-# engine_init.hpp is a hard FAIL. Index engines ($-normalized lot 0.3-3.0
-# convention) are exempt by symbol. Deliberate exceptions: annotate the line
-# with LOT-GATE-OK and the evidence.
+# engine_init.hpp OR omega_main.hpp is a hard FAIL. Index engines ($-normalized
+# lot 0.3-3.0 convention) are exempt by symbol. Deliberate exceptions: annotate
+# the line with LOT-GATE-OK and the evidence.
+# S-2026-07-14 (latent-class sweep P1-2): omega_main.hpp added — the 5 MGC
+# engines configured there (lot = CONTRACTS, 1.0 = 1 micro, intentional +
+# annotated) were invisible to this gate, so a fat-finger lot=100 there would
+# have shipped unchecked.
 echo ""
 echo "[mac-canary-engines] gold lot-size gate (XAU/gold .lot <= 0.05)..."
-LOT_VIOLATIONS=$(grep -nE "\.lot *= *[0-9.]+" include/engine_init.hpp \
+LOT_VIOLATIONS=$(grep -nE "\.lot *= *[0-9.]+" include/engine_init.hpp include/omega_main.hpp \
   | grep -iE "xau|gold|xag|mgc" \
   | grep -v "LOT-GATE-OK" \
   | awk '{ if (match($0, /\.lot *= *[0-9.]+/)) { v=substr($0,RSTART,RLENGTH); sub(/.*= */,"",v); if (v+0 > 0.05) print } }')
