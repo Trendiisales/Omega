@@ -139,15 +139,30 @@ if (-not (Test-Path $actLog)) {
         }
     }
     if ($null -eq $postedExec -or ($null -ne $statAgeMin -and $statAgeMin -ge $actStaleMin)) {
-        if ($marketClosed) {
+        # S-2026-07-14: two proven false-RED paths, both "no stats visible yet", not a frozen loop:
+        #   (a) UTC-midnight: poll lands seconds after 00:00; first ENG-DISPATCH-STATS of the new
+        #       day's log arrives ~1min in, AND the S-07-08 prev-day fallback is dead on arrival
+        #       because OmegaLogRotate zips yesterday's .log to logs/archive/*.zip AT midnight.
+        #   (b) deploy restart: service is down 10-25min during rebuild, so the last visible stats
+        #       line is older than $actStaleMin at the first poll after boot.
+        # Grace: if the Omega process OR today's log is younger than the staleness threshold, the
+        # stats simply haven't landed yet -> INFO, no alarm. A GENUINE freeze outlives the grace
+        # (process old + log old + stats still absent/stale) and REDs exactly as before.
+        $omegaProc = Get-Process Omega -ErrorAction SilentlyContinue
+        $upMin = if ($omegaProc) { [int]((Get-Date) - $omegaProc.StartTime).TotalMinutes } else { 99999 }
+        $logAgeMin = [int]((Get-Date) - (Get-Item $actLog).CreationTime).TotalMinutes
+        $ageTxt = if ($null -ne $statAgeMin) { "${statAgeMin}min old" } else { "none found (log created ${logAgeMin}min ago)" }
+        if ($upMin -lt $actStaleMin -or $logAgeMin -lt $actStaleMin) {
+            $reasons += "[INFO] ACTIVITY: dispatch stats $ageTxt -- within boot/rollover grace (proc up ${upMin}min, log ${logAgeMin}min); first stats land ~1min after boot"
+        } elseif ($marketClosed) {
             # Weekend / market shut: no ticks -> dispatch loop idle by design (operator: "should not
             # alarm on weekend, only crypto is running"). AMBER = surfaced, NO alarm. RED resumes at
             # market open (Sun 22:00 UTC) so a genuine weekday freeze still fires.
             if ($overall -eq 'GREEN') { $overall = 'AMBER' }
-            $reasons += "[AMBER] ACTIVITY: no/stale dispatch stats (${statAgeMin}min) -- EXPECTED, Omega markets closed (weekend); only crypto (separate system) runs. RED resumes at market open."
+            $reasons += "[AMBER] ACTIVITY: no/stale dispatch stats ($ageTxt) -- EXPECTED, Omega markets closed (weekend); only crypto (separate system) runs. RED resumes at market open."
         } else {
             $overall = 'RED'
-            $reasons += "[RED] ACTIVITY: dispatch stats stale (${statAgeMin}min old) -- ENG-DISPATCH loop frozen while process alive"
+            $reasons += "[RED] ACTIVITY: dispatch stats stale ($ageTxt) -- ENG-DISPATCH loop frozen while process alive"
         }
     }
 }
