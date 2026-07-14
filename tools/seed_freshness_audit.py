@@ -78,11 +78,58 @@ def survivor_seeds(repo):
 #           -o backtest/calibrate_risk_thresholds   (MSVC: cl /O2 /std:c++17 /Iinclude ...)
 #   ./backtest/calibrate_risk_thresholds            (writes data/risk_monitor_thresholds.csv)
 REQUIRED_GENERATED = ["data/risk_monitor_thresholds.csv"]
+
+# ===== SEED REGISTRY (structural NO-REFRESH-PATH gate, S-2026-07-14) =========================
+# Operator mandate: "never have these seed / staleness issues again". Freshness checking alone
+# can NOT deliver that -- USTEC.F_H4 and GBPUSD_H1 rotted 90+d because nothing REFRESHED them
+# and (separately) nothing AUDITED them. This gate closes the first class STRUCTURALLY:
+#   every ACTIVE seed must either (a) be refreshed by tools/seed_refresh.py -- derived by
+#   IMPORTING its tables, never a hand-copied list -- or (b) carry an explicit entry below
+#   naming WHO refreshes it instead. A seed with neither = exit 3, and the check runs in
+#   scripts/mac_canary_engines.sh (--registry-only), so a new engine whose seed has no
+#   refresh path cannot even be COMMITTED, let alone rot in production.
+KNOWN_UNREFRESHED = {
+    # basename -> who keeps it fresh instead of seed_refresh.py (or why age is by-design)
+    "warmup_XAUUSD_M1.csv":   "monthly histdata manual pull; 45d override above; NO IBKR M1 recipe "
+                              "by design (MGC spread scale != spot XAUUSD would misfire the slot gate)",
+    "sp500_long_close.csv":   "owned by OmegaStockMoverFeed nightly VPS task; watched by "
+                              "feeds_selftest.py (max 26h) -- a second refresher would fight it",
+    "mgc_30m_live.csv":       "LIVE stream file appended by tools/mgc_live_bars.py (registered VPS "
+                              "task); absent on Mac by design; freshness is the producer task's job",
+}
+
+def refreshed_filenames(repo):
+    """Basenames seed_refresh.py refreshes nightly, derived from ITS OWN tables via import.
+    Returns None if seed_refresh.py can't be loaded (callers must FAIL CLOSED on None --
+    a broken refresher script is itself a seed emergency, not a skip)."""
+    import importlib.util
+    p = os.path.join(repo, "tools", "seed_refresh.py")
+    try:
+        spec = importlib.util.spec_from_file_location("_seed_refresh_tables", p)
+        m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+        out = set()
+        for _sym, _tf, name, _keep in m._REBUILD_TARGETS: out.add(name)
+        for tf in m._GOLD_TFS: out.add(f"warmup_XAUUSD_{tf}.csv")
+        out |= {"warmup_XAUUSD_H4.csv", "tsmom_warmup_H1.csv",       # gold-section extras
+                "mgc_h1_hist.csv", "mgc_30m_hist.csv", "mgc_h4_hist.csv"}
+        for sym, (_con, tfs) in m._INDEX.items():
+            for tf in tfs: out.add(f"warmup_{sym}_{tf}.csv")
+        for sym, tfs in m._FOREX.items():
+            for tf in tfs: out.add(f"warmup_{sym}_{tf}.csv")
+        for _src, dst in m._ALIASES: out.add(dst)
+        return out
+    except Exception as e:
+        print(f"[P1] cannot derive refresh set from {p}: {e}")
+        return None
+
 ALLOW_MISSING_GENERATED = False
+REGISTRY_ONLY = False
 for i,a in enumerate(sys.argv):
     if a == "--repo" and i+1 < len(sys.argv): REPO = sys.argv[i+1]
     if a == "--max-age-days" and i+1 < len(sys.argv): MAX_AGE_DAYS = int(sys.argv[i+1])
     if a == "--allow-missing-generated": ALLOW_MISSING_GENERATED = True
+    if a == "--registry-only": REGISTRY_ONLY = True   # structural checks only (mac canary: deterministic, no time-rot)
+IS_VPS = os.path.isdir(r"C:\Omega\logs")   # on Mac, nightly-refreshed seeds lag as git snapshots by design
 
 def threshold_for(path):
     for rx, d in OVERRIDES:
@@ -137,7 +184,7 @@ def last_ts(path):
     return None
 
 now = time.time()
-stale, ok, missing, skipped = [], [], [], []
+stale, ok, missing, skipped, snapshot_lag = [], [], [], [], []
 def resolve(rel):
     for cand in (os.path.join(REPO, rel), rel):
         if os.path.exists(cand): return cand
@@ -150,35 +197,75 @@ def resolve(rel):
         if hits: return hits[0]
     return None
 
-for rel in sorted(seed_paths):
-    if rel.replace("\\", "/") in REQUIRED_GENERATED:  # not a bar-series seed; checked separately below
-        continue
-    cand = resolve(rel)
-    if cand is None: missing.append(rel); continue
-    ts = last_ts(cand)
-    if ts is None: missing.append(rel); continue
-    age_d = (now - ts) / 86400.0
-    thr = threshold_for(rel)
-    rec = (rel, age_d, thr, datetime.datetime.fromtimestamp(ts, datetime.timezone.utc).strftime("%Y-%m-%d"))
-    if age_d > thr and DISABLED.search(rel):        # stale but owned by a disabled engine -> harmless
-        skipped.append(rec); continue
-    (stale if age_d > thr else ok).append(rec)
+# ---- STRUCTURAL registry gate (runs FIRST; exit 3 beats every freshness verdict) ----
+refreshed = refreshed_filenames(REPO)
+no_refresh_path, orphan_refresh = [], []
+if refreshed is None:
+    no_refresh_path.append(("<tools/seed_refresh.py unloadable>", "refresh set underivable -- fail closed"))
+else:
+    active_basenames = set()
+    for rel in seed_paths:
+        r = rel.replace("\\", "/")
+        if r in REQUIRED_GENERATED or DISABLED.search(r): continue
+        base = os.path.basename(r)
+        active_basenames.add(base)
+        if base not in refreshed and base not in KNOWN_UNREFRESHED:
+            no_refresh_path.append((rel, "no seed_refresh.py entry and no KNOWN_UNREFRESHED owner"))
+    # refreshed-but-consumed-by-nobody: waste/config-rot signal, warn only (mirror files like
+    # GER40_D1_idx are alias targets whose consumer names the alias, so check aliases too)
+    for base in sorted(refreshed - active_basenames):
+        if base not in {os.path.basename(p) for p in seed_paths}:
+            orphan_refresh.append(base)
+
+if not REGISTRY_ONLY:
+    for rel in sorted(seed_paths):
+        if rel.replace("\\", "/") in REQUIRED_GENERATED:  # not a bar-series seed; checked separately below
+            continue
+        cand = resolve(rel)
+        if cand is None: missing.append(rel); continue
+        ts = last_ts(cand)
+        if ts is None: missing.append(rel); continue
+        age_d = (now - ts) / 86400.0
+        thr = threshold_for(rel)
+        rec = (rel, age_d, thr, datetime.datetime.fromtimestamp(ts, datetime.timezone.utc).strftime("%Y-%m-%d"))
+        if age_d > thr and DISABLED.search(rel):        # stale but owned by a disabled engine -> harmless
+            skipped.append(rec); continue
+        # Mac working copies of NIGHTLY-VPS-REFRESHED seeds lag as git snapshots by design --
+        # that lag is bounded (any cold deploy is followed by the next 23:30 refresh) and used
+        # to bury the REAL signals under ~20 false "STALE" lines. Only the VPS copy's age is
+        # load-bearing. Seeds with NO refresh path stay hard-stale everywhere.
+        if age_d > thr and not IS_VPS and refreshed is not None and os.path.basename(rel) in refreshed:
+            snapshot_lag.append(rec); continue
+        (stale if age_d > thr else ok).append(rec)
 
 # REQUIRED-GENERATED check: exists + at least one data row beyond the header.
 req_missing = []
-for rel in REQUIRED_GENERATED:
-    p = os.path.join(REPO, rel)
-    rows = 0
-    try:
-        rows = sum(1 for ln in open(p, errors="ignore") if ln.strip())
-    except Exception:
-        pass
-    if rows < 2: req_missing.append((rel, rows))
+if not REGISTRY_ONLY:
+    for rel in REQUIRED_GENERATED:
+        p = os.path.join(REPO, rel)
+        rows = 0
+        try:
+            rows = sum(1 for ln in open(p, errors="ignore") if ln.strip())
+        except Exception:
+            pass
+        if rows < 2: req_missing.append((rel, rows))
 
-print("===== SEED-FRESHNESS AUDIT =====")
-print(f"active seed CSVs found: {len(seed_paths)}  ok: {len(ok)}  STALE(enabled): {len(stale)}  skipped(disabled-engine): {len(skipped)}  missing/unreadable: {len(missing)}  missing-REQUIRED(generated): {len(req_missing)}\n")
+print("===== SEED-FRESHNESS AUDIT =====" if not REGISTRY_ONLY else "===== SEED-REGISTRY STRUCTURAL AUDIT (--registry-only) =====")
+if REGISTRY_ONLY:
+    print(f"active seed CSVs found: {len(seed_paths)}  refreshed-nightly: {len(refreshed or [])}  allowlisted-unrefreshed: {len(KNOWN_UNREFRESHED)}  NO-REFRESH-PATH: {len(no_refresh_path)}\n")
+else:
+    print(f"active seed CSVs found: {len(seed_paths)}  ok: {len(ok)}  STALE(enabled): {len(stale)}  snapshot-lag(Mac,VPS-refreshed): {len(snapshot_lag)}  skipped(disabled-engine): {len(skipped)}  missing/unreadable: {len(missing)}  missing-REQUIRED(generated): {len(req_missing)}  NO-REFRESH-PATH: {len(no_refresh_path)}\n")
+for rel, why in no_refresh_path:
+    print(f"  [NO-REFRESH-PATH] {rel}  -- {why}.")
+    print( "                    Every active seed MUST be refreshed by tools/seed_refresh.py or carry a")
+    print( "                    KNOWN_UNREFRESHED entry naming its owner. This is how USTEC.F_H4/GBPUSD_H1")
+    print( "                    rotted 90+d unseen. Add the refresh recipe (preferred) or the entry.")
+for base in orphan_refresh:
+    print(f"  [orphan-refresh] {base}  -- refreshed nightly but NO active engine reads it (waste / roster drift; consider dropping the recipe)")
 for rel, age, thr, d in sorted(stale, key=lambda r:-r[1]):
     print(f"  [SEED-STALE] {rel}  last bar {d}  = {age:.0f}d old (> {thr}d)  -> ENGINE BOOTS BLIND, gate may misfire")
+for rel, age, thr, d in sorted(snapshot_lag, key=lambda r:-r[1]):
+    print(f"  [snapshot-lag] {rel}  {age:.0f}d (> {thr}d) -- Mac git snapshot of a nightly-VPS-refreshed seed; VPS copy is the load-bearing one. Re-collate: scp from omega-new + commit.")
 for rel, age, thr, d in sorted(skipped, key=lambda r:-r[1]):
     print(f"  [skipped-disabled] {rel}  {age:.0f}d old -- engine disabled, seed unread, harmless")
 for rel in missing:
@@ -192,6 +279,12 @@ for rel, age, thr, d in sorted(ok, key=lambda r:-r[1])[:8]:
     print(f"  [ok] {rel}  {age:.0f}d (<= {thr}d)")
 if len(ok) > 8: print(f"  ... +{len(ok)-8} more fresh")
 
+if no_refresh_path:
+    print(f"\n*** {len(no_refresh_path)} ACTIVE SEED(S) WITH NO REFRESH PATH -- structurally guaranteed to rot. FIX (recipe or allowlist entry). ***")
+    sys.exit(3)
+if REGISTRY_ONLY:
+    print(f"\nSeed registry structurally sound: every active seed has a refresh path or a named owner. ({len(orphan_refresh)} orphan-refresh warning(s).)")
+    sys.exit(0)
 if stale:
     print(f"\n*** {len(stale)} STALE SEED(S) on ENABLED engines -- a gate is operating on a price view detached from reality. FIX. ***")
     sys.exit(1)
@@ -200,5 +293,5 @@ if req_missing and not ALLOW_MISSING_GENERATED:
     sys.exit(2)
 if req_missing:
     print(f"\n[override] {len(req_missing)} required generated file(s) missing but --allow-missing-generated set.")
-print(f"\nAll enabled-engine seeds fresh. ({len(skipped)} disabled-engine seed(s) ignored.)")
+print(f"\nAll enabled-engine seeds fresh. ({len(skipped)} disabled-engine seed(s) ignored; {len(snapshot_lag)} Mac snapshot-lag warning(s).)")
 sys.exit(0)

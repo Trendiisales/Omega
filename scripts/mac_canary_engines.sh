@@ -230,4 +230,18 @@ if [ -n "$LOT_VIOLATIONS" ]; then
 fi
 echo "[mac-canary-engines] gold lot-size gate PASS"
 
+# SEED-REGISTRY STRUCTURAL GATE (added S-2026-07-14, operator: "never have these seed /
+# staleness issues again"): every ACTIVE warm-seed (string-literal AND dynamic Survivor
+# paths) must be refreshed by tools/seed_refresh.py or carry a KNOWN_UNREFRESHED owner
+# entry. --registry-only = structural only (no freshness), so this gate is deterministic
+# and can't false-fail a commit because of calendar rot. History: warmup_USTEC.F_H4 (94d)
+# and warmup_GBPUSD_H1 (94d, live FxLadder cell) both rotted because a seed could be ADDED
+# with no refresh path and nothing objected. Now the commit itself fails.
+echo ""
+echo "[mac-canary-engines] seed-registry structural gate (every active seed has a refresh path)..."
+python3 "$(dirname "$0")/../tools/seed_freshness_audit.py" --registry-only || {
+  echo "[mac-canary-engines] FAIL: seed-registry violation (see NO-REFRESH-PATH lines above)"
+  exit 1
+}
+
 exit 0

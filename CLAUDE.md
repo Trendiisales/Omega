@@ -233,6 +233,30 @@ Format conventions:
 per new engine. Missing `[SEED]` line = engine cold-warming = engine
 silent for days. Treat absence as a P1 — investigate before next ship.
 
+### Seed registry — structural gate (added S-2026-07-14, operator mandate)
+
+A seed CSV is not done when it exists — it must also STAY fresh. Every
+ACTIVE seed (string-literal references AND dynamic paths like
+SurvivorPortfolio's `seed_all()`) must be either:
+1. refreshed nightly by `tools/seed_refresh.py` (add the recipe to
+   `_REBUILD_TARGETS` / `_GOLD_TFS` / `_INDEX` / `_FOREX` / `_ALIASES`), or
+2. named in `KNOWN_UNREFRESHED` in `tools/seed_freshness_audit.py` with
+   the owner that refreshes it instead.
+
+`tools/seed_freshness_audit.py --registry-only` enforces this (exit 3 on
+violation) and runs inside `scripts/mac_canary_engines.sh`, so a new
+engine whose seed has no refresh path **fails the pre-commit canary**.
+The audit is the SINGLE copy — `seed_refresh.py` phase 3 delegates to it
+(the former inline duplicate drifted). Freshness semantics: VPS copy is
+load-bearing (stale = deploy abort); Mac git snapshots of nightly-VPS-
+refreshed seeds report as `[snapshot-lag]` warnings, re-collated via scp
+from omega-new + commit (last full collation S-2026-07-14).
+History: warmup_USTEC.F_H4 (2 ACTIVE Survivor cells, dynamic path — audit-
+blind) and warmup_GBPUSD_H1 (live FxLadder cell, hidden by the FX skip-
+regex) both rotted 90+ days because nothing structural objected; and
+data/mgc_h4_hist.csv claimed "regenerated at deploy" while NO regenerator
+existed. All three classes are now caught at commit time.
+
 History: this rule originated from the 2026-05-20 incident where 15
 new engines (XauTurtleD1, XauDojiRejD1, EurGbpPairsEngine, etc.) all
 sat idle on deploy. Fixed by adding seed methods + bundled CSVs in
