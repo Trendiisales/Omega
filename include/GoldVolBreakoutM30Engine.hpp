@@ -85,6 +85,7 @@
 #include <cstdint>
 #include <cstdio>
 #include "AuroraGate.hpp"
+#include "GoldExecSpreadBasis.hpp"  // S-2026-07-14: XAUUSD cost-gate spread basis (exec = IBKR futures book)
 #include <deque>
 #include <fstream>
 #include <functional>
@@ -394,7 +395,14 @@ private:
             // S-2026-07-11 GOLD PHASE 1: gate on ledger_symbol -- spot instance
             // keeps the XAUUSD row; the MGC instance uses the explicit MGC row
             // ($10/pt/contract) instead of the ~10x-misscaled spot proxy.
-            const double spread_pts = ask - bid;
+            // S-2026-07-14 (sweep P1-3): the SPOT instance's bid/ask are BlackBull
+            // FEED quotes while execution is IBKR futures -- pass the exchange
+            // spread basis, not the feed markup. The MGC instance's bid/ask come
+            // from the live MGC book, i.e. the real exchange spread: keep it.
+            // See GoldExecSpreadBasis.hpp.
+            const double spread_pts = (ledger_symbol == "XAUUSD")
+                ? omega::kGoldExecSpreadPts
+                : (ask - bid);
             if (!ExecutionCostGuard::is_viable(ledger_symbol.c_str(), spread_pts, sl_dist, lot, 1.5)) return;
         }
         // AuroraGate: MGC-tape order-flow gate (long-only breakout). Fail-open.

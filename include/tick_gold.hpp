@@ -8,6 +8,7 @@
 #include "gold_coordinator.hpp"
 #include "PortfolioGuard.hpp"  // S48: portfolio-level kill-switch + sizing helpers
 #include "GoldTrendMimicLadder.hpp"  // S-2026-07-14: XAU-H1 regime gate feed at H1 close
+#include "GoldExecSpreadBasis.hpp"   // S-2026-07-14: XAUUSD cost-gate spread basis (exec = IBKR futures book, not the BlackBull feed quote)
 
 // -- XAUUSD -------------------------------------------------
 static void on_tick_gold(
@@ -670,9 +671,13 @@ static void on_tick_gold(
                           << " winner=" << gold_sdec.winner
                           << "\033[0m\n";
                 // Cost guard: ensure gold TP covers spread + commission + slippage
+                // S-2026-07-14 (sweep P1-3): spread basis = IBKR futures book, NOT
+                // (ask - bid) from the BlackBull feed quote — the XAUUSD cost row
+                // assumes the tight exchange spread is supplied; the feed's spot
+                // markup was silently inflating the hurdle. See GoldExecSpreadBasis.hpp.
                 {
                     const double gold_tp_dist = gsig.tp_ticks * 0.10;  // ticks ? pts (gold tick = $0.10)
-                    if (!ExecutionCostGuard::is_viable("XAUUSD", ask - bid, gold_tp_dist, gold_lot)) {
+                    if (!ExecutionCostGuard::is_viable("XAUUSD", omega::kGoldExecSpreadPts, gold_tp_dist, gold_lot)) {
                         g_telemetry.IncrCostBlocked();
                     } else {
                         // ── Cross-engine dedup (S20 2026-04-25) ────────────────────────
@@ -1512,8 +1517,11 @@ static void on_tick_gold(
                 ? std::min(base_bg_lot * PYRAMID_SIZE_MULT, 0.20)  // cap pyramid lot at 0.20
                 : base_bg_lot;
             // Cost guard: bracket TP dist = SL dist * RR
+            // S-2026-07-14 (sweep P1-3): exchange spread basis, not the BlackBull
+            // feed quote — see GoldExecSpreadBasis.hpp. compute_size above keeps the
+            // live feed spread (sizing conservatism is fine; the VIABILITY hurdle is not).
             const double bg_tp_dist = std::fabs(bgsigs.long_entry - bgsigs.long_sl) * g_bracket_gold.RR;
-            const bool bg_cost_ok = ExecutionCostGuard::is_viable("XAUUSD", ask - bid, bg_tp_dist, bg_lot);
+            const bool bg_cost_ok = ExecutionCostGuard::is_viable("XAUUSD", omega::kGoldExecSpreadPts, bg_tp_dist, bg_lot);
             if (!bg_cost_ok) {
                 g_telemetry.IncrCostBlocked();
             } else {

@@ -46,6 +46,7 @@
 #include <deque>
 #include <iostream>
 #include <unordered_set>
+#include "GoldExecSpreadBasis.hpp"  // S-2026-07-14: XAUUSD cost-gate spread basis (exec = IBKR futures book)
 #include "OmegaTradeLedger.hpp"
 #include "OmegaCostGuard.hpp"  // see GoldEngineStack::on_tick() pos_mgr_.open() gate
 #include "GoldD1TrendState.hpp"  // D1 EMA200 regime gate for DonchianBreakout short path
@@ -4239,7 +4240,13 @@ public:
                 static constexpr double GS_TICK_SIZE = 0.10;
                 const double tp_dist_px = tp_ticks_eff * GS_TICK_SIZE;
                 const double lot_lp     = (gs.size > 0.0) ? gs.size : 0.01;
-                if (!ExecutionCostGuard::is_viable("XAUUSD", spread,
+                // S-2026-07-14 (sweep P1-3): spread basis = IBKR futures book
+                // (omega::kGoldExecSpreadPts), NOT the caller's BlackBull feed
+                // `spread` — the XAUUSD cost row assumes the tight exchange
+                // spread is supplied. pos_mgr_.open() below keeps the feed
+                // spread (fill/telemetry realism); only the viability hurdle
+                // moves to the execution venue. See GoldExecSpreadBasis.hpp.
+                if (!ExecutionCostGuard::is_viable("XAUUSD", omega::kGoldExecSpreadPts,
                                                   tp_dist_px, lot_lp, 1.5)) {
                     return GoldSignal{};
                 }
