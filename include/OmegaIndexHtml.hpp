@@ -1583,19 +1583,24 @@ function drawEquity(){var cv=el("eqc");if(!cv)return;/* SHADOW EQUITY panel remo
   +'<span>WR <span class="w">'+fmt2(wr,1)+'%</span></span><span>maxDD <span class="r">'+fmt$(mdd)+'</span></span>'
   +'<span>avg <span class="w">'+fmt$(net/rs.length)+'</span></span>';}
 
-function classOf(sym){if(/XAU|MGC|GOLD/i.test(sym))return 'GOLD';
+/* heat-panel symbol grouping. RENAMED from classOf (S-2026-07-14x): this later
+   declaration silently CLOBBERED the 07-11 per-asset-class classOf(eng,sym) above
+   (last function declaration wins), so every ledger row classified 'GOLD'/'INDEX'
+   uppercase -> cls[c] undefined -> dropped -> first real close (+$25.29
+   XAU_4h_DonchN20) showed as "unclassified" instead of folding into the GOLD chip. */
+function heatClassOf(sym){if(/XAU|MGC|GOLD/i.test(sym))return 'GOLD';
  if(/US500|USTEC|NAS|DJ30|GER|UK100|ESTX|US30/i.test(sym))return 'INDEX';
  if(/USD|EUR|GBP|AUD|NZD|JPY/.test(sym)&&sym.length===6)return 'FX';
  if(/XAG|SILVER/i.test(sym))return 'SILVER';
  if(/OIL|BRENT|CL/i.test(sym))return 'OIL';return 'OTHER';}
 function drawHeat(){var rs=winRows();var by={};
- rs.forEach(function(r){var k=r.eng||'?';if(!by[k])by[k]={n:0,pnl:0,sym:r.sym};by[k].n++;by[k].pnl+=r.pnl;});
+)OMEGAD8"
+R"OMEGAD9( rs.forEach(function(r){var k=r.eng||'?';if(!by[k])by[k]={n:0,pnl:0,sym:r.sym};by[k].n++;by[k].pnl+=r.pnl;});
  var ks=Object.keys(by);if(!ks.length){el('heat').innerHTML='<span class="d">no engine activity in window</span>';return;}
- var groups={};ks.forEach(function(k){var g=classOf(by[k].sym);(groups[g]=groups[g]||[]).push(k);});
+ var groups={};ks.forEach(function(k){var g=heatClassOf(by[k].sym);(groups[g]=groups[g]||[]).push(k);});
  var mxAbs=1;ks.forEach(function(k){mxAbs=Math.max(mxAbs,Math.abs(by[k].pnl));});
  var order=['GOLD','INDEX','FX','SILVER','OIL','OTHER'],h='';
-)OMEGAD8"
-R"OMEGAD9( order.forEach(function(g){if(!groups[g])return;
+ order.forEach(function(g){if(!groups[g])return;
   groups[g].sort(function(a,b){return by[b].pnl-by[a].pnl;});
   h+='<div class="lbl" style="margin:6px 0 3px">'+g+(g==='FX'?' — BE-floor companion (shadow)':'')+' <span style="color:var(--t3)">'+groups[g].length+' active</span></div>'
    +'<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(76px,1fr));gap:3px">';
@@ -1780,15 +1785,15 @@ function drawPR(){var cv=el("prc");
     newest exit. Trades come from the shadow ledger (ROWS). ── */
  (function(){
   if(typeof ROWS==='undefined'||!ROWS.length)return;
-  var t0=bars[0][0],t1=bars[n-1][0]+ (bars[1]?bars[1][0]-bars[0][0]:300);
+)OMEGAD9"
+R"OMEGAD10(  var t0=bars[0][0],t1=bars[n-1][0]+ (bars[1]?bars[1][0]-bars[0][0]:300);
   function sm(sym){return sym===PRSYM||sym===PRSYM+'.F'||(PRSYM==='US500'&&sym==='US500.F')||(PRSYM==='USTEC'&&sym==='USTEC.F');}
   function bx(ts){var lo=0,hi=n-1;
    while(lo<hi){var mid=(lo+hi)>>1;if(bars[mid][0]<ts)lo=mid+1;else hi=mid;}
    return lo;}
   var vis=ROWS.filter(function(r){return sm(r.sym)&&r.ets&&r.epx&&!(r.ets>t1||r.ts<t0);});
   var nx=0,exVis=0;
-)OMEGAD9"
-R"OMEGAD10(  vis.forEach(function(r){if(r.ts<=t1){exVis++;if(r.ts>nx)nx=r.ts;}});
+  vis.forEach(function(r){if(r.ts<=t1){exVis++;if(r.ts>nx)nx=r.ts;}});
   window._prNewest=nx;
   if(!vis.length){   /* no closes inside the visible bar window -- say when the last one was */
    var lastR=null;

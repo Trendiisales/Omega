@@ -1569,7 +1569,12 @@ function drawEquity(){var cv=el("eqc");if(!cv)return;/* SHADOW EQUITY panel remo
   +'<span>WR <span class="w">'+fmt2(wr,1)+'%</span></span><span>maxDD <span class="r">'+fmt$(mdd)+'</span></span>'
   +'<span>avg <span class="w">'+fmt$(net/rs.length)+'</span></span>';}
 
-function classOf(sym){if(/XAU|MGC|GOLD/i.test(sym))return 'GOLD';
+/* heat-panel symbol grouping. RENAMED from classOf (S-2026-07-14x): this later
+   declaration silently CLOBBERED the 07-11 per-asset-class classOf(eng,sym) above
+   (last function declaration wins), so every ledger row classified 'GOLD'/'INDEX'
+   uppercase -> cls[c] undefined -> dropped -> first real close (+$25.29
+   XAU_4h_DonchN20) showed as "unclassified" instead of folding into the GOLD chip. */
+function heatClassOf(sym){if(/XAU|MGC|GOLD/i.test(sym))return 'GOLD';
  if(/US500|USTEC|NAS|DJ30|GER|UK100|ESTX|US30/i.test(sym))return 'INDEX';
  if(/USD|EUR|GBP|AUD|NZD|JPY/.test(sym)&&sym.length===6)return 'FX';
  if(/XAG|SILVER/i.test(sym))return 'SILVER';
@@ -1577,7 +1582,7 @@ function classOf(sym){if(/XAU|MGC|GOLD/i.test(sym))return 'GOLD';
 function drawHeat(){var rs=winRows();var by={};
  rs.forEach(function(r){var k=r.eng||'?';if(!by[k])by[k]={n:0,pnl:0,sym:r.sym};by[k].n++;by[k].pnl+=r.pnl;});
  var ks=Object.keys(by);if(!ks.length){el('heat').innerHTML='<span class="d">no engine activity in window</span>';return;}
- var groups={};ks.forEach(function(k){var g=classOf(by[k].sym);(groups[g]=groups[g]||[]).push(k);});
+ var groups={};ks.forEach(function(k){var g=heatClassOf(by[k].sym);(groups[g]=groups[g]||[]).push(k);});
  var mxAbs=1;ks.forEach(function(k){mxAbs=Math.max(mxAbs,Math.abs(by[k].pnl));});
  var order=['GOLD','INDEX','FX','SILVER','OIL','OTHER'],h='';
  order.forEach(function(g){if(!groups[g])return;
