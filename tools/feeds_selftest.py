@@ -46,7 +46,10 @@ VPS_HOST = "omega-new"
 # moment it happens (RED), not 3 days downstream. State==Disabled => RED; also flags a
 # task that never ran (last=1999). All are re-armed with StartWhenAvailable so a missed
 # fire (reboot/migration) auto-catches-up instead of waiting for the next weekday.
-CRITICAL_FEED_TASKS = ["OmegaStockMoverFeed", "OmegaSeedRefresh", "OmegaMacroGoldGate"]
+CRITICAL_FEED_TASKS = ["OmegaStockMoverFeed", "OmegaSeedRefresh", "OmegaMacroGoldGate",
+                       # S-2026-07-14 sweep P1-1: vix_term_ratio.txt + index_regime.txt
+                       # producer (fetch_macro_regime.py) — was never scheduled anywhere.
+                       "OmegaMacroRegime"]
 
 
 def _easter(year: int) -> dt.date:

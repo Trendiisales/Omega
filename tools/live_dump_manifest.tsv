@@ -23,3 +23,8 @@ index_mkt_regime_h1.csv	120	hourly index risk-off gate
 # producer is known a day before the engine silently reverts.
 macro/macro_gold_gate.tsv	1560	daily macro hostile-regime gate producer (OmegaMacroGoldGate 23:00 UTC; engine fails safe at 36h)
 ../data/rdagent/sp500_long_close.csv	1560	bigcap stockmover daily close feed (OmegaStockMoverFeed; upjump ladder goes blind-quiet if dead)
+# S-2026-07-14 latent-class sweep P1-1: these two producers existed UNSCHEDULED since
+# birth — gates ran permanently inert on stale files (engines degrade to ungated/risk-on
+# past 4d, so nothing halted). Alert at 26h = producer death known ~3d before gate dies.
+../data/index_regime.txt	1560	daily index macro risk-off gate feed (OmegaMacroRegime 21:30 UTC; IndexRiskGate fails safe risk-on at 4d)
+../data/vix_term_ratio.txt	1560	daily VIX term-structure gate feed (OmegaMacroRegime 21:30 UTC; 6 IndexSeasonal engines degrade to UNGATED at 4d)
