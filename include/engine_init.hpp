@@ -6451,11 +6451,14 @@ static void init_engines(const std::string& cfg_path)
         // intentional for weekend safety.
 
         // ---- FX session-windowed engines (audit-fixes-37 + 41 cohort) ----
-        g_engine_heartbeat.register_engine("EurusdLondonOpen",   true,  600,  6,  9);
-        g_engine_heartbeat.register_engine("GbpusdLondonOpen",   true,  600,  7, 10);
-        g_engine_heartbeat.register_engine("UsdjpyAsianOpen",    true,  600,  0,  4);
-        g_engine_heartbeat.register_engine("AudusdSydneyOpen",   true,  600, 22,  2);  // wraparound
-        g_engine_heartbeat.register_engine("NzdusdAsianOpen",    true,  600, 22,  4);  // wraparound
+        // S-2026-07-14: Eurusd/Gbpusd/Usdjpy/Audusd/Nzdusd session-engine
+        //   heartbeat registrations CULLED (operator order). The 5 engines were
+        //   removed from the tick path 2026-06-29 ("no FX" directive, see
+        //   tick_fx.hpp header) but these hardcoded live_required=true rows
+        //   stayed behind with ZERO pulse call sites -> guaranteed false
+        //   HEARTBEAT-MISS spam every London/Asia session window since Jun-29.
+        //   FX ticks themselves flow fine; this was never a feed problem.
+        //   Re-register ONLY together with a re-wired tick path.
 
         // ---- Index flow + macro engines (NY+London core) ----------------
         // S11 P3b: HybridSP / HybridNQ / HybridUS30 / HybridNAS100 heartbeat
