@@ -1737,6 +1737,39 @@ static void init_engines(const std::string& cfg_path)
                 c.legs={{"T",0.08},{"W",0.20}};
                 c.arm_pct=0.50; c.lc_pct=2.0; c.cap_bars=12; c.rt_cost_bp=5.0; c.be_entry_pct=0.10; c.pend_bars=12;
                 c.notional=40000.0; c.lot=1.0; gm.add(std::move(c)); }  // LOT-GATE-OK shadow book; lot inert until live flip
+            // ── S-2026-07-14 sub-30m BE-MIMICS (operator re-open order). The prior
+            // be0.10/arm<=0.5 grid was a backtested NO (10m 0/216; 15m close-grade
+            // survivors collapsed at 1m truth). NEW BASIS = the untested arm
+            // dimension, validated at 1m INTRABAR TRUTH ONLY — no close-grade column
+            // exists in this study, so the optimism that faked the first 15m pass is
+            // structurally absent (backtest/gold_sub30_mimic_1m_bt.cpp on the REAL
+            // DUMP_ENTRIES streams, certified xau_1m splice, 5bp + 2x stress;
+            // findings backtest/GOLD_SUB30M_MIMIC_RECHECK_2026-07-14.md). The
+            // arm>=2.0 family beats these nets but is REJECTED: the trail never
+            // arms -> a no-trail time-stop trend clone riding the 2026 ramp, not a
+            // mimic. Gate = parent-study windows (6mo, WF split 2026-04-14, FULL
+            // check), n>=25, net>0 @1x+@2x, PF>=1.3, WF both halves +, both legs:
+            //   GoldDon15m arm1.0/lc0.5/cap96:  T +$10,789/+$8,415 PF1.80,
+            //     W +$11,266/+$8,892 PF1.84, WF +12.8/+9.8, worst -0.55%, DD 2.2%,
+            //     n102, FULL +, cap-insensitive 48-192 (the trail does the work).
+            //     DRAWDOWN-CANCEL: lc=0.5 ACTIVE and BEST (lc0.8 costs ~35% net at
+            //     2x the DD) — tightest cut in the wired mimic family.
+            //   GoldDon10m arm1.0/lc1.0/cap144: T +$14,028/+$9,227 PF1.37,
+            //     W +$12,475/+$7,674 PF1.33, WF +17.2/+12.4, worst -1.05%, DD 7.9%,
+            //     n205, FULL +, cap-insensitive above 144.
+            //     DRAWDOWN-CANCEL: lc=1.0 ACTIVE (lc1.5 fails the W leg at
+            //     neighboring cells — keep 1.0).
+            // SHADOW, judged STANDALONE; bull_only=false (both-ways parents).
+            // cap/pend in NATIVE parent bars (15m: 96=24h cap, 12=3h pend;
+            // 10m: 144=24h, 12=2h) — the engine feeds on_bar per native fine bar.
+            {   omega::GoldTrendMimicBook::Config c; c.trigger_tag="GoldDon15m"; c.live_sym="XAUUSD.M";
+                c.legs={{"T",0.08},{"W",0.20}};
+                c.arm_pct=1.00; c.lc_pct=0.5; c.cap_bars=96; c.rt_cost_bp=5.0; c.be_entry_pct=0.10; c.pend_bars=12;
+                c.notional=40000.0; c.lot=1.0; gm.add(std::move(c)); }  // LOT-GATE-OK shadow book; lot inert until live flip
+            {   omega::GoldTrendMimicBook::Config c; c.trigger_tag="GoldDon10m"; c.live_sym="XAUUSD.M";
+                c.legs={{"T",0.08},{"W",0.20}};
+                c.arm_pct=1.00; c.lc_pct=1.0; c.cap_bars=144; c.rt_cost_bp=5.0; c.be_entry_pct=0.10; c.pend_bars=12;
+                c.notional=40000.0; c.lot=1.0; gm.add(std::move(c)); }  // LOT-GATE-OK shadow book; lot inert until live flip
             // XAU-H1 SMA200 regime gate seed (bear-gate proviso): warm from boot, 1101-bar CSV.
             gm.seed_xau_regime_h1_csv(omega::resolve_seed_path("phase1/signal_discovery/warmup_XAUUSD_H1.csv"));
             // USTEC_4h_ZMR book REMOVED here S-2026-07-14 (intrabar FAIL, see verdict above).
@@ -1752,7 +1785,7 @@ static void init_engines(const std::string& cfg_path)
                     omega::TradeRecord tr; tr.engine=engine; tr.symbol=sym; tr.side=is_long?"LONG":"SHORT";
                     tr.entryPrice=entry_px; tr.exitPrice=exit_px; tr.size=lots; tr.entryTs=entry_ts; tr.exitTs=exit_ts;
                     tr.exitReason=reason; tr.pnl=(is_long?(exit_px-entry_px):(entry_px-exit_px))*lots; handle_closed_trade(tr); });
-            printf("[OMEGA-INIT][SEED] GoldTrendMimicLadder wired: 13 trigger books (XauTf4h 4-leg, XauTf2h 2-leg, MgcFastDon 2-leg, XauTfD1 2-leg, NAS100/US500/DJ30 Turtle 2-leg SHADOW; survivor XAU_4h_DonchN20 1-leg LIVE resting-exec 1 MGC + H1-SMA200 bear-gate; USTEC_4h_ZMR disabled S-14 intrabar FAIL; S-14bc BE-mimics be0.10 2-leg x5: MgcTf1h/GoldKeltM30/GoldTfBw1040/GoldTfBw20100/GoldDonH1 SHADOW), specific native feeds, deploy-forward\n");
+            printf("[OMEGA-INIT][SEED] GoldTrendMimicLadder wired: 15 trigger books (XauTf4h 4-leg, XauTf2h 2-leg, MgcFastDon 2-leg, XauTfD1 2-leg, NAS100/US500/DJ30 Turtle 2-leg SHADOW; survivor XAU_4h_DonchN20 1-leg LIVE resting-exec 1 MGC + H1-SMA200 bear-gate; USTEC_4h_ZMR disabled S-14 intrabar FAIL; S-14bc BE-mimics be0.10 2-leg x5: MgcTf1h/GoldKeltM30/GoldTfBw1040/GoldTfBw20100/GoldDonH1 SHADOW; S-14 sub-30m re-open x2: GoldDon15m arm1.0/lc0.5 + GoldDon10m arm1.0/lc1.0 SHADOW 1m-truth-validated), specific native feeds, deploy-forward\n");
             fflush(stdout);
         }
 

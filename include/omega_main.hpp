@@ -359,7 +359,7 @@ int main(int argc, char* argv[])
     g_gold_don_15m.time_stop_bars = 0;
     g_gold_don_15m.warm_bars = 80;  g_gold_don_15m.retire_net_pts = -760.0; // -2x BT maxDD 379pt
     g_gold_don_15m.engine_tag = "GoldDon15m_60_35_stop3.5ATR";
-    g_gold_don_15m.mimic_tag  = "";  // BE-mimic = open operator question (14t #6): validate per-parent first
+    g_gold_don_15m.mimic_tag  = "GoldDon15m";  // BE-mimic WIRED S-2026-07-14 (operator re-open; arm1.0/lc0.5 1m-truth PASS, see engine_init mimic block)
     g_gold_don_15m.seed_from_30m_csv("data/mgc_15m_hist.csv");
     g_engine_heartbeat.register_engine("GoldDon15m", g_gold_don_15m.enabled, 1800, 0, 24);
 
@@ -373,7 +373,7 @@ int main(int argc, char* argv[])
     g_gold_don_10m.time_stop_bars = 0;
     g_gold_don_10m.warm_bars = 80;  g_gold_don_10m.retire_net_pts = -980.0; // -2x BT maxDD 489pt
     g_gold_don_10m.engine_tag = "GoldDon10m_30_35_stop3ATR";
-    g_gold_don_10m.mimic_tag  = "";  // BE-mimic = open operator question (14t #6): validate per-parent first
+    g_gold_don_10m.mimic_tag  = "GoldDon10m";  // BE-mimic WIRED S-2026-07-14 (operator re-open; arm1.0/lc1.0 1m-truth PASS, see engine_init mimic block)
     g_gold_don_10m.seed_from_30m_csv("data/mgc_10m_hist.csv");
     g_engine_heartbeat.register_engine("GoldDon10m", g_gold_don_10m.enabled, 1800, 0, 24);
 
