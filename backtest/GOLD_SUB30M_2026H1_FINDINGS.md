@@ -14,7 +14,7 @@ ZERO cost the gross PnL is still negative (e.g. best-family KELT k1.0 t2.0: gros
 before the $48k of RT costs) — the mechanisms have no signal at that grain, friction just
 doubles the bleed. 5m is dead (best rows PF ≤ 1.14, and the best cell TF ema10/40 t2.5
 +$16.1k is FULL-history NEGATIVE −$5.0k = window fluke). 10m is the transition zone —
-13/18 configs positive @1×, best DON 40/20 +$9.6k PF 1.21 — but **zero rows clear PF≥1.3**.
+16/18 configs positive @1× (10/18 @2×), best DON 40/20 +$9.6k PF 1.21 — but **zero rows clear PF≥1.3**.
 At 15m the coarse grid shows ONE full gate pass (DON 55/27), and the mandated fine
 neighbourhood sweep proves it is a **genuine plateau, not a fluke: 25 of 30 cells in
 Nin 45–70 × Nout 20–35 are GATE-PASS+LEGS** (every fail is in the fast-exit Nout=20
@@ -118,7 +118,7 @@ All 18 cells PF ≤ 1.14 → 0 gate passes. The positive TF rows are carried by 
 leg and WF-H1; over the FULL history the best cell is negative — exactly the "window
 fluke" signature the ax gate exists to catch. 2× cost removes 52–81% of the best nets.
 
-### 10m — transition zone: 13/18 positive @1×, ZERO gate passes (PF ceiling 1.22)
+### 10m — transition zone: 16/18 positive @1×, ZERO gate passes (PF ceiling 1.22)
 
 | config (top rows) | n (/wk) | net1x | net2x | PF | L / S | WF h1/h2 | FULL 25mo |
 |---|---|---|---|---|---|---|---|
@@ -145,7 +145,7 @@ but PF 1.21–1.22 misses the 1.3 bar. KELT never recovers its long leg at this 
 | KELT k1.25 trail3.0 | 457 (17.6) | +7,183 | +5,309 | 1.12 | 34.4% | 2.9 | −1,221 / 5,550 | +5,612 / +1,571 | +5,408/+1,775 | PF fail | +11,565 PF 1.09 |
 | (11 remaining cells) | | −130…+10,233 | | 1.00–1.12 | | | | | 3 WF-H2 neg | all fail | |
 
-15/18 cells positive @1× at 15m — the mechanisms come alive here — but in the coarse grid
+17/18 cells positive @1× at 15m (15/18 @2×) — the mechanisms come alive here — but in the coarse grid
 the ax PF≥1.3 bar is cleared by exactly one cell. Hence the fine sweep below.
 
 ### 15m DON fine neighbourhood sweep (Nin 45–70 × Nout 20–35, `DON15_SWEEP=1`)
