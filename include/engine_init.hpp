@@ -2960,7 +2960,10 @@ static void init_engines(const std::string& cfg_path)
         // 2022-bear+). Override of the 06-26 bar-replay claim with faithful evidence.
         g_dj30_turtle_d1.accounting_guard_.enabled = false;
         g_spx_turtle_d1.accounting_guard_.enabled  = false;
-        printf("[OMEGA-INIT] DJ30+SPX D1 turtles: shadow=1 enabled=%d/%d acct_guard=OFF (faithful KILL S-2026-06-28; sl_atr=2.0 kept)\n",
+        // S-2026-07-14bp (external audit OM-M01): log ACTUAL shadow_mode -- the old
+        // hardcoded "shadow=1" lied after the S-2026-07-01 live cutover set both false.
+        printf("[OMEGA-INIT] DJ30+SPX D1 turtles: shadow=%d/%d enabled=%d/%d acct_guard=OFF (faithful KILL S-2026-06-28; sl_atr=2.0 kept)\n",
+               (int)g_dj30_turtle_d1.shadow_mode, (int)g_spx_turtle_d1.shadow_mode,
                (int)g_dj30_turtle_d1.enabled, (int)g_spx_turtle_d1.enabled);
 
         // ── Ger40KeltnerH1Engine (S41 2026-05-30) ───────────────────────────
@@ -7756,7 +7759,10 @@ static void init_engines(const std::string& cfg_path)
     g_giveback_guard.gate_usd  = 40.0;
     g_giveback_guard.trail     = 0.20;
     g_giveback_guard.stall_sec = 3600.0;
-    printf("[OMEGA-INIT] GivebackGuard ARMED: gate=$%.0f trail=%.0f%% stall=%.0fmin (independent clipper, closes via registry)\n",
+    // S-2026-07-14bp (external audit OM-M02): status word from the ACTUAL flag -- the old
+    // unconditional "ARMED" lied (guard deliberately disabled 2026-06-29, companion owns giveback).
+    printf("[OMEGA-INIT] GivebackGuard %s: gate=$%.0f trail=%.0f%% stall=%.0fmin (real-position close reserved for confirmed-reversal safe-stop; companion owns routine giveback)\n",
+           g_giveback_guard.enabled ? "ARMED" : "DISABLED",
            g_giveback_guard.gate_usd, g_giveback_guard.trail*100.0, g_giveback_guard.stall_sec/60.0);
 }
 
