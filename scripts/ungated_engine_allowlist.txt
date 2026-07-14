@@ -1,0 +1,102 @@
+# ungated_engine_allowlist.txt -- documented explanations for headers that trip the
+# wide opener regex (ENTRY_RE, derived from scripts/adverse_protection_audit.sh) but
+# carry no literal OmegaCostGuard/ExecutionCostGuard reference.
+# Consumed by scripts/ungated_engine_audit.sh (CLAUDE.md "Standing Audit Checks" §1).
+#
+# RULES:
+#   * One basename per line (no .hpp), exact match; comments/blank lines ignored.
+#   * EVERY entry must state its reason in a comment. "It was failing the audit" is
+#     not a reason -- gate the entry path instead. Adding an ENABLED live engine here
+#     to dodge the check is a deliberate red flag in review (do not).
+#   * Entries carried from CLAUDE.md §1's inline-grep expected list (S-2026-07-14
+#     migration, latent-class sweep item 10) keep their original reasons; entries
+#     newly exposed by the WIDER regex are marked [NEW-EXPOSURE S-2026-07-14].
+#
+# == FALSE POSITIVES (regex hit is not a position-entry path) ==================
+# omega_main: hit is `g_shadow_signal_csv.open(sig_csv_path...)` (~L624) -- an
+#   ofstream open matching `.open(sig`, not a position open.
+omega_main
+# OmegaTradeLedger: hit is a COMMENT (~L67) describing how engines pass atr_ into
+#   pos_.open(). Core ledger file, opens nothing itself.
+OmegaTradeLedger
+# PositionPersistence: restore path re-creates persisted positions on boot; not an
+#   entry decision (CLAUDE.md §1 original false-positive list).
+PositionPersistence
+# SweepableEngines / SweepableEnginesCRTP: sweep-harness twins of live engines,
+#   never run in the live binary (CLAUDE.md §1 original list).
+SweepableEngines
+SweepableEnginesCRTP
+# PumpScalpEngine: equity pump feed; CFD cost table not applicable -- the cost gate
+#   lives in the pump backtest model (CLAUDE.md §1 original list).
+PumpScalpEngine
+#
+# == TOMBSTONED / NEVER INSTANTIATED (dormant headers on disk) =================
+# NqMomentumEngine + SqueezeSlingshotEngine: tombstoned, never instantiated;
+#   headers remain on disk (CLAUDE.md §1 original list).
+NqMomentumEngine
+SqueezeSlingshotEngine
+# DonchianEngine: #included (globals.hpp:311) but ZERO instances anywhere -> never
+#   constructed, never runs. Also adverse-protection legacy backfill. [NEW-EXPOSURE S-2026-07-14]
+DonchianEngine
+# EmaPullbackEngine: portfolio retired (engine_init ~L3533 block, "to revisit");
+#   #included, zero instances. Adverse legacy backfill. [NEW-EXPOSURE S-2026-07-14]
+EmaPullbackEngine
+# TrendRiderEngine: Tier-4 header with ZERO instances (g_rider_4h/g_rider_d1 are
+#   XauTrendRiderEngine -- a different, gated header). Dormant; adverse legacy
+#   backfill. [NEW-EXPOSURE S-2026-07-14]
+TrendRiderEngine
+#
+# == MANAGE-ONLY ================================================================
+# LatencyEdgeEngines: manage-only in live since S13 (CLAUDE.md §1 original list);
+#   entry code exists but is dormant -- must gain a gate if ever re-armed.
+LatencyEdgeEngines
+#
+# == DISABLED ENGINES (must gain a cost gate BEFORE any re-enable) =============
+# Carried verbatim from CLAUDE.md §1's disabled-engine list (minus ConnorsRSI2,
+# which was re-enabled S-2026-07-08c -- see the documented-exception section).
+# Re-enabling any of these without adding ExecutionCostGuard::is_viable to its
+# entry path recreates the 2026-06-10 cost-blind-shadow-ledger class.
+IndexSessionEngine
+NasBbRevLongH1Engine
+RSIExtremeTurnEngine
+Us303BarMomH1Engine
+Xau3BarMomGatedH4Engine
+XauBBScalpD1Engine
+XauDonchian55GatedM30Engine
+XauEmaCrossH4Engine
+XauInsideBarD1Engine
+XauNbmD1Engine
+XauPullbackContD1Engine
+XauPullbackContH4Engine
+XauStopRunD1Engine
+XauSwingBreakD1Engine
+XauTsmomFastD1Engine
+#
+# == ENABLED, UNGATED-BY-LITERAL -- DOCUMENTED EXCEPTIONS (visible, not hidden) =
+# ConnorsRSI2Engine: ENABLED shadow (g_connors_ger re-enabled S-2026-07-08c
+#   "reinstate all winners, correctly gated" + the cfg_mr NAS/SPX MR-family x5 and
+#   breadth book). NO runtime ExecutionCostGuard call; cost handled via CERTIFIED
+#   cost-inclusive faithful backtests (connors_ger_gate_audit.cpp: PF1.38@3pt,
+#   2x-cost PF1.33 holds; connors_opt.cpp cost-incl) + SMA200 regime gate.
+#   NOTE: CLAUDE.md §1's old "DISABLED" entry for ConnorsRSI2 was STALE (pre-dated
+#   the 07-08c re-enable). Runtime cost-gate backfill owed before any live
+#   (non-shadow) flip. [NEW-VISIBILITY S-2026-07-14 -- was in the old grep's output
+#   but mislabeled disabled]
+ConnorsRSI2Engine
+# SurvivorPortfolio: shadow cell incubator -- header states all cells ship
+#   enabled=true shadow_mode=true with promotion gate 30 trades / WR>=35% / net+.
+#   Opener idiom is the member `pos_active = true` (invisible to the old dot-anchored
+#   grep). Runtime cost-gate audit owed AT PROMOTION TIME for any cell flipped live.
+#   [NEW-EXPOSURE S-2026-07-14]
+SurvivorPortfolio
+#
+# == INDEPENDENT COMPANION/MIMIC SHADOW BOOKS ==================================
+# These never open/move/close a real position (operator companion-independence
+# rule); their loss protection is enforced by the mimic drawdown-cancel gate
+# (scripts/mimic_drawdown_audit.sh), and their cost model lives inside the book.
+# FxUpJumpLadderCompanion: observe-only shadow FX ladder book; DRAWDOWN-CANCEL
+#   verdict in header (~L482). [NEW-EXPOSURE S-2026-07-14]
+FxUpJumpLadderCompanion
+# GoldTrendMimicLadder: independent shadow mimic ladder on gold trend entries;
+#   DRAWDOWN-CANCEL verdict in header (~L56). [NEW-EXPOSURE S-2026-07-14]
+GoldTrendMimicLadder

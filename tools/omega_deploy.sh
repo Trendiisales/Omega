@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # omega_deploy.sh — one-command non-hanging VPS deploy from the Mac.
 #
-# WHY: running `ssh omega-vps ... OMEGA.ps1 deploy` in the FOREGROUND ties the
+# WHY: running `ssh omega-new ... OMEGA.ps1 deploy` in the FOREGROUND ties the
 # MSVC build to the ssh session. Any client-side timeout (or dropped connection)
 # SIGHUPs the remote build mid-flight -> service stuck StopPending, half-built
 # binary. This wrapper launches the deploy DETACHED on the VPS (survives
@@ -23,9 +23,17 @@ set -euo pipefail
 # The 07-07 VPS migration cut production over to 45.85.3.79 but this deploy path was never
 # repointed (the fix sat in unmerged draft PR #4). Result: deploys silently landed on the dead
 # old box while the operator traded on the new one for days. omega-new IS the live desk
-# (feeds_selftest.py already uses VPS_HOST="omega-new"). Override with HOST=omega-vps only to
-# touch the retired box deliberately.
+# (feeds_selftest.py already uses VPS_HOST="omega-new").
+# S-2026-07-14 (dead-box ref audit): the former "override with HOST=omega-vps" escape hatch
+# is now HARD-BLOCKED below — NO code path may deploy to the retired box, ever.
 HOST="${HOST:-omega-new}"
+case "$HOST" in
+  omega-vps|185.167.119.59)
+    echo "[deploy][FATAL] HOST=$HOST is the RETIRED dead box (old VPS, no broker connection," >&2
+    echo "                decommission pending). The live desk is omega-new (45.85.3.79)." >&2
+    echo "                Refusing to deploy. See CLAUDE.md \"WHICH BOX IS LIVE\"." >&2
+    exit 1;;
+esac
 
 if [[ "${1:-}" != "--no-push" ]]; then
   echo "[deploy] pushing origin/main..."

@@ -17,14 +17,30 @@ MUST be added to FEEDS here in the same change. That is the systemic guarantee.
 import os, sys, json, time, csv, subprocess, datetime as dt
 
 HOME = os.path.expanduser("~")
+
+# ── SHARED THRESHOLDS: IMPORTED, never re-typed (S-2026-07-14 sweep item 9) ──────
+# feeds_selftest.py monitors 7 of the same files. The two tables were hand-synced
+# duplicates and drifted contradictory (2 trading-days there vs 4 calendar-days here).
+# The single source of truth is feeds_selftest.SHARED_FEED_MAX_AGE_TD (trading days)
+# plus its trading-day helpers (calendar days false-RED every Monday/post-holiday).
+# Importing feeds_selftest is safe: its module level is constants+defs only (main()
+# is __main__-guarded), and no ssh happens at import time.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import feeds_selftest as _fst
+
 NOW = time.time()
 TODAY = dt.date.today()
+LTD = _fst.last_trading_day(TODAY)   # trading-day reference for *_td kinds
+
+def _td_age(d):
+    """Trading-day age of date d vs the last trading day (weekend/US-holiday aware)."""
+    return None if d is None else _fst.trading_days_between(d, LTD)
 QUIET = "--quiet" in sys.argv
 FIX = "--fix" in sys.argv
 
 # ── helpers ───────────────────────────────────────────────────────────────────
-def _file_newest_date_age(path, ts_col0=False):
-    """Age (days) of the newest DATE found scanning a CSV's first column."""
+def _file_newest_date(path, ts_col0=False):
+    """Newest DATE found scanning a CSV's first column (None if unreadable/dateless)."""
     try:
         newest = None
         with open(path, newline="") as fh:
@@ -36,15 +52,20 @@ def _file_newest_date_age(path, ts_col0=False):
                 if ts_col0 or (c0.isdigit() and len(c0) >= 9):
                     try:
                         v = float(c0);  v = v/1000.0 if v > 1e12 else v
-                        d = dt.datetime.utcfromtimestamp(v).date()
+                        d = dt.datetime.fromtimestamp(v, dt.timezone.utc).date()
                     except Exception: d = None
                 else:
                     try: d = dt.date.fromisoformat(c0[:10])
                     except Exception: d = None
                 if d and (newest is None or d > newest): newest = d
-        return None if newest is None else (TODAY - newest).days
+        return newest
     except Exception:
         return None
+
+def _file_newest_date_age(path, ts_col0=False):
+    """Age (calendar days) of the newest DATE found scanning a CSV's first column."""
+    newest = _file_newest_date(path, ts_col0)
+    return None if newest is None else (TODAY - newest).days
 
 def _percolumn_stale(path, max_age_d):
     """For a wide Date-indexed CSV: (n_total, n_stale, frac_stale, examples). A column is stale
@@ -71,27 +92,58 @@ def _percolumn_stale(path, max_age_d):
 DAILY_YF = ["/opt/homebrew/Caskroom/miniforge/base/envs/rdagent4qlib/bin/python",
             f"{HOME}/Omega/tools/refresh_daily_feeds.py"]
 
-# ── THE REGISTRY: every live-decision feed. kind: file | percol | json_book ────
+# ── THE REGISTRY: every live-decision feed. kind: file | file_td | mtime_td | percol | stamp_ms ──
+# Shared-with-feeds_selftest files take their max_age from _fst.SHARED_FEED_MAX_AGE_TD
+# (trading days, kind *_td) — NEVER a literal here (sweep item 9: hand-synced duplicates drift).
 FEEDS = [
     # name, path, max_age_d, kind, severity, consumer, refresh_cmd (or None), extra
-    ("rdagent.sp500_long_close", f"{HOME}/Omega/data/rdagent/sp500_long_close.csv", 5, "percol", "HIGH",
+    # percol: max_age = per-COLUMN lag vs the file's newest date (calendar days — intra-file,
+    # all columns share one date index). FILE-level last-row staleness is checked separately
+    # inside check_feed against SHARED_FEED_MAX_AGE_TD["rdagent.sp500_long_close"] (trading
+    # days) — previously this whole-file case was invisible here (a uniformly-stale file has
+    # no column lagging its own newest date).
+    ("rdagent.sp500_long_close", f"{HOME}/Omega/data/rdagent/sp500_long_close.csv",
+     _fst.SP500_PERCOL_LAG_MAX_D, "percol", "HIGH",
      "rdagent GUI + paper basket fills",
      # FIX 2026-06-29: was refresh_close_ibkr.py (BROKEN — IBKR Gateway clientId/port fails) -> auto-heal
      # never worked. Now the yfinance refresher (Gateway-independent, proven).
-     ["/opt/homebrew/Caskroom/miniforge/base/envs/rdagent4qlib/bin/python", f"{HOME}/Omega/tools/rdagent/refresh_close_yf.py"], {"max_stale_frac": 0.15}),
-    ("rdagent.qlib_calendar", f"{HOME}/.qlib/qlib_data/omega_data/calendars/day.txt", 4, "file", "HIGH",
+     ["/opt/homebrew/Caskroom/miniforge/base/envs/rdagent4qlib/bin/python", f"{HOME}/Omega/tools/rdagent/refresh_close_yf.py"],
+     {"max_stale_frac": _fst.SP500_PERCOL_MAX_STALE_FRAC,
+      "file_max_age_td": _fst.SHARED_FEED_MAX_AGE_TD["rdagent.sp500_long_close"]}),
+    ("rdagent.qlib_calendar", f"{HOME}/.qlib/qlib_data/omega_data/calendars/day.txt",
+     _fst.SHARED_FEED_MAX_AGE_TD["rdagent.qlib_calendar"], "file_td", "HIGH",
      "rdagent model rankings", None, {}),
     # daily index+gold feeds -> auto-heal via the unified yfinance refresher (Gateway-independent).
-    ("tick.NDX_daily", f"{HOME}/Tick/NDX_daily_2016_2026.csv", 4, "file", "MED",
+    ("tick.NDX_daily", f"{HOME}/Tick/NDX_daily_2016_2026.csv",
+     _fst.SHARED_FEED_MAX_AGE_TD["tick.NDX_daily"], "file_td", "MED",
      "index research", DAILY_YF, {}),
-    ("tick.SPX_daily", f"{HOME}/Tick/SPX_daily_2016_2026.csv", 4, "file", "MED",
+    ("tick.SPX_daily", f"{HOME}/Tick/SPX_daily_2016_2026.csv",
+     _fst.SHARED_FEED_MAX_AGE_TD["tick.SPX_daily"], "file_td", "MED",
      "index turtle + freq_dd_frontier backtest", DAILY_YF, {}),
-    ("tick.DJ30_daily", f"{HOME}/Tick/DJ30_daily_2016_2026.csv", 4, "file", "MED",
+    ("tick.DJ30_daily", f"{HOME}/Tick/DJ30_daily_2016_2026.csv",
+     _fst.SHARED_FEED_MAX_AGE_TD["tick.DJ30_daily"], "file_td", "MED",
      "index turtle + backtest", DAILY_YF, {}),
-    ("tick.GER40_daily", f"{HOME}/Tick/GER40_daily_2016_2026.csv", 4, "file", "MED",
+    ("tick.GER40_daily", f"{HOME}/Tick/GER40_daily_2016_2026.csv",
+     _fst.SHARED_FEED_MAX_AGE_TD["tick.GER40_daily"], "file_td", "MED",
      "index backtest", DAILY_YF, {}),
-    ("tick.XAU_daily", f"{HOME}/Tick/2yr_XAUUSD_daily.csv", 4, "file", "MED",
+    ("tick.XAU_daily", f"{HOME}/Tick/2yr_XAUUSD_daily.csv",
+     _fst.SHARED_FEED_MAX_AGE_TD["tick.XAU_daily"], "file_td", "MED",
      "gold D1 trend seed + backtest", DAILY_YF, {}),
+    # S-2026-07-14 sweep item 9 coverage add: these two LIVE feeds were session-start-only
+    # (feeds_selftest); enrolling here gives the 10-15min launchd cadence too. Thresholds
+    # come from the same shared registry. Trading-day mtime age: companion telemetry stops
+    # over the weekend legitimately (calendar days would false-FAIL every Sunday).
+    ("companion.telemetry", f"{HOME}/stall-accountant/companion_state.json",
+     _fst.SHARED_FEED_MAX_AGE_TD["companion.telemetry"], "mtime_td", "HIGH",
+     "stall-accountant companion state (LIVE telemetry)", None, {}),
+    ("crypto.heartbeat", "/tmp/chimera_inbound.csv",
+     _fst.SHARED_FEED_MAX_AGE_TD["crypto.heartbeat"], "mtime_td", "HIGH",
+     "chimera->desk relay staging (LIVE crypto book liveness)", None, {}),
+    # NOT enrolled here (deliberate — do not blindly mirror feeds_selftest):
+    #   rdagent latest.json — feeds_selftest covers it (research, 2 td) and check_rdagent_basket
+    #     below already alarms on the downstream exec/model ages; a third copy adds no signal.
+    #   VPS-side checks (live dumps / IBKR exec / producer tasks) — ssh from a 10-15min launchd
+    #     cadence would hammer the box (operator rule: minimize VPS ssh); feeds_selftest owns them.
     # the LIVE C++ MacroGoldGate reads logs/macro/macro_gold_gate.tsv (last field = stamp_ms);
     # macro_gold_gate.py is the producer (fetches real-yield + dollar from source). Monitor the
     # ACTUAL gate input, auto-refresh by re-running the producer.
@@ -117,8 +169,32 @@ def check_feed(f):
     if kind == "percol":
         ntot, nstale, frac, ex = _percolumn_stale(path, max_age)
         ok = frac <= extra.get("max_stale_frac", 0.10)
+        # FILE-level last-row staleness (trading days, shared registry threshold): a uniformly
+        # stale file has no column lagging its own newest date, so percol alone false-greens it.
+        fmax = extra.get("file_max_age_td")
+        if fmax is not None:
+            fage = _td_age(_file_newest_date(path))
+            if fage is None or fage > fmax:
+                return dict(name=name, ok=False, age=fage, limit=fmax, sev=sev,
+                            detail=f"FILE last row {fage if fage is not None else '?'} trading-days old (max {fmax}td) — whole feed stalled [{consumer}]")
         return dict(name=name, ok=ok, age=None, limit=max_age, sev=sev,
                     detail=f"{nstale}/{ntot} cols stale ({frac*100:.0f}%) e.g. {ex[:4]} [{consumer}]")
+    elif kind == "file_td":
+        # shared-registry daily feeds: trading-day age (weekend/US-holiday aware — calendar
+        # days false-RED every Monday; matches feeds_selftest semantics exactly).
+        age = _td_age(_file_newest_date(path, ts_col0=path.endswith("NDX_daily_2016_2026.csv")))
+        ok = age is not None and age <= max_age
+        return dict(name=name, ok=ok, age=age, limit=max_age, sev=sev,
+                    detail=(f"newest {age} trading-days old [{consumer}]" if age is not None else f"unreadable [{consumer}]"))
+    elif kind == "mtime_td":
+        try:
+            d = dt.date.fromtimestamp(os.path.getmtime(path))
+        except OSError:
+            d = None
+        age = _td_age(d)
+        ok = age is not None and age <= max_age
+        return dict(name=name, ok=ok, age=age, limit=max_age, sev=sev,
+                    detail=(f"mtime {age} trading-days old [{consumer}]" if age is not None else f"unreadable [{consumer}]"))
     elif kind == "stamp_ms":
         try:
             last = [l for l in open(path).read().strip().splitlines() if l and not l.startswith("#")][-1]

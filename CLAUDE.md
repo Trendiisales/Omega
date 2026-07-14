@@ -48,6 +48,18 @@ Preconditions that still apply before any commit:
   knowingly overrides it with explicit new evidence).
 - For S63 management-path additions, the call-site activation is in
   the same commit. No more "fields exist, check never runs" commits.
+- **Never suppress git add/commit/push stderr** (no `2>/dev/null`).
+  After staging, `git status --short` must show no unexpected `M`
+  lines; after committing, `git show --stat` must list every intended
+  file. History (S-2026-07-14ap): `git add <list> 2>/dev/null` errored
+  silently and the commit captured only pre-staged content (1 of 6
+  files). Enforced structurally: a Claude PreToolUse hook
+  (`scripts/git_hooks/claude_block_git_stderr_suppress.sh`, wired in
+  `.claude/settings.json`) DENIES such commands, and the pre-commit
+  hook (`scripts/git_hooks/pre-commit`, installed via
+  `scripts/git_hooks/install.sh` — run once per fresh clone) prints an
+  `[UNSTAGED-M]` banner listing tracked-modified files missing from
+  the commit.
 
 History: this rule originally said "no commits without explicit
 go-ahead", added after a part-G session (2026-05-13) edit was
@@ -364,31 +376,33 @@ proceed and surfaced it.
 Run periodically (any session that touches engine code):
 
 ```bash
-# 1. Ungated-engine audit
-for f in include/*.hpp; do
-  if grep -lE "pos[_]?\.active *= *true|pos[_]?\.open\(sig" "$f" >/dev/null 2>&1; then
-    if ! grep -q "OmegaCostGuard" "$f"; then echo "UNGATED: $f"; fi
-  fi
-done
-# Expect ONLY (updated S-2026-07-14 audit; original list S-2026-06-10 after
-# the 21-engine cost-gate fix):
-#   False positives (not entry paths): PositionPersistence, engine_init,
-#     SweepableEngines, SweepableEnginesCRTP, PumpScalpEngine (equity feed;
-#     CFD cost table not applicable -- gate lives in pump backtest model),
-#     LatencyEdgeEngines (manage-only since S13), IndexSessionEngine (all
-#     instances disabled), StockDipTurtleEngine (ENABLED but gated -- its
-#     ExecutionCostGuard gate is INJECTED via gate_fn from engine_init.hpp,
-#     enforced at StockDipTurtleEngine.hpp:401, so this literal grep can't
-#     see it), NqMomentumEngine + SqueezeSlingshotEngine (tombstoned, never
-#     instantiated; headers remain on disk).
-#   DISABLED engines (must gain a gate before any re-enable): ConnorsRSI2,
-#     NasBbRevLongH1, RSIExtremeTurn,
-#     Us303BarMomH1, Xau3BarMomGatedH4, XauBBScalpD1, XauDonchian55GatedM30,
-#     XauEmaCrossH4, XauInsideBarD1, XauNbmD1, XauPullbackContD1/H4,
-#     XauStopRunD1, XauSwingBreakD1, XauTsmomFastD1.
-# Any ENABLED engine appearing here = P1 regression. History: 2026-06-10
+# 1. Ungated-engine audit (S-2026-07-14, latent-class sweep item 10: promoted
+#    from the inline 2-idiom grep that lived here to a script -- the old grep
+#    matched only `pos[_]?\.active`/`pos[_]?\.open\(sig` and had ZERO coverage
+#    of the other opener idioms: MgcFast/MgcSlow `pos_active_ = true`,
+#    CrossSectionalIndex `legs_.push_back`, GoldTsmomD1V2 `w_ = want`).
+bash scripts/ungated_engine_audit.sh
+# The script DERIVES the wide opener regex (ENTRY_RE) from
+# scripts/adverse_protection_audit.sh at runtime (derive-don't-copy, the
+# persistence_audit.sh pattern; zero-parse = FAIL exit 2) and scans ALL
+# include/*.hpp. Every hit must reference OmegaCostGuard/ExecutionCostGuard or
+# be explained in scripts/ungated_engine_allowlist.txt (one documented reason
+# per entry: false positives, tombstoned/dormant headers, the disabled-engine
+# list -- those must gain a gate before any re-enable -- and documented
+# exceptions). Notable migrations from the old inline expected-list:
+#   * ConnorsRSI2 was listed DISABLED here but was re-enabled gated
+#     S-2026-07-08c (certified cost-inclusive backtests + SMA200 gate; runtime
+#     cost-gate backfill owed) -- now a documented exception in the allowlist.
+#   * StockDipTurtle no longer needs a note: its INJECTED gate_fn leaves a
+#     literal ExecutionCostGuard reference in the header, which the script sees.
+#   * SurvivorPortfolio / FxUpJumpLadderCompanion / GoldTrendMimicLadder /
+#     dormant DonchianEngine+EmaPullbackEngine+TrendRiderEngine are NEW
+#     EXPOSURES of the wide regex, documented in the allowlist.
+# Wired into scripts/mac_canary_engines.sh, so it runs on every pre-commit
+# canary. Any NEW unexplained hit = exit 1 = P1 regression. History: 2026-06-10
 # audit found 21 enabled shadow engines ungated (cost-blind shadow ledgers);
-# all 21 gated with ExecutionCostGuard::is_viable same session.
+# all 21 gated with ExecutionCostGuard::is_viable same session; the inline
+# 2-idiom grep lived here until S-2026-07-14.
 
 # 2. GoldEngineStack chokepoint audit
 grep -nE "\.open\(" include/GoldEngineStack.hpp

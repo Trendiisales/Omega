@@ -1,4 +1,6 @@
-# ram_workingset_trim.ps1 -- live-safe working-set reclaim for the 3GB omega-vps.
+# ram_workingset_trim.ps1 -- live-safe working-set reclaim for the VPS. Written for
+# the retired 3GB box (2026-07-03 thrash era); still the first-line reclaim on the
+# live box omega-new (45.85.3.79), which has more RAM headroom.
 #
 # EmptyWorkingSet() trims each process's ACTIVE working set back to its minimum:
 # clean pages are dropped, private dirty pages are paged out, and both fault back

@@ -29,8 +29,12 @@
 #     via scripts/mimic_drawdown_legacy.txt — reported as backfill-owed, do NOT fail.
 #   * Any ACTIVE mimic that is NEITHER annotated NOR legacy FAILS the build.
 #
-# Scanned headers: include/*Companion.hpp + include/*Mimic*.hpp + include/*MimicLadder.hpp
-#   (the mimic/companion naming convention). A new mimic idiom -> add its glob here.
+# Scanned headers: include/*Companion.hpp + include/*Mimic*.hpp + include/*Ladder*.hpp
+#   (the mimic/companion/ladder naming conventions). S-2026-07-14 (latent-class sweep
+#   item 14c): *Ladder*.hpp added -- every ladder book to date IS a mimic/companion
+#   (GoldTrendMimicLadder, FxUpJumpLadderCompanion, StockDayMoverLadderCompanion), but a
+#   future header named e.g. FooLadder.hpp alone would have dodged the gate entirely.
+#   Files matching several globs are deduped. A new mimic idiom -> add its glob here.
 #
 # Run before any commit touching a mimic header (wired into the Mac canary):
 #   bash scripts/mimic_drawdown_audit.sh
@@ -45,7 +49,9 @@ LEGACY_FILE='scripts/mimic_drawdown_legacy.txt'
 is_legacy(){ [ -f "$LEGACY_FILE" ] && grep -qxF "$1" "$LEGACY_FILE"; }
 
 fails=0; warns=0; ok=0
-for h in include/*Companion.hpp include/*Mimic*.hpp; do
+# sort -u: a file can match more than one glob (e.g. GoldTrendMimicLadder.hpp hits both
+# *Mimic*.hpp and *Ladder*.hpp) -- dedupe so counts stay honest.
+for h in $(printf '%s\n' include/*Companion.hpp include/*Mimic*.hpp include/*Ladder*.hpp | sort -u); do
   [ -f "$h" ] || continue
   base="$(basename "$h" .hpp)"
   if grep -q "$TAG" "$h"; then ok=$((ok+1)); continue; fi

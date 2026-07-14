@@ -1,7 +1,7 @@
 # prune_hung_ssh_queries.ps1 — SAFE guard against RAM exhaustion from leaked ssh queries.
 # (operator-mandated 2026-06-27: "build a check that does not allow you to keep messing up my memory")
 #
-# THE PROBLEM: every `ssh omega-vps powershell ...` an AI session runs spawns a powershell on the VPS.
+# THE PROBLEM: every `ssh omega-new powershell ...` an AI session runs spawns a powershell on the VPS.
 # If that command hangs (slow CIM on a paging box) the local ssh dies but the remote powershell lingers
 # -- they pile up and starve the 3GB box's RAM until it freezes.
 #

@@ -9,7 +9,7 @@ it runs every session (SessionStart hook) and screams RED on the first stale fee
 VPS operational-dump section (S-2026-07-02): the local getters below can only see
 Mac-side files. The live VPS binary also writes load-bearing CSVs to C:\\Omega\\logs
 (set_live_dump targets) that are NEVER pulled to the Mac — so a VPS writer could die
-with every Mac banner GREEN. That blind spot is closed by ONE batched `ssh omega-vps`
+with every Mac banner GREEN. That blind spot is closed by ONE batched `ssh omega-new`
 poll that computes each tools/live_dump_manifest.tsv file's age ON the VPS (skew-free)
 and REDs a stale LIVE dump. A weekend guard skips enforcement Fri22:00->Sun22:00 UTC
 (markets closed). ssh failure => RED (an unverifiable live feed is not GREEN).
@@ -207,7 +207,7 @@ def mtime_date(path: Path) -> dt.date | None:
 # The live VPS binary writes load-bearing CSVs to C:\Omega\logs via set_live_dump().
 # None are pulled to the Mac, so the getters above CANNOT see them — a VPS writer
 # can die and every Mac banner stays GREEN. This section polls the VPS directly:
-# ONE batched `ssh omega-vps` call runs PowerShell that computes each manifest
+# ONE batched `ssh omega-new` call runs PowerShell that computes each manifest
 # file's age-in-minutes ON THE VPS (skew-free — no Mac/VPS clock comparison), and
 # each age is checked against its manifest max_age_min. A stale LIVE dump => exit 1.
 # mtime is safe here: these dumps are append-only and only their writer touches them.
@@ -262,10 +262,10 @@ def market_closed_weekend(now_utc: dt.datetime) -> bool:
 
 
 def vps_live_dump_ages(manifest: list[tuple[str, int, str]]) -> dict[str, float] | None:
-    """ONE batched `ssh omega-vps` call. Returns {path_under_logs: age_min} computed
+    """ONE batched `ssh omega-new` call. Returns {path_under_logs: age_min} computed
     ON the VPS (skew-free). None if the ssh call fails entirely (=> RED). A file that
     is missing on the VPS is reported as a very large age so it REDs against its cap.
-    The ssh command MUST start literally `ssh omega-vps` (classifier rule)."""
+    The ssh command MUST start literally `ssh omega-new` (classifier rule; omega-vps alias DISABLED 2026-07-14)."""
     # PowerShell one-liner: for each relative path, print "<path>\t<age_min>" (or a
     # huge age if absent). LastWriteTime age keeps us clock-skew-free vs the Mac.
     files = ";".join(f"'{p}'" for p, _, _ in manifest)
@@ -302,7 +302,7 @@ def vps_live_dump_ages(manifest: list[tuple[str, int, str]]) -> dict[str, float]
 
 
 def vps_ibkr_exec_status() -> tuple[str, str]:
-    """ONE `ssh omega-vps` call. Confirms the live binary's IBKR EXECUTION path is
+    """ONE `ssh omega-new` call. Confirms the live binary's IBKR EXECUTION path is
     ACTIVE. Gold now routes to IBKR GC futures (execution_broker==IBKR) and its
     MIN_TRADE_GATE cost basis is rebased onto IBKR (0.5x BlackBull-spot spread).
     If the exec path silently reverts to BLACKBULL_FIX or hits CONNECT FAILED,
@@ -310,7 +310,7 @@ def vps_ibkr_exec_status() -> tuple[str, str]:
     wrong venue -- a double failure that looks like the strategy died. Scans the
     3 most-recent runtime logs (robust across the UTC date-roll, since the
     [IBKR-EXEC] status prints only at boot) for the latest status line.
-    Returns (status, detail). ssh command MUST start literally `ssh omega-vps`."""
+    Returns (status, detail). ssh command MUST start literally `ssh omega-new`."""
     # No `|` pipes: ssh->remote cmd.exe would intercept them before PowerShell sees
     # the string (same trap the vps_live_dump_ages helper avoids). Emit each match as
     # "<mtime_ticks>[char]9<line>" and pick the newest file's match in Python -- avoids
@@ -417,18 +417,66 @@ def vps_stock_book_health() -> tuple[str, str]:
     return ("PASS", f"feed row {d} (<=1td behind {ltd}), {cols} name-cols, {t}/{t} names have bars>0")
 
 
+# ── SHARED FEED THRESHOLD REGISTRY — SINGLE SOURCE OF TRUTH (S-2026-07-14 sweep item 9) ──
+# tools/data_health_monitor.py monitors the SAME files as the FEEDS table below. The two
+# tables were hand-synced duplicates and drifted CONTRADICTORY (this file: 2 trading-days;
+# data_health: 4 calendar-days — a feed could be RED here and GO there). Derive-don't-copy:
+# every shared file's threshold is defined ONCE here, in TRADING DAYS (calendar days
+# false-RED every Monday/post-holiday — see trading_days_between docstring), and
+# data_health_monitor IMPORTS this dict + the trading-day helpers above. Do NOT re-type
+# these numbers anywhere else; add new shared feeds HERE and reference the key.
+#
+# Threshold decisions at unification (stricter/correct value kept per file):
+#   XAU/DJ30/SPX/NDX daily + qlib calendar: 2 td (this file's value; STRICTER than
+#     data_health's old 4 calendar — data_health tightened to match).
+#   GER40 daily: 4 td kept (deliberate since birth: trading_days_between uses the US
+#     holiday calendar, so DE-only holidays inflate GER40's apparent td-age; 2 td would
+#     false-RED around German holidays). data_health moves 4 cal -> 4 td, marginally
+#     later alarm across a weekend, in exchange for killing that false-RED class.
+#   sp500_long_close: file-level 4 td (this file's value). data_health's per-column
+#     check keeps its own two knobs below (intra-file column lag — calendar days are
+#     correct there because all columns share the same date index).
+#   companion telemetry / crypto heartbeat: 1 td (feeds_selftest values; newly ALSO
+#     enrolled in data_health for 10-15min launchd cadence, not just session start).
+SHARED_FEED_MAX_AGE_TD = {
+    "tick.XAU_daily":           2,
+    "tick.DJ30_daily":          2,
+    "tick.SPX_daily":           2,
+    "tick.NDX_daily":           2,
+    "tick.GER40_daily":         4,
+    "rdagent.qlib_calendar":    2,
+    "rdagent.sp500_long_close": 4,   # file-level last-row age
+    "companion.telemetry":      1,
+    "crypto.heartbeat":         1,
+}
+# sp500_long_close per-column knobs (data_health's percol check): a column is stale if its
+# last non-empty cell lags the file's newest date by > LAG_MAX_D; alarm when the stale
+# fraction exceeds MAX_STALE_FRAC. Single definition — data_health imports these too.
+SP500_PERCOL_LAG_MAX_D = 5
+SP500_PERCOL_MAX_STALE_FRAC = 0.15
+
+# Coverage division vs data_health_monitor (deliberate, do not blindly mirror):
+#   - macro_gold_gate.tsv: the LIVE gate input is the VPS-side copy, already polled here
+#     via live_dump_manifest.tsv (26h row) + the OmegaMacroGoldGate task check; data_health
+#     watches the Mac-side producer copy. No duplicate Mac-side row here.
+#   - mgc_h1/mgc_30m mirror seeds: owned by data_health (7d) + seed_freshness_audit.py +
+#     the OmegaSeedRefresh task check here. Not duplicated.
+#   - VPS ssh checks (live dumps / exec path / tasks) live ONLY here: data_health runs on a
+#     10-15min launchd cadence and must stay ssh-free (operator rule: minimize VPS ssh).
+
 # (label, kind, max_age_trading_days, getter)  kind: "live" critical | "research" paper
+# max_age values for shared files come from SHARED_FEED_MAX_AGE_TD — never literals.
 FEEDS = [
-    ("tick XAUUSD daily",   "live", 2, lambda: csv_last_date(TICK / "2yr_XAUUSD_daily.csv")),
-    ("tick DJ30 daily",     "live", 2, lambda: csv_last_date(TICK / "DJ30_daily_2016_2026.csv")),
-    ("tick SPX daily",      "live", 2, lambda: csv_last_date(TICK / "SPX_daily_2016_2026.csv")),
-    ("tick NDX daily",      "live", 2, lambda: csv_last_date(TICK / "NDX_daily_2016_2026.csv")),
-    ("tick GER40 daily",    "live", 4, lambda: csv_last_date(TICK / "GER40_daily_2016_2026.csv")),
-    ("companion telemetry", "live", 1, lambda: mtime_date(STALL / "companion_state.json")),
-    ("crypto book heartbeat","live", 1, crypto_book_heartbeat),
-    ("qlib omega_data",     "research", 2, qlib_cal_last),
+    ("tick XAUUSD daily",   "live", SHARED_FEED_MAX_AGE_TD["tick.XAU_daily"],   lambda: csv_last_date(TICK / "2yr_XAUUSD_daily.csv")),
+    ("tick DJ30 daily",     "live", SHARED_FEED_MAX_AGE_TD["tick.DJ30_daily"],  lambda: csv_last_date(TICK / "DJ30_daily_2016_2026.csv")),
+    ("tick SPX daily",      "live", SHARED_FEED_MAX_AGE_TD["tick.SPX_daily"],   lambda: csv_last_date(TICK / "SPX_daily_2016_2026.csv")),
+    ("tick NDX daily",      "live", SHARED_FEED_MAX_AGE_TD["tick.NDX_daily"],   lambda: csv_last_date(TICK / "NDX_daily_2016_2026.csv")),
+    ("tick GER40 daily",    "live", SHARED_FEED_MAX_AGE_TD["tick.GER40_daily"], lambda: csv_last_date(TICK / "GER40_daily_2016_2026.csv")),
+    ("companion telemetry", "live", SHARED_FEED_MAX_AGE_TD["companion.telemetry"], lambda: mtime_date(STALL / "companion_state.json")),
+    ("crypto book heartbeat","live", SHARED_FEED_MAX_AGE_TD["crypto.heartbeat"], crypto_book_heartbeat),
+    ("qlib omega_data",     "research", SHARED_FEED_MAX_AGE_TD["rdagent.qlib_calendar"], qlib_cal_last),
     ("rdagent basket",      "research", 2, lambda: json_field_date(RDA / "latest.json", "signal", "date")),
-    ("sp500_long_close",    "research", 4, lambda: csv_last_date(RDA / "sp500_long_close.csv")),
+    ("sp500_long_close",    "research", SHARED_FEED_MAX_AGE_TD["rdagent.sp500_long_close"], lambda: csv_last_date(RDA / "sp500_long_close.csv")),
     # NB: sp500_close.csv is a dead fallback — serve.py:26 reads sp500_long_close first and never
     # reaches it. Not fed by any refresher, so tracking it = false AMBER. Excluded deliberately.
 ]

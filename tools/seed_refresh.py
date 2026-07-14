@@ -43,7 +43,10 @@ def _default_dirs():
 _REBUILD_TARGETS = [
     ("XAUUSD", 15, "warmup_XAUUSD_M15.csv", 6000),
     ("XAUUSD", 30, "warmup_XAUUSD_M30.csv", 4000),
-    ("ESTX50",  5, "warmup_ESTX50_M5.csv",  4000),
+    # ESTX50 M5 recipe DROPPED S-2026-07-14 (latent-class sweep item 14d): warmup_ESTX50_M5.csv
+    # has NO consumer engine (grep include/ + Survivor dynamic roster = zero readers; the M5
+    # straddle cells that read it are gone). Orphan recipes hide real roster drift -- re-add
+    # only together with a consumer.
     ("GER40",  15, "warmup_GER40_M15.csv",  4000),
     ("GER40",  30, "warmup_GER40_M30.csv",  3500),
     ("NAS100", 15, "warmup_NAS100_M15.csv", 6000),
@@ -121,17 +124,22 @@ _TF = {
 }
 _GOLD_TFS = ["M5", "M15", "M30", "H1", "H4", "D1"]   # M10 dropped S-2026-07-13 (only consumer XauBracketCascade_M10 culled)
 _INDEX = {
-    "NAS100": (("CME","NQ"),      ["H1","M30","M15","M5","D1"]),  # D1 S-2026-07-12c; H4 dropped S-2026-07-13 (BrkCascade culled)
+    # ORPHAN-RECIPE CULL S-2026-07-14 (latent-class sweep item 14d): NAS100 M5, GER40 H4,
+    # DJ30 H1, ESTX50 M5 dropped -- their warmup CSVs have NO consumer engine anywhere
+    # (grep include/ literals + SurvivorPortfolio dynamic seed_all roster = zero readers;
+    # seed_freshness_audit --registry-only flagged all four [orphan-refresh]). A recipe
+    # with no consumer is roster drift waiting to hide a real one. Re-add WITH a consumer.
+    "NAS100": (("CME","NQ"),      ["H1","M30","M15","D1"]),       # D1 S-2026-07-12c; H4 dropped S-2026-07-13 (BrkCascade culled); M5 dropped S-2026-07-14 (orphan)
     "USTEC":  (("CME","NQ"),      ["D1"]),                        # S-2026-07-12c: warmup_USTEC_D1 had NO refresh path (43d old, 8+ consumers)
     "USTEC.F":(("CME","NQ"),      ["H4"]),                        # S-2026-07-14: SurvivorPortfolio USTEC cells (RSI_N7 + ZMR, ACTIVE) seed
                                                                   # warmup_USTEC.F_H4.csv via the DYNAMIC seed_all() path (SurvivorPortfolio.hpp:808);
                                                                   # it had NO refresh path AND was audit-blind -> rotted 94d unseen.
     "US500":  (("CME","ES"),      ["H1","D1"]),                   # H4 dropped S-2026-07-13 (BrkCascade culled)
     "M2K":    (("CME","M2K"),     ["H1"]),                        # S-2026-07-13: warmup_M2K_H1 refresh kept (FxLadder M2K seeds from it; cascade cells culled)
-    "GER40":  (("EUREX","DAX"),   ["H1","H4","M30","M15","D1"]),
+    "GER40":  (("EUREX","DAX"),   ["H1","M30","M15","D1"]),       # H4 dropped S-2026-07-14 (orphan; its consumer's seed call is long gone)
     "UK100":  (("ICEEU","Z"),     ["M30","M240","D1"]),
-    "DJ30":   (("CBOT","YM"),     ["H1","D1"]),
-    "ESTX50": (("EUREX","ESTX50"),["D1","M5"]),
+    "DJ30":   (("CBOT","YM"),     ["D1"]),                        # H1 dropped S-2026-07-14 (orphan)
+    "ESTX50": (("EUREX","ESTX50"),["D1"]),                        # M5 dropped S-2026-07-14 (orphan)
 }
 # Seeds whose consumer does NOT normalize ms->sec: SurvivorPortfolio Cell::seed_from_csv
 # reads column 0 as SECONDS verbatim (b.ts_sec = atoll(tok[0])) -- an ms-format file would

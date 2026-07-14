@@ -1,5 +1,7 @@
 # apply_boot_stagger.ps1 -- stagger the heavy boot-start tasks so they don't all
-# cold-start at t=0 and thrash the 3GB omega-vps. Simultaneous boot of Omega.exe
+# cold-start at t=0 and thrash the VPS (written for the retired 3GB box; the live
+# omega-new box has more headroom but the stagger stays harmless-and-useful).
+# Simultaneous boot of Omega.exe
 # (run_dashboard) + the gateway JVM (250MB) + 3 python bridges into ~150MB free is
 # the root of the 20-25min nightly reload: every page fault hits the pagefile.
 #

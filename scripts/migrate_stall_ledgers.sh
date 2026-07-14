@@ -10,7 +10,19 @@
 #          -> VPS C:\Omega\stall\main\.  Only the 25 Omega gold/index books are migrated
 #          (crypto-intraday books stay on the Mac, cohort 4). Books with no ledger yet are skipped.
 #
-# VPS ssh form MUST start literally `ssh omega-vps` (feedback-vps-ssh-command-form).
+# VPS ssh form note below is HISTORICAL: it targeted `ssh omega-vps` = 185.167.119.59,
+# the OLD box, RETIRED at the 2026-07-07 migration (alias disabled 2026-07-14).
+#
+# ── HISTORICAL / DEAD-BOX — DO NOT RE-RUN (S-2026-07-14 dead-box ref audit) ────
+# This one-shot ALREADY RAN at cutover, against the old box. It is kept only as
+# the record of what was migrated. The live box is omega-new (45.85.3.79) and the
+# C++ StallCompanion has been appending to the VPS ledgers since cutover — re-running
+# would OVERWRITE live banked history with stale Mac copies. Hard-fail guard:
+echo "[migrate_stall_ledgers] HISTORICAL one-shot: already ran at the stall-companion cutover" >&2
+echo "[migrate_stall_ledgers] against the RETIRED old box. Re-running would clobber live VPS" >&2
+echo "[migrate_stall_ledgers] stall ledgers with stale Mac copies. Refusing to run." >&2
+exit 1
+
 set -uo pipefail
 SRC="$HOME/stall-accountant"
 

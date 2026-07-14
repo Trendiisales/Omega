@@ -248,4 +248,47 @@ python3 "$(dirname "$0")/../tools/seed_freshness_audit.py" --registry-only || {
   exit 1
 }
 
+# DEAD-BOX REFERENCE GATE (added S-2026-07-14, latent-class sweep item 13): the live
+# box is omega-new = 45.85.3.79; omega-vps = 185.167.119.59 is the RETIRED 2026-07-07
+# box. On 2026-07-10 a whole session deployed to the dead box for hours because tooling
+# still said omega-vps. All operational refs were repointed/guarded this session, but
+# nothing stopped a NEW script (or a pasted ssh line) from reintroducing the dead box --
+# this gate does: any omega-vps / 185.167.119.59 ref in tools/ scripts/ include/ src/
+# or top-level ps1/sh/py outside the reasoned allowlist (intentional history comments +
+# refuse-guards only) FAILS the canary.
+echo ""
+echo "[mac-canary-engines] dead-box reference gate (omega-vps must never be a target)..."
+bash "$(dirname "$0")/deadbox_ref_audit.sh" || {
+  echo "[mac-canary-engines] FAIL: dead-box (omega-vps/185.167.119.59) reference outside the allowlist."
+  exit 1
+}
+
+# UNGATED-ENGINE AUDIT (added S-2026-07-14, latent-class sweep item 10): CLAUDE.md
+# "Standing Audit Checks" §1 promoted from an inline 2-idiom grep (which had ZERO
+# coverage of the pos_active_ / legs_.push_back / w_=want opener idioms — MgcFast/
+# MgcSlow, CrossSectionalIndex, GoldTsmomD1V2 were invisible) to a script that
+# DERIVES the wide ENTRY_RE from adverse_protection_audit.sh at runtime
+# (derive-don't-copy; zero-parse = FAIL). Expected hits + reasons live in
+# scripts/ungated_engine_allowlist.txt. A NEW unexplained ungated opener FAILS.
+echo ""
+echo "[mac-canary-engines] ungated-engine audit (every opener header cost-gated or documented)..."
+bash "$(dirname "$0")/ungated_engine_audit.sh" || {
+  echo "[mac-canary-engines] FAIL: ungated-engine audit -- see scripts/ungated_engine_audit.sh output above."
+  exit 1
+}
+
+# ROSTER-PARITY GATE (added S-2026-07-14, latent-class sweep item 14a/14b): hand-mirrored
+# duplicates that are in-sync today WILL drift -- bridge STOCKS vs engine_init BIGCAP_LAD
+# (must be EQUAL), the IBKR futures contract map (IbkrExecutionEngine FUT rows must be a
+# SUBSET of bridge INDEX_FUTURES with matching contract tuples; exec-only gold rows
+# documented in the script), and register_omega_ibkr_bridge.ps1 ($Symbols resolvable +
+# SYM(CONTRACT) comment tokens agree). Every copy is parsed from its source file; a
+# parser matching ZERO entries fails loudly (the USTEC.F_H4 blindness class).
+echo ""
+echo "[mac-canary-engines] roster-parity audit (hand-mirrored rosters/contract maps in sync)..."
+python3 "$(dirname "$0")/roster_parity_audit.py" --repo "$(dirname "$0")/.." || {
+  echo "[mac-canary-engines] FAIL: a hand-mirrored roster/contract-map copy drifted -- see PARITY-FAIL lines above."
+  exit 1
+}
+
 exit 0

@@ -6,17 +6,24 @@
 #   (C) COLD-GATE       : has a `warm() &&` entry guard but NO warm-seed path -> warm() may never
 #                         be true -> the gate is permanently OFF (the TrendRider BullGate bug)
 # Prints a per-engine matrix + the gaps to fix. Heuristic (grep-based) -- a flag = inspect.
-import os, re, glob, time
+import os, re, glob, time, importlib.util
 
 REPO = "."
 SEED_DIR = os.path.join(REPO, "phase1", "signal_discovery")
 
-# per-TF staleness thresholds (days) -- same as seed_freshness_audit
-def thr(p):
-    if re.search(r"_H1|tsmom|regime|_h1", p, re.I): return 5
-    if re.search(r"_H4|_h4", p, re.I): return 14
-    if re.search(r"_D1|daily|seasonal", p, re.I): return 45
-    return 14
+# per-TF staleness thresholds (days) -- IMPORTED from tools/seed_freshness_audit.py, the
+# SINGLE copy (its OVERRIDES table + MAX_AGE_DAYS default). History (latent-class sweep
+# S-2026-07-14 item 12): this file carried a hand-synced thr() duplicate that DRIFTED --
+# it was missing the warmup_XAUUSD_M1 45d override, so a normal-age (17-40d) histdata M1
+# seed read as false STALE here while the real audit passed it. Derive-don't-copy.
+# NO try/except fallback BY DESIGN: if the sibling module or threshold_for goes missing,
+# this audit must die loudly -- silently reverting to stale hardcoded thresholds is the
+# exact failure class this import removes.
+_sfa_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "seed_freshness_audit.py")
+_spec = importlib.util.spec_from_file_location("seed_freshness_audit", _sfa_path)
+_sfa = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_sfa)   # import-safe: its audit body is under main()/__main__ guard
+thr = _sfa.threshold_for         # AttributeError (loud) if the shared def is ever renamed
 
 def seed_age_days(csv):
     cand = csv if os.path.exists(csv) else os.path.join(REPO, csv)
