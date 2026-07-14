@@ -103,9 +103,20 @@ def main():
             "consumer boot line present; 9701 down (weekend, broker closed) — re-establishes at open" if boot_ok
             else "consumer boot line MISSING — consumer thread never started", skip=boot_ok)
     else:
-        rec("CONSUMER-UP", consumer_ok,
-            "consumer boot line + 9701 ESTABLISHED" if consumer_ok
-            else f"boot-line={'y' if boot_ok else 'NO'} established={'y' if est_ok else 'NO'}")
+        msg = ("consumer boot line + 9701 ESTABLISHED" if consumer_ok
+               else f"boot-line={'y' if boot_ok else 'NO'} established={'y' if est_ok else 'NO'}")
+        # ZOMBIE-BRIDGE diagnosis (S-2026-07-14): a bridge process whose TcpBroadcaster is dead
+        # still HOLDS the single-instance lock (:19000+client_id), so every 5-min task refire
+        # exits via the guard and 9701 stays unbound while the L1 csv keeps growing — permanent
+        # silent RED until the zombie dies. Name the state + the PID so the fix is one kill.
+        if open_now and not consumer_ok:
+            listen_9701 = ssh("netstat -ano | findstr :9701 | findstr LISTENING")
+            lock_19099 = ssh("netstat -ano | findstr :19099 | findstr LISTENING")  # 19000+client-id 99
+            if "LISTENING" in lock_19099 and "LISTENING" not in listen_9701:
+                pid = lock_19099.split()[-1] if lock_19099.split() else "?"
+                msg += (f" | ZOMBIE BRIDGE: pid {pid} holds lock :19099 with broadcaster dead —"
+                        f" taskkill /PID {pid} /F; the 5-min OmegaIbkrBridge refire respawns clean")
+        rec("CONSUMER-UP", consumer_ok, msg)
 
     # [3] bridge freshness on the IBKR-only canary
     today = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
