@@ -1,0 +1,34 @@
+#!/bin/sh
+# pre-commit — silent-partial-stage tripwire (S-2026-07-14ap incident).
+# Source of truth: scripts/git_hooks/pre-commit; installed to .git/hooks/pre-commit
+# by scripts/git_hooks/install.sh (git does not version .git/hooks).
+#
+# WHY: `git add <list> 2>/dev/null; git commit` — the add errored, stderr was
+# suppressed, and the commit silently captured ONLY pre-staged content (8a97427c
+# carried 1 of 6 intended files). The commit itself looked normal.
+#
+# WHAT: at every commit, print a loud [UNSTAGED-M] banner listing tracked files
+# that are modified/deleted but NOT staged. Non-blocking — partial commits via
+# `git add -p` are sanctioned (CLAUDE.md Edit Discipline) — but the banner makes
+# a silently-failed add impossible to miss: if you believe you staged N files
+# and any of them appear below, STOP and re-add before pushing/deploying.
+# Skipped during merge/rebase/cherry-pick.
+
+GIT_DIR=$(git rev-parse --git-dir 2>/dev/null) || exit 0
+[ -d "$GIT_DIR/rebase-merge" ] && exit 0
+[ -d "$GIT_DIR/rebase-apply" ] && exit 0
+[ -f "$GIT_DIR/MERGE_HEAD" ] && exit 0
+[ -f "$GIT_DIR/CHERRY_PICK_HEAD" ] && exit 0
+
+UNSTAGED=$(git diff --name-status)
+if [ -n "$UNSTAGED" ]; then
+    N=$(printf '%s\n' "$UNSTAGED" | wc -l | tr -d ' ')
+    echo "" >&2
+    echo "[UNSTAGED-M] WARNING: $N tracked file(s) modified but NOT in this commit:" >&2
+    printf '%s\n' "$UNSTAGED" | sed 's/^/[UNSTAGED-M]   /' >&2
+    echo "[UNSTAGED-M] If any of these were MEANT to be in this commit, a git add" >&2
+    echo "[UNSTAGED-M] silently failed (S-2026-07-14ap trap). Abort push, git add them," >&2
+    echo "[UNSTAGED-M] and amend/re-commit. Intentional partial commit (git add -p): proceed." >&2
+    echo "" >&2
+fi
+exit 0

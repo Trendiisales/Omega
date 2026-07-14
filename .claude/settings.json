@@ -1,4 +1,19 @@
 {
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"$CLAUDE_PROJECT_DIR/scripts/git_hooks/claude_block_git_stderr_suppress.sh\"",
+            "timeout": 10,
+            "statusMessage": "git stderr-suppress guard"
+          }
+        ]
+      }
+    ]
+  },
   "extraKnownMarketplaces": {
     "superpowers-marketplace": {
       "source": { "source": "github", "repo": "obra/superpowers-marketplace" }
