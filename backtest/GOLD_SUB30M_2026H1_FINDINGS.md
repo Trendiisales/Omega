@@ -235,3 +235,77 @@ noise.
   (25MB, corpus-resident; fully reproducible from the two Tick inputs + committed tail)
 - Tail fetcher: `backtest/fetch_xau_candles_daily.py` → `backtest/data/xau_1m_duka_tail_2026.csv` (committed)
 - Vault: `Memory-Omega/wiki/entities/GoldSub30mStudy2026H1.md`
+
+---
+
+# ADDENDUM S-2026-07-14 (BIG GO): sweet-spot sweeps, wire decision, mimic verdict
+
+Operator order: *"let's try on the 10 min find the sweet spot please and check all
+levers/settings and then we run it, 15 min is a big go same instructions ... for the
+10 min gold i accept the lower pf"* + follow-up *"is it viable to add a mimic to these
+engines, ensure we have BE before adding?"*
+
+## 10m sweet-spot sweep (`DON10_SWEEP=1`: Nin {20..80} × Nout {15..45} × stop {2.5,3.0,3.5} + KELT ext)
+
+The coarse study grid (Nout ≤ 27) had missed the slow-exit column. At Nout ≥ 31 the
+10m DON has a REAL plateau — full GATE-PASS+LEGS (PF ≥ 1.3 bar included, which the
+operator had waived) across Nin 20–50 × stop 2.5–3.5:
+
+- **Chosen cell: DON 30/35 stop3.0** — n=262 (10.1/wk), **+$21,281 @1× / +$20,207 @2×,
+  PF 1.52**, WR 35.1%, worst −$972, maxDD $4,891, L +$7,239 / S +$14,042,
+  **WF +$10,359/+$10,922 (the most WF-balanced cell in the entire grid)**,
+  FULL 25mo +$30,356 PF 1.29.
+- Plateau, not a spike: 20/35 and 25/35 within 2% of the peak; stop lever robust
+  (PF 1.38/1.52/1.50 at 2.5/3.0/3.5). Nin edge-check extended to 20/25 — plateau holds.
+- KELT 10m extension (k up to 2.0, trail up to 4.0): ALL negative-to-flat — DON is
+  the only live mechanism at 10m, confirmed.
+
+## 15m BIG GO sweep (`DON15_STOP=1`: plateau Nin 45–70 × Nout 23–45 × stop {2.5,3.0,3.5,4.0})
+
+**144/144 cells GATE-PASS+LEGS.** The certified plateau survives every stop mult and
+deepens with slower exits. stop 3.5 is an interior peak (4.0 declines).
+
+- **Chosen cell: DON 60/35 stop3.5** — n=116 (4.5/wk), **+$20,131 @1× / +$19,656 @2×,
+  PF 1.93**, WR 43.1%, worst −$945, maxDD $3,794, L +$4,658 / S +$15,473,
+  WF +$15,412/+$4,719, FULL 25mo +$23,810 PF 1.37.
+- Beats the certified 55/35 stop3.0 peak (+$19,019 PF 1.83 DD $4,450) on net, PF and DD.
+- Nout 45 raises PF to 2.04 but thins WF2 to +$2,509 — rejected for wiring (WF balance
+  over raw net).
+
+## WIRED (both SHADOW, 1 MGC, commit this session)
+
+`include/GoldBothWaysShortTfEngine.hpp` instances on NATIVE bars (row_secs == tf_secs
+pass-through; the engine's per-row level-stop check is then EXACTLY the harness's
+intrabar check):
+
+| engine tag | cell | feed | seed | retire latch |
+|---|---|---|---|---|
+| `GoldDon15m_60_35_stop3.5ATR` | DON 60/35 stop3.5, trail 0 | `data/mgc_15m_live.csv` | `data/mgc_15m_hist.csv` | −760pt (−2× BT DD 379pt) |
+| `GoldDon10m_30_35_stop3ATR` | DON 30/35 stop3.0, trail 0 | `data/mgc_10m_live.csv` | `data/mgc_10m_hist.csv` | −980pt (−2× BT DD 489pt) |
+
+- Feed: `tools/mgc_live_bars.py` extended to produce 15m + 10m native IBKR TRADES bars
+  (one-shot "2 W" backfill on empty file, then 2-day tail pulls). HVN unchanged (30m).
+- Seeds: `tools/seed_refresh.py` nightly writes both hist CSVs (M15 reuses the existing
+  warmup pull; M10 is a dedicated pull that does NOT recreate the warmup_XAUUSD_M10
+  orphan). Registered in `seed_freshness_audit.py`; `--registry-only` GREEN.
+- **Wiring parity (`backtest/gold_subh30_engine_parity.cpp`)**: replays the certified
+  splice through the WIRED class — LONG legs match the sweep TO THE DOLLAR
+  (15m +$4,658.4 vs +$4,658; 10m +$7,238.8 vs +$7,239); n−1 and the S-leg delta are
+  exactly the final still-open trade the harness force-closes. PASS.
+- Heartbeats `GoldDon15m`/`GoldDon10m` (1800s envelope, 0–24), wire_cross persistence,
+  ExecutionCostGuard MGC row (in-class), auto-retire latch, boot-replay entry-block on
+  first poll (`poll_mgc_fine_feed`).
+
+## BE-mimic verdict: NOT VIABLE for either engine (backtested, do not wire)
+
+Method: real entry streams via `DUMP_ENTRIES=1` (629 / 1,359 entries), BE-entry mimic
+harness `backtest/gold_newengine_mimic_bt.cpp`, be=0.10, full arm/gb/lc/cap/pend sweep
+(216 cells each), then the intrabar-truth honesty check (manage on 1m bars, pend/cap ×15).
+
+- **10m parent: 0/216 cells pass** even at close grade. Dead.
+- **15m parent: 12/216 pass at close grade** (best +$14,161 @1× / +$7,155 @2×, PF 1.43)
+  but the intrabar-truth check COLLAPSES the best cell to +$2,475 @1× / **−$4,799 @2×**
+  with WF1 negative — the close-grade figures are the USTEC_4h_ZMR coarse-bar artifact
+  (peak-giveback trail on 15m bars books fantasy exits that 1m truth never gives you).
+- Both engines wired with `mimic_tag = ""`. Re-open only with a NEW mechanism basis,
+  not a re-run.

@@ -212,7 +212,7 @@ def phase_ibkr(port, seed_dir):
         # ---- GOLD (XAUUSD_*) from MGC COMEX future ----
         try:
             mgc = ContFuture("MGC", "COMEX", "USD"); ib.qualifyContracts(mgc)
-            h1_gold = m30_gold = h4_gold = None
+            h1_gold = m30_gold = h4_gold = m15_gold = None
             for tf in _GOLD_TFS:
                 try:
                     bars = pull(mgc, tf)
@@ -221,6 +221,7 @@ def phase_ibkr(port, seed_dir):
                         if tf == "H1":  h1_gold = bars
                         if tf == "M30": m30_gold = bars
                         if tf == "H4":  h4_gold = bars
+                        if tf == "M15": m15_gold = bars
                     elif tf == "H4" and h1_gold:
                         ok.append(f"XAUUSD_H4(agg<-H1,{agg_h4_from_h1(h1_gold, seed_dir + '/warmup_XAUUSD_H4.csv')})")
                     else:
@@ -236,6 +237,21 @@ def phase_ibkr(port, seed_dir):
             if m30_gold:
                 try: ok.append(f"mgc_30m_hist({write_mgc_hist('data/mgc_30m_hist.csv', m30_gold)})")
                 except Exception as e: fail.append(f"mgc_30m_hist({e})")
+            # S-2026-07-14: boot warm-seeds for the sub-30m DON cells
+            # (GoldDon15m/GoldDon10m, omega_main.hpp). M15 reuses the warmup
+            # pull above; M10 is a dedicated pull -- it is NOT in _GOLD_TFS so
+            # no warmup_XAUUSD_M10.csv orphan is recreated (S-2026-07-13 cull).
+            if m15_gold:
+                try: ok.append(f"mgc_15m_hist({write_mgc_hist('data/mgc_15m_hist.csv', m15_gold)})")
+                except Exception as e: fail.append(f"mgc_15m_hist({e})")
+            try:
+                m10_gold = pull(mgc, "M10")
+                if m10_gold and len(m10_gold) > 10:
+                    ok.append(f"mgc_10m_hist({write_mgc_hist('data/mgc_10m_hist.csv', m10_gold)})")
+                else:
+                    fail.append("mgc_10m_hist(no bars)")
+            except Exception as e:
+                fail.append(f"mgc_10m_hist({e})")
             # data/mgc_h4_hist.csv: boot warm-seed of g_mgc_tf_4h (ENABLED,
             # omega_main.hpp warmup_or_die). MgcFastDonchianFeed.hpp says it is
             # "regenerated at deploy" but S-2026-07-14 found NO regenerator existed

@@ -757,6 +757,12 @@ static omega::GoldBothWaysShortTfEngine g_gold_kelt_m30;    // KELT m30 k1.25 tr
 static omega::GoldBothWaysShortTfEngine g_gold_tfbw_1040;   // TF1H ema10/40 trail2.0
 static omega::GoldBothWaysShortTfEngine g_gold_tfbw_20100;  // TF1H ema20/100 trail2.0
 static omega::GoldBothWaysShortTfEngine g_gold_don_h1;      // DON h1 20/10 stop3ATR
+// S-2026-07-14 sub-30m BIG GO (operator order): DON slow-exit plateau cells on
+// NATIVE 15m/10m MGC bars (tools/mgc_live_bars.py fine feeds). Sweep evidence
+// backtest/gold_subh30_tf_bt.cpp DON15_STOP=1 / DON10_SWEEP=1; PF<1.3 accepted
+// for 10m by operator (actual 1.52). SHADOW.
+static omega::GoldBothWaysShortTfEngine g_gold_don_15m;     // DON 15m 60/35 stop3.5ATR
+static omega::GoldBothWaysShortTfEngine g_gold_don_10m;     // DON 10m 30/35 stop3ATR
 
 // S-2026-07-08c: MgcSlowDonchian30m -- gold deep-dive candidate #1 (Study 7,
 // outputs/GOLD_DEEP_DIVE_2026-07-08.md, evidence commit 4bca1036). Donchian

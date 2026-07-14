@@ -1,29 +1,39 @@
 #!/usr/bin/env python3
-# Live MGC 30m TRADES-bar producer for MgcFastDonchian30m. Loops: pulls recent
-# 30m TRADES bars (real OHLCV+volume, same source as the backtest), appends any
-# NEW CLOSED bars to data/mgc_30m_live.csv, and refreshes data/mgc_hvn.json
-# (prior-day POC+HVN). The Omega engine polls these two files. Distinct
-# client-id (88) from the DOM bridge (99).
+# Live MGC TRADES-bar producer (30m + 15m + 10m) for the MGC engine book.
+# Loops: pulls recent CLOSED TRADES bars per grain (real OHLCV+volume, same
+# source as the backtests), appends NEW closed bars to the per-grain CSV, and
+# refreshes data/mgc_hvn.json (prior-day POC+HVN, from the 30m pull). The
+# Omega engines poll these files. Distinct client-id (88) from the DOM
+# bridge (99).
 # Run as a scheduled/loop service:  python tools/mgc_live_bars.py [port] [period_s]
 #
 # S-2026-06-23 robustness fix: the connect() was OUTSIDE the loop with no reconnect,
 # so any IB drop / failed initial connect crashed the script -> non-zero task result
 # (0x800710E0, hidden by pythonw). Now self-healing: retry connect, detect drops and
 # reconnect inside the loop, exit 0 on clean shutdown.
+# S-2026-07-14: 15m + 10m grains added (GoldDon15m/GoldDon10m native-bar
+# engines, sub-30m BIG GO). A missing/empty fine CSV self-backfills with a
+# one-shot "2 W" pull (~1300 bars, covers engine warm_bars), then steady-state
+# "2 D" like the 30m grain. HVN stays 30m-sourced.
 import sys, json, time, os
 from collections import defaultdict
 from ib_async import IB, ContFuture
 
 PORT   = int(sys.argv[1]) if len(sys.argv) > 1 else 4002
 PERIOD = int(sys.argv[2]) if len(sys.argv) > 2 else 300
-CSV    = "data/mgc_30m_live.csv"
 HVN    = "data/mgc_hvn.json"
 BINS   = 30
+# (barSizeSetting, csv path). 30m FIRST -- it also feeds the HVN write.
+GRAINS = [
+    ("30 mins", "data/mgc_30m_live.csv"),
+    ("15 mins", "data/mgc_15m_live.csv"),
+    ("10 mins", "data/mgc_10m_live.csv"),
+]
 
-def last_ts():
-    if not os.path.exists(CSV): return 0
+def last_ts(csv):
+    if not os.path.exists(csv): return 0
     try:
-        with open(CSV) as f: rows = f.read().splitlines()[1:]
+        with open(csv) as f: rows = f.read().splitlines()[1:]
         return int(rows[-1].split(",")[0]) if rows else 0
     except Exception: return 0
 
@@ -61,13 +71,14 @@ def connect():
     return None, None
 
 def main():
-    if not os.path.exists(CSV):
-        open(CSV, "w").write("ts,o,h,l,c,v\n")
+    for _, csv in GRAINS:
+        if not os.path.exists(csv):
+            open(csv, "w").write("ts,o,h,l,c,v\n")
     ib, c = connect()
     if ib is None:
         print("[mgc-live] FATAL: could not connect after retries -- exiting cleanly for task retry", flush=True)
         return 0   # clean exit; the 5-min task trigger retries
-    print(f"[mgc-live] producing {CSV} + {HVN} every {PERIOD}s", flush=True)
+    print(f"[mgc-live] producing {[g[1] for g in GRAINS]} + {HVN} every {PERIOD}s", flush=True)
     while True:
         try:
             if not ib.isConnected():
@@ -76,18 +87,22 @@ def main():
                 except Exception: pass
                 ib, c = connect()
                 if ib is None: return 0
-            bars = ib.reqHistoricalData(c, "", barSizeSetting="30 mins",
-                                        durationStr="2 D", whatToShow="TRADES",
-                                        useRTH=False, timeout=60)
-            if bars:
-                lt = last_ts(); appended = 0
-                with open(CSV, "a") as f:
+            for bar_size, csv in GRAINS:
+                # one-shot backfill on an empty fine CSV (engine warm cover);
+                # steady-state stays the cheap 2-day tail pull.
+                dur = "2 D" if last_ts(csv) > 0 else "2 W"
+                bars = ib.reqHistoricalData(c, "", barSizeSetting=bar_size,
+                                            durationStr=dur, whatToShow="TRADES",
+                                            useRTH=False, timeout=60)
+                if not bars: continue
+                lt = last_ts(csv); appended = 0
+                with open(csv, "a") as f:
                     for b in bars[:-1]:               # exclude the still-forming bar
                         ts = int(b.date.timestamp())
                         if ts > lt:
                             f.write(f"{ts},{b.open},{b.high},{b.low},{b.close},{b.volume or 0}\n"); appended += 1
-                write_hvn(bars)
-                if appended: print(f"[mgc-live] +{appended} closed bars, last close {bars[-2].close}", flush=True)
+                if bar_size == "30 mins": write_hvn(bars)
+                if appended: print(f"[mgc-live] {bar_size}: +{appended} closed bars, last close {bars[-2].close}", flush=True)
         except Exception as e:
             print(f"[mgc-live] err: {e}", flush=True)
         ib.sleep(PERIOD)

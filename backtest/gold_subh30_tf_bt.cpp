@@ -47,6 +47,11 @@
 
 static double COST_RT = 0.41;          // points round-trip, 1x basis
 static const double USD_PER_PT = 10.0; // 1 MGC = 10oz, $10 per 1.0pt
+// S-2026-07-14 (mimic validation, ax-harness pattern): env DUMP_ENTRIES=1 ->
+// print one "ENTRY|tf|mech|cfg|dir|entry_px|entry_ts" line per trade so the
+// BE-mimic harness (gold_newengine_mimic_bt.cpp) consumes the REAL entry
+// stream. Default OFF -> output unchanged.
+static bool DUMP_ENTRIES = false;
 
 struct Bar { int64_t ts; double o,h,l,c; };
 
@@ -149,6 +154,10 @@ struct Report {
 };
 
 static void finish(Report& r, const std::vector<Trade>& trades){
+    if(DUMP_ENTRIES)
+        for(const auto& t : trades)
+            std::printf("ENTRY|%s|%s|%s|%+d|%.2f|%lld\n",
+                        r.tf, r.mech, r.cfg.c_str(), t.dir, t.entry, (long long)t.ets);
     for(const auto& t : trades){
         double pre  = t.dir*(t.exit - t.entry) * USD_PER_PT;   // before cost
         double usd1 = t.pts_net * USD_PER_PT;
@@ -225,7 +234,8 @@ entry:
     return out;
 }
 
-static std::vector<Trade> run_don(const std::vector<Bar>& bars, int nin, int nout){
+static std::vector<Trade> run_don(const std::vector<Bar>& bars, int nin, int nout,
+                                  double stop_mult=3.0){
     std::vector<double> hhin,llin,hhout,llout;
     donchian(bars,nin,hhin,llin); donchian(bars,nout,hhout,llout);
     auto atr=atr_wilder(bars,14);
@@ -245,7 +255,7 @@ entry:
             if(lg||sh){
                 p.active=true; p.dir=lg?+1:-1; p.entry=b.c; p.ets=b.ts;
                 p.extreme=b.c; p.has_tp=false; p.bars_held=0;
-                p.stop=b.c-p.dir*3.0*atr[i];
+                p.stop=b.c-p.dir*stop_mult*atr[i];
             }
         }
     }
@@ -308,6 +318,7 @@ static void print_report(Report& r){
 int main(int argc, char** argv){
     const char* path = argc>1? argv[1] : "/Users/jo/Tick/xau_1m_spliced_2024_2026.csv";
     if(getenv("COST_RT")) COST_RT=atof(getenv("COST_RT"));
+    DUMP_ENTRIES = getenv("DUMP_ENTRIES") && atoi(getenv("DUMP_ENTRIES"))!=0;
     auto m1=load_csv(path);
     std::printf("[GOLD-SUB30M] 1m bars=%zu  COST_RT=%.2fpt ($%.2f/RT per 1 MGC)  2x=%.2fpt  (SPOT bars, MGC cost basis)\n",
         m1.size(), COST_RT, COST_RT*USD_PER_PT, 2*COST_RT);
@@ -350,6 +361,39 @@ int main(int argc, char** argv){
                     std::snprintf(buf,sizeof buf,"%d/%d stop3ATR",nin,nout);
                     r.cfg=buf; finish(r, run_don(bars,nin,nout)); print_report(r);
                 }
+        }
+        // DON10_SWEEP=1 (S-2026-07-14 operator order): 10m sweet-spot hunt.
+        // Fine Nin x Nout grid (slow-exit emphasis, the 15m lesson) x stop-ATR
+        // mult lever {2.5,3.0,3.5}. Operator accepts PF<1.3 at 10m; gate for
+        // wiring = net>0 @1x AND @2x, both WF halves +, both legs +.
+        if(tfs[t]==10 && getenv("DON10_SWEEP")){
+            std::printf("---- DON 10m fine sweep (Nin x Nout x stopATR) ----\n");
+            for(double sm : {2.5,3.0,3.5})
+                for(int nin : {20,25,30,40,45,50,55,60,70,80})
+                    for(int nout : {15,20,23,27,31,35,40,45}){
+                        Report r; r.tf=tfn[t]; r.mech="DONf";
+                        std::snprintf(buf,sizeof buf,"%d/%d stop%.1fATR",nin,nout,sm);
+                        r.cfg=buf; finish(r, run_don(bars,nin,nout,sm)); print_report(r);
+                    }
+            std::printf("---- KELT 10m extension (wider trail/k) ----\n");
+            for(double k : {1.5,1.75,2.0}) for(double tr : {3.0,3.5,4.0}){
+                Report r; r.tf=tfn[t]; r.mech="KELT";
+                std::snprintf(buf,sizeof buf,"k%.2f trail%.1f",k,tr);
+                r.cfg=buf; finish(r, run_kelt(bars,k,tr,tmax)); print_report(r);
+            }
+        }
+        // DON15_STOP=1 (S-2026-07-14 operator order, 15m BIG GO): stop-ATR
+        // mult lever over the certified slow-exit plateau (Nout>=23 only —
+        // never wire the 2:1-ratio family).
+        if(tfs[t]==15 && getenv("DON15_STOP")){
+            std::printf("---- DON 15m plateau x stopATR sweep ----\n");
+            for(double sm : {2.5,3.0,3.5,4.0})
+                for(int nin : {45,50,55,60,65,70})
+                    for(int nout : {23,27,31,35,40,45}){
+                        Report r; r.tf=tfn[t]; r.mech="DONf";
+                        std::snprintf(buf,sizeof buf,"%d/%d stop%.1fATR",nin,nout,sm);
+                        r.cfg=buf; finish(r, run_don(bars,nin,nout,sm)); print_report(r);
+                    }
         }
     }
     return 0;

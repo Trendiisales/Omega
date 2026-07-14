@@ -59,6 +59,7 @@ static omega::MgcSlowDonchian30mEngine g_mgc_slowdon;
 static omega::GoldVolBreakoutM30Engine g_mgc_volbrk;   // S-2026-07-11: moved to globals.hpp for persistence
 static omega::GoldBothWaysShortTfEngine g_gold_kelt_m30, g_gold_tfbw_1040,
                                         g_gold_tfbw_20100, g_gold_don_h1;  // S-2026-07-14bc
+static omega::GoldBothWaysShortTfEngine g_gold_don_15m, g_gold_don_10m;    // S-2026-07-14 sub-30m
 #endif
 // S-2026-07-08c: 5th engine on the same MGC feed -- MgcSlowDonchian30m (deep-dive
 // candidate #1, Nin40/Nout20 slow sibling, next-bar-open + 3xATR adverse-first
@@ -268,6 +269,57 @@ inline void poll_mgc_feed(const std::string& bars_csv, const std::string& hvn_js
     if (s_fed > 0 || s_poll % 20 == 1) {
         std::printf("[MGC-FEED] poll#%ld: file_bars=%d new_fed=%d newest_ts=%lld (mgc book alive; 0 trades is correct in a gold downtrend -- long-biased)\n",
                     s_poll, total, s_fed, (long long)newest);
+        std::fflush(stdout);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// S-2026-07-14 fine-row feed poll: drives ONE GoldBothWaysShortTfEngine off a
+// native 15m/10m live CSV (tools/mgc_live_bars.py fine feeds, ts,o,h,l,c,v).
+// The engine's own last_row_ts_ dedups re-read rows, so the whole file is
+// re-fed every call. boot_done: caller-owned flag -- the FIRST call replays
+// the whole live CSV entry-blocked (warmup_active_, S102 pattern) so a boot
+// replay never re-books trades already in the shadow ledger; restored open
+// legs (PositionPersistence) ARE managed through the replayed rows.
+// ---------------------------------------------------------------------------
+inline void poll_mgc_fine_feed(const std::string& bars_csv,
+                               omega::GoldBothWaysShortTfEngine& eng,
+                               bool& boot_done, long& s_poll,
+                               omega::GoldBothWaysShortTfEngine::OnCloseFn cb) {
+    if (!eng.enabled) return;
+    ++s_poll;
+    const bool boot_replay = !boot_done;
+    if (boot_replay) eng.warmup_active_ = true;
+    std::ifstream f(bars_csv);
+    if (!f) {
+        if (s_poll % 20 == 1) { std::printf("[MGC-FINE-FEED] %s poll#%ld: cannot open '%s' (producer not yet writing?)\n",
+                                            eng.engine_tag.c_str(), s_poll, bars_csv.c_str()); std::fflush(stdout); }
+        if (boot_replay) { eng.warmup_active_ = false; boot_done = true; }   // nothing to replay
+        return;
+    }
+    std::string ln; int fed = 0; int64_t newest = 0;
+    const int64_t pre_ts = eng.last_row_ts_;
+    while (std::getline(f, ln)) {
+        if (ln.empty() || ln[0] < '0' || ln[0] > '9') continue;
+        std::stringstream s(ln); std::string t; std::vector<std::string> k;
+        while (std::getline(s, t, ',')) k.push_back(t);
+        if (k.size() < 5) continue;
+        const int64_t ts = std::atoll(k[0].c_str());
+        if (ts > newest) newest = ts;
+        if (ts <= eng.last_row_ts_) continue;
+        ++fed;
+        eng.on_30m_bar(std::atof(k[1].c_str()), std::atof(k[2].c_str()),
+                       std::atof(k[3].c_str()), std::atof(k[4].c_str()), ts, cb);
+    }
+    if (boot_replay) {
+        eng.warmup_active_ = false; boot_done = true;
+        std::printf("[MGC-FINE-FEED] %s boot replay complete: %d row(s) re-fed entry-blocked (floor_ts=%lld); live entries armed\n",
+                    eng.engine_tag.c_str(), fed, (long long)pre_ts);
+        std::fflush(stdout);
+    }
+    if (fed > 0 || s_poll % 20 == 1) {
+        std::printf("[MGC-FINE-FEED] %s poll#%ld: new_fed=%d newest_ts=%lld\n",
+                    eng.engine_tag.c_str(), s_poll, fed, (long long)newest);
         std::fflush(stdout);
     }
 }

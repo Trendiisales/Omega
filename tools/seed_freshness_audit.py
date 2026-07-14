@@ -102,6 +102,10 @@ KNOWN_UNREFRESHED = {
                               "feeds_selftest.py (max 26h) -- a second refresher would fight it",
     "mgc_30m_live.csv":       "LIVE stream file appended by tools/mgc_live_bars.py (registered VPS "
                               "task); absent on Mac by design; freshness is the producer task's job",
+    "mgc_15m_live.csv":       "LIVE stream file appended by tools/mgc_live_bars.py (S-2026-07-14 fine "
+                              "grain for GoldDon15m); absent on Mac by design; producer task owns it",
+    "mgc_10m_live.csv":       "LIVE stream file appended by tools/mgc_live_bars.py (S-2026-07-14 fine "
+                              "grain for GoldDon10m); absent on Mac by design; producer task owns it",
 }
 
 def refreshed_filenames(repo):
@@ -117,7 +121,8 @@ def refreshed_filenames(repo):
         for _sym, _tf, name, _keep in m._REBUILD_TARGETS: out.add(name)
         for tf in m._GOLD_TFS: out.add(f"warmup_XAUUSD_{tf}.csv")
         out |= {"warmup_XAUUSD_H4.csv", "tsmom_warmup_H1.csv",       # gold-section extras
-                "mgc_h1_hist.csv", "mgc_30m_hist.csv", "mgc_h4_hist.csv"}
+                "mgc_h1_hist.csv", "mgc_30m_hist.csv", "mgc_h4_hist.csv",
+                "mgc_15m_hist.csv", "mgc_10m_hist.csv"}              # S-2026-07-14 sub-30m DON seeds
         for sym, (_con, tfs) in m._INDEX.items():
             for tf in tfs: out.add(f"warmup_{sym}_{tf}.csv")
         for sym, tfs in m._FOREX.items():

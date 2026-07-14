@@ -338,13 +338,62 @@ int main(int argc, char* argv[])
     g_gold_don_h1.seed_from_30m_csv("data/mgc_30m_hist.csv");
     g_engine_heartbeat.register_engine("GoldDonH1", g_gold_don_h1.enabled, 3600, 0, 24);
 
+    // ── S-2026-07-14 sub-30m BIG GO (operator order): DON slow-exit plateau
+    //    cells on NATIVE 15m/10m MGC bars. Sweep evidence gold_subh30_tf_bt.cpp
+    //    (DON15_STOP=1 / DON10_SWEEP=1, certified spot-1m splice @ MGC cost
+    //    0.41pt RT): 15m 60/35 stop3.5 +$20,131 @1x/+$19,656 @2x PF1.93
+    //    WF +15,412/+4,719 maxDD $3,794, plateau 144/144 GATE-PASS; 10m 30/35
+    //    stop3.0 +$21,281/+$20,207 PF1.52 WF +10,359/+10,922 maxDD $4,891
+    //    (operator accepts PF<1.3 at 10m; actual 1.52). Feed = tools/
+    //    mgc_live_bars.py fine CSVs (data/mgc_15m_live.csv / mgc_10m_live.csv,
+    //    native IBKR TRADES bars); seeds = data/mgc_15m_hist.csv /
+    //    mgc_10m_hist.csv (nightly seed_refresh.py). SHADOW. Same adverse
+    //    protection family: hard ATR stop, channel exit, auto-retire -2x BT DD.
+    g_gold_don_15m.enabled = true;  g_gold_don_15m.shadow_mode = true;
+    g_gold_don_15m.lot = 1.0;       // LOT-GATE-OK: lot = CONTRACTS; 1 MGC micro = 10oz = $10/pt (smallest unit)
+    g_gold_don_15m.mech = omega::GoldBothWaysShortTfEngine::Mech::DON;
+    g_gold_don_15m.tf_secs = 900;   g_gold_don_15m.row_secs = 900;
+    g_gold_don_15m.atr_n = 14;
+    g_gold_don_15m.don_in = 60;     g_gold_don_15m.don_out = 35;
+    g_gold_don_15m.stop_atr = 3.5;  g_gold_don_15m.trail_atr = 0.0;
+    g_gold_don_15m.time_stop_bars = 0;
+    g_gold_don_15m.warm_bars = 80;  g_gold_don_15m.retire_net_pts = -760.0; // -2x BT maxDD 379pt
+    g_gold_don_15m.engine_tag = "GoldDon15m_60_35_stop3.5ATR";
+    g_gold_don_15m.mimic_tag  = "";  // BE-mimic = open operator question (14t #6): validate per-parent first
+    g_gold_don_15m.seed_from_30m_csv("data/mgc_15m_hist.csv");
+    g_engine_heartbeat.register_engine("GoldDon15m", g_gold_don_15m.enabled, 1800, 0, 24);
+
+    g_gold_don_10m.enabled = true;  g_gold_don_10m.shadow_mode = true;
+    g_gold_don_10m.lot = 1.0;       // LOT-GATE-OK: lot = CONTRACTS; 1 MGC micro = 10oz = $10/pt (smallest unit)
+    g_gold_don_10m.mech = omega::GoldBothWaysShortTfEngine::Mech::DON;
+    g_gold_don_10m.tf_secs = 600;   g_gold_don_10m.row_secs = 600;
+    g_gold_don_10m.atr_n = 14;
+    g_gold_don_10m.don_in = 30;     g_gold_don_10m.don_out = 35;
+    g_gold_don_10m.stop_atr = 3.0;  g_gold_don_10m.trail_atr = 0.0;
+    g_gold_don_10m.time_stop_bars = 0;
+    g_gold_don_10m.warm_bars = 80;  g_gold_don_10m.retire_net_pts = -980.0; // -2x BT maxDD 489pt
+    g_gold_don_10m.engine_tag = "GoldDon10m_30_35_stop3ATR";
+    g_gold_don_10m.mimic_tag  = "";  // BE-mimic = open operator question (14t #6): validate per-parent first
+    g_gold_don_10m.seed_from_30m_csv("data/mgc_10m_hist.csv");
+    g_engine_heartbeat.register_engine("GoldDon10m", g_gold_don_10m.enabled, 1800, 0, 24);
+
     std::thread([](){
         std::this_thread::sleep_for(std::chrono::seconds(45));
+        static bool don15_boot = false, don10_boot = false;
+        static long don15_poll = 0, don10_poll = 0;
         while (g_running.load()) {
             std::this_thread::sleep_for(std::chrono::seconds(30));
             if (!g_running.load()) break;
             poll_mgc_feed("data/mgc_30m_live.csv", "data/mgc_hvn.json",
                           [](const omega::TradeRecord& tr){ g_omegaLedger.record(tr); });
+            // S-2026-07-14: native fine feeds (engine-internal ts-dedup; boot
+            // replay entry-blocked on the first call, see poll_mgc_fine_feed).
+            poll_mgc_fine_feed("data/mgc_15m_live.csv", g_gold_don_15m, don15_boot, don15_poll,
+                               [](const omega::TradeRecord& tr){ g_omegaLedger.record(tr); });
+            poll_mgc_fine_feed("data/mgc_10m_live.csv", g_gold_don_10m, don10_boot, don10_poll,
+                               [](const omega::TradeRecord& tr){ g_omegaLedger.record(tr); });
+            g_engine_heartbeat.pulse("GoldDon15m");
+            g_engine_heartbeat.pulse("GoldDon10m");
         }
     }).detach();
 

@@ -13,6 +13,17 @@
 //    DON   h1 20/10:  hard 3xATR(14) adverse-first stop + opposite-channel
 //                     close exit (MgcFastDonchian-family verdict). worst
 //                     -$2,287 / maxDD $8,006.
+//    DON  15m 60/35:  (S-2026-07-14 sub-30m study + operator BIG-GO sweep,
+//                     backtest/gold_subh30_tf_bt.cpp DON15_STOP=1, certified
+//                     spot-1m splice at MGC cost) hard 3.5xATR(14) adverse-
+//                     first stop + opposite-channel close exit. worst -$945 /
+//                     maxDD $3,794 per 1 MGC (6mo); whole plateau 144/144
+//                     GATE-PASS -- stop lever 2.5-4.0 all pass, 3.5 interior peak.
+//    DON  10m 30/35:  same sweep (DON10_SWEEP=1), operator accepts PF<1.3 at
+//                     10m (actual PF 1.52). hard 3.0xATR(14) adverse-first
+//                     stop + opposite-channel close exit. worst -$972 /
+//                     maxDD $4,891 per 1 MGC (6mo); Nout>=31 slow-exit plateau
+//                     GATE-PASS across Nin 20-50 x stop 2.5-3.5.
 //  Plus AUTO-RETIREMENT latch per instance (retire_net_pts ~= -2x the config's
 //  BT maxDD in points) -- banked net at BT cost <= latch blocks new entries.
 //  Loss driver is regime-turn clusters (Feb/Apr-2026), not single-trade blowups.
@@ -63,7 +74,9 @@ struct GoldBothWaysShortTfEngine {
     bool        shadow_mode = true;     // paper until the live shadow ledger proves it
     double      lot         = 1.0;      // 1 MGC micro = 10oz = $10/pt (contracts)
     Mech        mech        = Mech::KELT;
-    int         tf_secs     = 1800;     // native bar: 1800 = M30, 3600 = H1
+    int         tf_secs     = 1800;     // native bar: 900 = M15, 1800 = M30, 3600 = H1
+    int         row_secs    = 1800;     // feed row grain (S-2026-07-14: 600/900 for the
+                                        // mgc_10m/15m_live.csv fine feeds; must divide tf_secs)
     // KELT params
     double      kelt_k      = 1.25;     // band width (k * ATR20 around EMA20)
     // EMA params
@@ -136,8 +149,9 @@ struct GoldBothWaysShortTfEngine {
         _close(bid > 0.0 ? bid : entry_, now_sec > 0 ? now_sec : entry_ts_, "FORCE_CLOSE", cb);
     }
 
-    // Warm-seed from ts(sec),o,h,l,c[,v] CSV (data/mgc_30m_hist.csv, nightly
-    // refresh). Entries blocked; ts-dedup skips the live-CSV boot overlap.
+    // Warm-seed from ts(sec),o,h,l,c[,v] CSV (data/mgc_30m_hist.csv --
+    // or mgc_15m/10m_hist.csv for the fine-row instances; row grain must
+    // match row_secs). Entries blocked; ts-dedup skips the live-CSV overlap.
     int seed_from_30m_csv(const std::string& path) noexcept {
         std::ifstream f(path);
         if (!f.is_open()) {
@@ -160,8 +174,8 @@ struct GoldBothWaysShortTfEngine {
             ++fed;
         }
         warmup_active_ = was;
-        std::printf("[SEED] %s %d x30m replayed native_bars=%d atr=%.3f last_ts=%lld -- hot\n",
-                    engine_tag.c_str(), fed, nbars_, atr_, (long long)last_row_ts_);
+        std::printf("[SEED] %s %d x%dm replayed native_bars=%d atr=%.3f last_ts=%lld -- hot\n",
+                    engine_tag.c_str(), fed, row_secs / 60, nbars_, atr_, (long long)last_row_ts_);
         std::fflush(stdout);
         return fed;
     }
@@ -198,8 +212,9 @@ struct GoldBothWaysShortTfEngine {
             if (l < bl_) bl_ = l;
             bc_ = c;
         }
-        // last sub-bar of the bucket closes it NOW (M30: every row; H1: the :30 row)
-        if (ts_sec - bkt >= tf_secs - 1800) { _native_close(bkt, cb); cur_bkt_ = 0; }
+        // last sub-bar of the bucket closes it NOW (pass-through when
+        // row_secs == tf_secs: every row; H1 from 30m rows: the :30 row)
+        if (ts_sec - bkt >= tf_secs - row_secs) { _native_close(bkt, cb); cur_bkt_ = 0; }
     }
 
 private:
