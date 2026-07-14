@@ -4737,6 +4737,17 @@ static void init_engines(const std::string& cfg_path)
         g_gold_stack.set_subengine_audit_disabled("DonchianBreakout", true);
         g_gold_stack.set_subengine_audit_disabled("DynamicRange", true);
     }
+    // DISABLED 2026-07-15 (S-2026-07-15b, first-forward-loss audit). Two faults:
+    // (1) engine hard-codes the LBMA PM fix at 15:00 UTC but the auction is
+    // 15:00 LONDON local — during BST it fires 1h post-fix (~7mo/yr); the
+    // 2026-07-14 −$5.45 SL_HIT fired 16:00 London. (2) Faithful 1m-truth BT
+    // (certified xau_1m_spliced_2024_2026, live-observed SL5/TP10.8, 0.45pt RT):
+    // NO edge at ANY timing — live 15:00 UTC PF 0.96 (n530, −60.9pt); the
+    // DST-correct 15:00-London variant is WORSE (PF 0.85, −276.5pt); 14:00 UTC
+    // fixed PF 0.90. Claimed WR58%/Sharpe2.60 ("sim approximated") never
+    // replicates. Do NOT "fix" by retiming — disable (AsianRange S99d
+    // precedent). Evidence: backtest/LONDONFIX_DST_FINDINGS_2026-07-15.md.
+    g_gold_stack.set_subengine_audit_disabled("LondonFixMomentum", true);
     {
         char _msg[512];
         snprintf(_msg, sizeof(_msg),
