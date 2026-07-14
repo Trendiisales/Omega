@@ -83,6 +83,10 @@ def main():
             fresh = pd.concat([old[~old.index.isin(fresh.index)], fresh]).sort_index()
         except Exception as e:
             print(f"[vps-stockmover] merge skip ({e})", flush=True)
+    # S-2026-07-14q: refuse to persist cross-wired (aliased) columns -- see close_csv_guard.py
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from close_csv_guard import assert_no_aliased_columns
+    assert_no_aliased_columns(fresh, " vps_stockmover")
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
     fd = tempfile.NamedTemporaryFile("w", delete=False, dir=os.path.dirname(OUT), newline="")
     fresh.to_csv(fd); fd.close(); os.replace(fd.name, OUT)

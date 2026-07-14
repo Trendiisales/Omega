@@ -35,13 +35,23 @@ CHECKS (DISPLAYED vs AUTHORITATIVE, per desk surface):
                       the WIRED values ([CLIP-INIT] det=1h/+2%% vs served
                       det_w/det_thr_pct per cell). WARN on mismatch (stale label,
                       not missing money).
+  [5] STOCK-BASKET-PNL /api/rdagent_book per-row marks + P&L == recomputed from the
+                      AUTHORITATIVE Mac sources (sp500_long_close.csv close on the
+                      served as_of row + avg cost replayed from
+                      factor_basket_orders.csv). Also fails on the column-alias
+                      signature (two basket tickers with identical closes across
+                      recent sessions = cross-wired price pull). Built after
+                      S-2026-07-14q: refresh_close_ibkr reqId bleed wrote CRM's
+                      series into ADBE's column for 251 rows; the desk showed
+                      ADBE -$835 on a position that was really +$174 and the
+                      headline P&L was fiction. Freshness guards all stayed GREEN.
 
 RESULT: marker line + exit 0 GREEN / 2 RED (WARN-only stays GREEN, is printed).
 Interpreter: /usr/bin/python3 (3.9-safe: no datetime.UTC, no 3.11-only APIs).
 Cron: scripts/install_crashsafe_monitor_crons.sh (30 min, crash-safe wrapped).
 Negative tests: DTS_INJECT=roster_missing|roster_extra|legacy_shape|
-trade_undercount|symbol_missing|config_drift (comma list) mutates the fetched
-data so each check can be PROVEN to fire. Never set in cron.
+trade_undercount|symbol_missing|config_drift|pnl_crosswire (comma list) mutates
+the fetched data so each check can be PROVEN to fire. Never set in cron.
 
 This is the CONTENT-parity layer ABOVE the structural gate
 (tools/trade_visibility_manifest.tsv + scripts/trade_visibility_gate.sh).
@@ -388,6 +398,7 @@ def main() -> int:
     served_sl = http_json("/api/stockladder_companion")
     served_b2 = http_json("/api/bigcap2pct_companion")
     served_tm = http_json("/api/telemetry")
+    served_rb = http_json("/api/rdagent_book")
     chim = probe_chimera()
     vps = probe_vps()
     einit = read_file(ENGINE_INIT)
@@ -414,6 +425,12 @@ def main() -> int:
         for l in served_cc.get("legs", []):
             if l.get("tag", "").startswith("BTC-"):
                 l["det_thr_pct"] = float(l.get("det_thr_pct", 0)) + 7.0
+    if "pnl_crosswire" in INJECT and isinstance(served_rb, dict):
+        # remark position 0 at position 1's price — the exact ADBE<-CRM signature
+        _ps = served_rb.get("positions", [])
+        if len(_ps) >= 2:
+            _ps[0]["last"] = _ps[1]["last"]
+            _ps[0]["pnl_usd"] = round((_ps[0]["last"] - _ps[0]["avg_cost"]) * _ps[0]["shares"], 2)
 
     # ═══ [1] CRYPTO COMPANION ROSTER PARITY ══════════════════════════════════
     clip = chim.get("clip_init") or {}
@@ -670,6 +687,93 @@ def main() -> int:
                 % len(legs))
     else:
         rec("SKIP", "CONFIG-LABEL", "needs both boot [CLIP-INIT] roster and tagged legs (see CRYPTO-ROSTER above)")
+
+    # ═══ [5] STOCK-BASKET P&L PARITY (served marks == authoritative recompute) ═
+    # S-2026-07-14q: the desk showed ADBE -$835 (marked at CRM's price) while the
+    # real position was +$174 — the price CSV column was cross-wired for 251 rows
+    # and every freshness/plumbing guard stayed GREEN. This check recomputes each
+    # served row from the authoritative Mac sources and looks for the alias
+    # signature itself.
+    rb_pos = served_rb.get("positions", []) if isinstance(served_rb, dict) else []
+    rb_asof = served_rb.get("as_of") if isinstance(served_rb, dict) else None
+    RDA = OMEGA + "/data/rdagent"
+    if "__err__" in served_rb:
+        rec("FAIL", "BASKET-PNL", "/api/rdagent_book unreachable: %s" % served_rb["__err__"])
+    elif not rb_pos:
+        rec("SKIP", "BASKET-PNL", "no open basket positions served (flat book)")
+    else:
+        import csv as _csv
+        # authoritative closes on the served as_of row + the 10 rows before it
+        closes_asof = {}
+        recent_rows = []
+        try:
+            with open(RDA + "/sp500_long_close.csv") as f:
+                rd = _csv.reader(f)
+                hdr = next(rd)
+                syms = [p.get("sym") for p in rb_pos]
+                idx = {s: hdr.index(s) for s in syms if s in hdr}
+                for row in rd:
+                    recent_rows.append(row)
+                    if len(recent_rows) > 11:
+                        recent_rows.pop(0)
+                    if rb_asof and row[0][:10] == rb_asof:
+                        closes_asof = {s: row[i] for s, i in idx.items() if row[i]}
+        except Exception as e:
+            rec("FAIL", "BASKET-PNL", "authoritative close CSV unreadable: %s" % e)
+            idx = {}
+        # avg cost replayed from the fill ledger (same replay execute_basket does)
+        basis = {}
+        try:
+            with open(RDA + "/factor_basket_orders.csv") as f:
+                for r in _csv.DictReader(f):
+                    s = r.get("instrument"); sh = int(r.get("shares", 0) or 0)
+                    px = float(r.get("price", 0) or 0); fee = float(r.get("cost", 0) or 0)
+                    b = basis.setdefault(s, [0, 0.0])
+                    if sh > 0:
+                        b[0] += sh; b[1] += sh * px + fee
+                    else:
+                        if b[0] > 0:
+                            b[1] += sh * (b[1] / b[0])
+                        b[0] += sh
+        except Exception as e:
+            rec("FAIL", "BASKET-PNL", "fill ledger unreadable: %s" % e)
+        if idx and basis:
+            bad = []
+            if not closes_asof:
+                rec("SKIP", "BASKET-PNL", "served as_of %s has no row in close CSV yet (push lag)" % rb_asof)
+            else:
+                for p in rb_pos:
+                    s = p.get("sym")
+                    if s not in closes_asof:
+                        bad.append("%s: no authoritative close" % s)
+                        continue
+                    auth_last = float(closes_asof[s])
+                    if abs(float(p.get("last", -1)) - auth_last) > 0.011:
+                        bad.append("%s marked %.2f but authoritative close %.2f (WRONG MARK)" %
+                                   (s, float(p.get("last", -1)), auth_last))
+                        continue
+                    b = basis.get(s)
+                    want_pnl = (auth_last - (b[1] / b[0])) * p.get("shares", 0) if b and b[0] > 0 else None
+                    if want_pnl is not None and abs(float(p.get("pnl_usd", 0)) - want_pnl) > 2.0:
+                        bad.append("%s served pnl %.2f but recomputed %.2f" %
+                                   (s, float(p.get("pnl_usd", 0)), want_pnl))
+                # alias signature: two served tickers identical across recent CSV rows
+                aliased = []
+                sym_list = [s for s in idx]
+                for i in range(len(sym_list)):
+                    for j in range(i + 1, len(sym_list)):
+                        a, b2 = sym_list[i], sym_list[j]
+                        vals = [(r[idx[a]], r[idx[b2]]) for r in recent_rows if r[idx[a]] and r[idx[b2]]]
+                        if len(vals) >= 5 and all(x == y for x, y in vals):
+                            aliased.append("%s==%s over %d sessions" % (a, b2, len(vals)))
+                if aliased:
+                    bad.append("ALIASED COLUMNS in close CSV: " + "; ".join(aliased))
+                if bad:
+                    rec("FAIL", "BASKET-PNL", "desk stock-basket P&L DIVERGES from authoritative recompute: " +
+                        "; ".join(bad[:4]) + (" (+%d more)" % (len(bad) - 4) if len(bad) > 4 else ""))
+                else:
+                    rec("PASS", "BASKET-PNL", "all %d served rows match authoritative close+ledger recompute "
+                        "(marks, P&L, no column aliasing)" % len(rb_pos))
 
     # ── verdict ────────────────────────────────────────────────────────────────
     verdict = ("RED — DESK DISPLAY DIVERGES FROM REALITY (%d mismatch%s)" % (red, "es" if red != 1 else "")

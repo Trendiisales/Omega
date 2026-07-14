@@ -66,6 +66,9 @@ def main():
         old=pd.read_csv(CLOSE, index_col=0, parse_dates=True)
         full=pd.concat([old[~old.index.isin(full.index)], full]).sort_index()
         full.update(dl(tk,'5d'))  # ensure newest cells win
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from close_csv_guard import assert_no_aliased_columns
+    assert_no_aliased_columns(full, " refresh_yf")  # S-2026-07-14q: abort, don't write aliased columns
     full.to_csv(CLOSE)
     print(f"[refresh_yf] wrote {full.shape[1]} names through {full.index.max().date()} ({fresh_cnt} fresh)")
     # Daily Google-Drive archive of the full research CSV (operator: keep space free / durable

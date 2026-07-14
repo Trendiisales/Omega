@@ -5,12 +5,28 @@ Root cause it fixes: the yfinance pull in blend_daily.sh is chronically throttle
 so ~230 of 536 names never refresh and their columns froze at the 2024 build -> the GUI showed
 "-" (stale guard) and the basket lost half its prices. IBKR (reqHistoricalData) has no such throttle.
 
-Usage (tunnel to the gateway must be up: ssh -f -N -L 4002:127.0.0.1:4002 omega-vps):
-    python3 refresh_close_ibkr.py --tickers bigcap   # ~40 traded names, fast (~7min)
-    python3 refresh_close_ibkr.py --tickers full     # full S&P 536, overnight (~90min, IBKR pacing)
+PROHIBITED against the PRODUCTION exec gateway (operator rule 2026-07-14: a bulk
+historical pull through omega-new:4002 killed the gateway -- live orders dead).
+Point it ONLY at a data-only IBKR session (separate gateway/TWS login), and set
+RDA_IBKR_DATA_ONLY=1 to attest that. Without the env var the script refuses to run.
+    RDA_IBKR_DATA_ONLY=1 python3 refresh_close_ibkr.py --tickers bigcap
+    RDA_IBKR_DATA_ONLY=1 python3 refresh_close_ibkr.py --tickers full   # overnight, IBKR pacing
 Merges (extend, not replace) into sp500_long_close.csv. READ-ONLY on IBKR (no orders).
+
+S-2026-07-14q: pull() rewritten -- the old version used ONE reqId (9000) for every
+request, never cancelled on timeout, and appended every historicalData callback
+regardless of reqId. A timed-out symbol kept streaming bars into the NEXT symbol's
+buffer: ADBE's column became CRM's series for 251 rows (CRM precedes ADBE in BIGCAP)
+and the GUI booked/marked ADBE at CRM's price. Now: unique reqId per request,
+callbacks filtered by reqId, cancelHistoricalData on timeout, and close_csv_guard
+refuses to write a frame with aliased columns.
 """
 import sys, os, time, argparse, datetime as dt
+if os.environ.get('RDA_IBKR_DATA_ONLY')!='1':
+    print("REFUSING: bulk historical pulls through the PRODUCTION exec gateway are "
+          "prohibited (operator rule 2026-07-14 -- one killed omega-new:4002, live orders dead).\n"
+          "Point at a DATA-ONLY IBKR session and set RDA_IBKR_DATA_ONLY=1 to attest.")
+    sys.exit(4)
 import pandas as pd
 from ibapi.client import EClient
 from ibapi.wrapper import EWrapper
@@ -27,26 +43,40 @@ CLOSE = f"{DATA}/sp500_long_close.csv"
 BIGCAP = "NVDA AMD AVGO MU MRVL SMCI ARM PLTR TSLA META NFLX CRWD SHOP COIN MSTR SNOW NOW PANW UBER ABNB DELL ORCL QCOM INTC AMZN GOOGL MSFT AAPL CRM ADBE IONQ RGTI QBTS ASTS RKLB NBIS CRWV ALAB CRDO WDC STX DD TPR BMY SWKS".split()
 
 class App(EWrapper, EClient):
-    def __init__(self): EClient.__init__(self, self); self.ready=False; self.bars=[]; self.done=False; self.err=False
+    def __init__(self):
+        EClient.__init__(self, self)
+        self.ready=False; self.bars=[]; self.done=False; self.err=False
+        self.cur_req=-1   # S-2026-07-14q: only callbacks for THIS reqId are accepted
     def error(self, reqId, code, msg, *a):
-        if code in (162,200,354,420): self.err=True
+        if code in (162,200,354,420):
+            if reqId==self.cur_req: self.err=True
         elif code not in (2104,2106,2158,2107,2103,2100,2150,2174,165,2119,366,2108): print('IBKR err',code,str(msg)[:50])
     def nextValidId(self, oid): self.ready=True
-    def historicalData(self, reqId, bar): self.bars.append(bar)
-    def historicalDataEnd(self, reqId, s, e): self.done=True
+    def historicalData(self, reqId, bar):
+        if reqId==self.cur_req: self.bars.append(bar)   # a late prior request can no longer bleed in
+    def historicalDataEnd(self, reqId, s, e):
+        if reqId==self.cur_req: self.done=True
 
+_req_seq=[9000]
 def pull(app, sym, dur):
     c=Contract(); c.symbol=sym; c.secType='STK'; c.exchange='SMART'; c.currency='USD'
-    app.bars=[]; app.done=False; app.err=False
-    app.reqHistoricalData(9000, c, '', dur, '1 day', 'ADJUSTED_LAST', 1, 1, False, [])
+    _req_seq[0]+=1; rid=_req_seq[0]                       # unique reqId per request
+    app.bars=[]; app.done=False; app.err=False; app.cur_req=rid
+    app.reqHistoricalData(rid, c, '', dur, '1 day', 'ADJUSTED_LAST', 1, 1, False, [])
     t0=time.time()
     while not app.done and not app.err and time.time()-t0<18: time.sleep(0.1)
+    if not app.done:
+        # timeout/err: cancel so the stream can't keep delivering, and stop accepting rid
+        try: app.cancelHistoricalData(rid)
+        except Exception: pass
+        print(f"  {sym}: TIMEOUT/err -- cancelled req {rid}, column skipped this run")
+    app.cur_req=-1
     out={}
     for b in app.bars:
         d=str(b.date)[:10]
         if '-' not in d: d=f"{d[:4]}-{d[4:6]}-{d[6:8]}"
         out[d]=b.close
-    return out
+    return out if app.done else {}
 
 def main():
     ap=argparse.ArgumentParser(); ap.add_argument('--tickers',default='bigcap'); ap.add_argument('--port',type=int,default=4002)
@@ -83,6 +113,9 @@ def main():
         out=merged
     else:
         out=new
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from close_csv_guard import assert_no_aliased_columns
+    assert_no_aliased_columns(out, " refresh_close_ibkr")   # S-2026-07-14q: abort, don't write aliased columns
     out.to_csv(CLOSE, date_format="%Y-%m-%d")
     print(f"refreshed {ok}/{len(syms)} names from IBKR -> {CLOSE} (through {out.index.max().date()})")
     return 0
