@@ -328,6 +328,16 @@ inline void register_position_persistence() {
     wire_multicell(g_xs_mom_ls,   "XsIndex_MomLS",   "");
     wire_multicell(g_xs_mr_ls,    "XsIndex_MrLS",    "");
 
+    // ---- MondayRiskOn (S-2026-07-14 latent-class sweep item 5) ----
+    // Display source is registered with a RUNTIME-BUILT name ("MondayRiskOn_"+sym,
+    // engine_init.hpp MondayRiskOn block) so the persistence audit's literal grep
+    // never saw it: enabled shadow engine, Monday open->close hold (up to ~24h),
+    // NO persist wire -- a restart mid-Monday orphaned the leg (MON_CLOSE fired on
+    // nothing = position vanished, no ledger close). Tag mirrors the runtime-built
+    // display name exactly. Engine has no force_close -> the generic closer is a
+    // no-op for it (same class as IndexFlow; shadow-only, KILL-ALL not load-bearing).
+    wire_cross(g_monday_nas, "MondayRiskOn_NAS100", "NAS100");
+
     // ---- IndexBearShort (risk-off SHORT, NAS100 + US500; real-engine PF1.59-1.60) ----
     // S-2026-06-26: showed positions but did NOT persist -> the 2 live SHORTs vanished with no ledger
     // close on restart (operator-reported). Now wired (persist_save/restore added to the engine).

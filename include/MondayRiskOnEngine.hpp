@@ -32,6 +32,7 @@
 #include <ctime>
 #include "OmegaTradeLedger.hpp"
 #include "OmegaCostGuard.hpp"
+#include "OpenPositionRegistry.hpp"  // omega::PositionSnapshot (persist; S-2026-07-14)
 
 namespace omega {
 
@@ -57,6 +58,32 @@ struct MondayRiskOnEngine {
     // ---- open position (Monday) ----
     struct OpenPos { bool active=false; double entry=0.0,lot=0.0,mfe=0.0; int64_t entry_ts=0; } pos_;
     bool has_open_position() const noexcept { return pos_.active; }
+
+    // ---- restart persistence (wire_cross archetype, S-2026-07-14 sweep item 5) ----
+    // The display source is registered with a RUNTIME-BUILT name ("MondayRiskOn_"+sym,
+    // engine_init.hpp MondayRiskOn block) so the persistence audit's literal grep never
+    // saw this engine -- enabled shadow engine holding a Monday open->close leg (up to
+    // ~24h) with NO persist wire: a restart mid-Monday orphaned the leg and MON_CLOSE
+    // then fired on nothing (position vanished, no ledger close). LONG-only, no SL/TP
+    // bracket (time-stop exit) -> sl/tp persist as 0; mfe carried in the mfe field.
+    bool persist_save(const char* eng, const char* sym, omega::PositionSnapshot& o) const noexcept {
+        if (!pos_.active) return false;
+        o.engine = eng; o.symbol = sym; o.side = "LONG"; o.size = pos_.lot;
+        o.entry = pos_.entry; o.sl = 0.0; o.tp = 0.0;
+        o.entry_ts = pos_.entry_ts / 1000;   // engine keeps ms; snapshot is seconds
+        o.mfe = pos_.mfe;
+        return true;
+    }
+    bool persist_restore(const omega::PositionSnapshot& ps) noexcept {
+        if (pos_.active) return false;       // adopt won't double an open slot
+        pos_ = OpenPos{};
+        pos_.active   = true;
+        pos_.entry    = ps.entry;
+        pos_.lot      = ps.size;
+        pos_.mfe      = ps.mfe;
+        pos_.entry_ts = ps.entry_ts * 1000;  // snapshot seconds -> engine ms
+        return true;
+    }
 
     static int64_t utc_day(int64_t ms) noexcept { return (ms/1000LL)/86400LL; }
     // weekday of a UTC-day index: 1970-01-01 (day 0) = Thursday(4). 0=Sun..6=Sat.

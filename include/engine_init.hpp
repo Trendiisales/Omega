@@ -7533,6 +7533,11 @@ static void init_engines(const std::string& cfg_path)
             // S-2026-06-29: FxCrossRevEURGBP tag REMOVED -- source un-registered with
             //   the FX shadow-book removal -> would trip a phantom [VIS-AUDIT] WARN.
             "Ger40LondonBrk", "GoldVolBreakoutM30", "OrbEstx50",
+            // S-2026-07-14 (latent-class sweep item 5): MondayRiskOn persist wire
+            // added (runtime-built display name "MondayRiskOn_"+sym had hidden it
+            // from the persistence audit). Asserted so a future drop of the
+            // dynamic registration trips [VIS-AUDIT].
+            "MondayRiskOn_NAS100",
             // S-2026-06-26s: IndexIntradayDrift_SP/UK100/US30 phantom tags REMOVED
             // (fleet-sweep KILL, held=True). The engine is killed + un-instantiated
             // (no g_idd_* globals, no register_source) -> these tags tripped a false
