@@ -178,6 +178,27 @@ Traps:
   regenerate via the scratch IBKR pull before deploy so the live-CSV replay floor
   (g_mgc_tf_floor_ts) covers the gap. Ledger tags MgcTF4h_/MgcTF2h_<cell>.
 
+### 7b. MGC 1h port + GoldBothWaysShortTf book (S-2026-07-14ay/ax/bc)
+
+- **MgcTF1h** (3rd family member, wired S-2026-07-14bc): `backtest/mgc_tf1h_port_bt.cpp`
+  = the certification harness (env `VT LC COSTX M30 SLICE_*`; findings
+  `backtest/MGC_TF1H_PORT_FINDINGS.md`). Wired config: **LC=0, VT=0 fixed 1 MGC**
+  (spot LOSS_CUT 0.5 trap now 3-for-3 in the family — bull −47% net, bear axis
+  flips negative, 2026 slice negative). Ledger tags `MgcTF1h_<cell>`; warmup
+  `data/mgc_h1_hist.csv` (shared replay floor g_mgc_tf_floor_ts); mimic tag `MgcTf1h`.
+- **GoldBothWaysShortTf** (S-2026-07-14ax study winners, wired bc): study harness
+  `backtest/gold_shorttf_bothways_bt.cpp` (COST_RT env), findings
+  `backtest/GOLD_SHORTTF_BOTHWAYS_2026H1_FINDINGS.md`. Wired instances (all SHADOW,
+  1 MGC, symmetric L/S, NO regime long-block by design, auto-retire −2× BT maxDD):
+  `GoldKeltM30_k1.25_trail2.5`, `GoldTfBw1h_ema10_40_t2.0`,
+  `GoldTfBw1h_ema20_100_t2.0`, `GoldDonH1_20_10_stop3ATR`.
+  **Wiring parity harness**: `backtest/gold_bothways_engine_parity.cpp` replays the
+  certified splice through the WIRED class — LONG legs match the study to the
+  dollar; SHORT legs ~5-8% lower (finer 30m-sub-bar level stops, conservative);
+  re-run after ANY edit to GoldBothWaysShortTfEngine.hpp.
+- Trap: the engines self-dedup on row ts (`last_row_ts_`/warm-seed overlap) — a
+  harness feeding non-monotonic rows silently drops them (integrity-gate first).
+
 ## 8. FX upjump LADDER companion (S-2026-07-07x resume — the FX member of §6's family)
 
 `include/FxUpJumpLadderCompanion.hpp` (LONG-only, wired SHADOW in engine_init; feed =

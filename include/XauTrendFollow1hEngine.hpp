@@ -98,6 +98,7 @@
 #include "RegimeState.hpp"       // 2026-06-12: shared price-based bull/bear gate
 #include "GoldWaveTrend.hpp"   // S-2026-06-03 momentum-confirm gate (omega::gold_wt())
 #include "OpenPositionRegistry.hpp"  // S-2026-06-03 PositionSnapshot persist/restore
+#include "GoldTrendMimicLadder.hpp"  // S-2026-07-14bc: one-way mimic notify (MGC venue instance)
 #include <vector>
 #include <cstdlib>
 
@@ -186,6 +187,15 @@ public:
     double reg_size_floor = 0.4;
     double max_spread  = 1.0;
     uint32_t cell_enable_mask = 0x0F;  // S40: all four ensemble cells on; engine.enabled gates overall
+    // S-2026-07-14bc MGC VENUE PORT (same fields the 4h/2h classes grew for the
+    // S-2026-07-07 port): defaults keep the spot instance byte-identical; the MGC
+    // instance sets "MgcTF1h_"/"MGC" so the cost gate + ledger key the explicit
+    // MGC cost row instead of the spot proxy.
+    std::string ledger_prefix = "XauTrendFollow1h_";
+    std::string ledger_symbol = "XAUUSD";
+    // Non-empty => one-way GoldTrendMimicLadder notify (entry trigger + native
+    // H1 bar feed). Empty (default/spot) = no mimic hook.
+    std::string mimic_tag;
 
     // S88-followup (2026-05-27): vol-band + ADX gates (defaults OFF).
     bool   use_vol_band_gate = false;
@@ -362,6 +372,13 @@ public:
 
         bars_.push_back(bar);
         while ((int)bars_.size() > kBarHistory) bars_.pop_front();
+
+        // GoldTrendMimicLadder native H1 feed (S-2026-07-14bc; MGC venue instance
+        // only, spot mimic_tag empty = no-op). Fed BEFORE any entry this bar can
+        // fire, so a fresh mimic leg first sees the NEXT bar (overlay seq0-skip
+        // semantics, same convention as SurvivorPortfolio).
+        if (!mimic_tag.empty())
+            omega::gold_trend_mimic().on_bar(mimic_tag, bar.high, bar.low, bar.close, now_ms / 1000);
 
         if (atr14_external > 0.0) atr14_ = atr14_external;
         else                       _update_local_atr();
@@ -591,7 +608,7 @@ private:
         // Cost gate (matches 4hEngine pattern)
         {
             const double spread_pts = ask - bid;
-            if (!ExecutionCostGuard::is_viable("XAUUSD", spread_pts, tp_dist, size, 1.5)) {
+            if (!ExecutionCostGuard::is_viable(ledger_symbol.c_str(), spread_pts, tp_dist, size, 1.5)) {
                 return;
             }
         }
@@ -641,6 +658,11 @@ private:
         }
         p.broker_position_id.clear();
         p.entry_clOrdId.clear();
+        // GoldTrendMimicLadder (S-2026-07-14bc): one-way fire-and-forget -- spawn
+        // INDEPENDENT mimic legs at this entry (MGC venue instance only; spot
+        // mimic_tag empty = no-op). Never reads/moves/closes this position.
+        if (!mimic_tag.empty())
+            omega::gold_trend_mimic().on_trend_open(mimic_tag, +1, p.entry_px, now_ms / 1000);
         (void)side;
     }
 
@@ -708,8 +730,8 @@ private:
         const double pts_move = exit_px - p.entry_px;  // long-only
 
         omega::TradeRecord tr;
-        tr.symbol     = "XAUUSD";
-        tr.engine     = std::string("XauTrendFollow1h_") + kXauTf1hCells[ci].name;
+        tr.symbol     = ledger_symbol;
+        tr.engine     = ledger_prefix + kXauTf1hCells[ci].name;
         tr.side       = "LONG";
         tr.entryPrice = p.entry_px;
         tr.exitPrice  = exit_px;

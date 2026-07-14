@@ -738,9 +738,25 @@ static omega::XauTrendFollow2hEngine g_xau_tf_2h;
 // Config lives in omega_main.hpp; the feed drives them; persistence wires them.
 static omega::XauTrendFollow4hEngine g_mgc_tf_4h;
 static omega::XauTrendFollow2hEngine g_mgc_tf_2h;
+// S-2026-07-14bc: MGC-venue 1h instance (S-2026-07-14ay certification: PASS
+// wire-eligible at LC=0 fixed 1 MGC -- backtest/MGC_TF1H_PORT_FINDINGS.md).
+// Same include-order rule as 4h/2h: declared here so PositionPersistence
+// registers it. Config in omega_main.hpp; the MGC feed poll drives it.
+static omega::XauTrendFollow1hEngine g_mgc_tf_1h;
 // Bars at/below this ts (seconds) are warmup-covered -> not re-fed to the TF
 // instances. Set by omega_main after warmup to the warmup CSV's last bucket.
 static int64_t g_mgc_tf_floor_ts = 0;
+
+// S-2026-07-14bc: GoldBothWaysShortTf instances -- the S-2026-07-14ax study's
+// viable both-ways mechanisms at best config (findings
+// backtest/GOLD_SHORTTF_BOTHWAYS_2026H1_FINDINGS.md; certified MGC cost basis).
+// Declared here (persistence include-order rule); config omega_main.hpp; the
+// MGC 30m feed poll drives them. All SHADOW until the live ledger proves them.
+#include "GoldBothWaysShortTfEngine.hpp"
+static omega::GoldBothWaysShortTfEngine g_gold_kelt_m30;    // KELT m30 k1.25 trail2.5
+static omega::GoldBothWaysShortTfEngine g_gold_tfbw_1040;   // TF1H ema10/40 trail2.0
+static omega::GoldBothWaysShortTfEngine g_gold_tfbw_20100;  // TF1H ema20/100 trail2.0
+static omega::GoldBothWaysShortTfEngine g_gold_don_h1;      // DON h1 20/10 stop3ATR
 
 // S-2026-07-08c: MgcSlowDonchian30m -- gold deep-dive candidate #1 (Study 7,
 // outputs/GOLD_DEEP_DIVE_2026-07-08.md, evidence commit 4bca1036). Donchian

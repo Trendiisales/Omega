@@ -1690,6 +1690,53 @@ static void init_engines(const std::string& cfg_path)
                 c.notional=40000.0;  // 1 MGC = 10oz x ~$4k -- desk USD honest at this size
                 c.lot=1.0;  // 1 MGC contract (10oz micro future, NOT a 100oz CFD lot) LOT-GATE-OK operator S-2026-07-14 sizing order, revalidation GREEN
                 gm.add(std::move(c)); }
+            // ── S-2026-07-14bc BE-MIMICS for the 5 new gold engines (operator: "add a
+            // mimic for each, same BE threshold"). Common be_entry_pct=0.10 = the
+            // smallest common passer across ALL 5 books (dual-grain validated,
+            // backtest/gold_newengine_mimic_bt.cpp on the REAL parent entry streams;
+            // findings backtest/GOLD_NEWENGINE_MIMICS_FINDINGS.md, commit 3ca15fa9).
+            // All books: 2 legs T gb8 + W gb20, pend 12, fed on the parent's NATIVE
+            // bar (M30 for KELT, H1 for the rest), gate PASS at 1x(5bp)+2x(10bp) cost
+            // with WF both halves + at BOTH close-grade and fine-grain (M30 sub-bar)
+            // management. be=0.15 is FRAGILE (GoldDonH1 1/54 plateau) and be=0.5+
+            // FAILS MgcTf1h -- do not raise be without re-running the harness.
+            // DRAWDOWN-CANCEL verdicts (ACTIVE at be=0.10, NOT near-inert -- lc bounds
+            // every worst clip at -(lc+cost); backtested per book, fine-grain rows):
+            //   MgcTf1h      arm0.50/lc2.0/cap24: T +40.8%/+29.1% PF1.78, W +35.4%/+23.7%
+            //                worst -2.05% DD12.7% n234, WF +25.2/+15.6.
+            //   GoldKeltM30  arm0.25/lc2.0/cap96: T +97.1%/+56.0% PF1.55, W +69.0%/+27.9%
+            //                worst -2.05% DD8.5% n822, WF +35.0/+62.0.
+            //   GoldTfBw1040 arm0.15/lc1.0/cap48: T +65.5%/+30.9% PF1.64, W +47.3%/+12.7%
+            //                worst -1.05% DD6.3% n692 (lc=1.0: fade-prone parents, lc2 costs 13% net).
+            //   GoldTfBw20100 arm0.15/lc2.0/cap48: T +53.0%/+23.0% PF1.56, W +35.1%/+5.1%
+            //                worst -2.05% DD12.8% n600 (W@2x thin +5.1% -- T carries stress).
+            //   GoldDonH1    arm0.50/lc2.0/cap12: T +28.8%/+15.5% PF1.42, W +22.4%/+9.0%
+            //                worst -2.05% DD8.5% n267.
+            // SHADOW books (live_book=false), judged STANDALONE (companion independent-
+            // engine rule). bull_only=false: the parents are BOTH-WAYS books -- an SMA
+            // bull gate would veto every SHORT trigger. live_sym XAUUSD.M -> the MGC
+            // cost row in gate_fn. Owed pre-LIVE: M1/tick re-check (M30 = finest
+            // certified grain; the USTEC_4h_ZMR close-grade collapse is the precedent).
+            {   omega::GoldTrendMimicBook::Config c; c.trigger_tag="MgcTf1h"; c.live_sym="XAUUSD.M";
+                c.legs={{"T",0.08},{"W",0.20}};
+                c.arm_pct=0.50; c.lc_pct=2.0; c.cap_bars=24; c.rt_cost_bp=5.0; c.be_entry_pct=0.10; c.pend_bars=12;
+                c.notional=40000.0; c.lot=1.0; gm.add(std::move(c)); }  // LOT-GATE-OK shadow book; lot inert until live flip
+            {   omega::GoldTrendMimicBook::Config c; c.trigger_tag="GoldKeltM30"; c.live_sym="XAUUSD.M";
+                c.legs={{"T",0.08},{"W",0.20}};
+                c.arm_pct=0.25; c.lc_pct=2.0; c.cap_bars=96; c.rt_cost_bp=5.0; c.be_entry_pct=0.10; c.pend_bars=12;
+                c.notional=40000.0; c.lot=1.0; gm.add(std::move(c)); }  // LOT-GATE-OK shadow book; lot inert until live flip
+            {   omega::GoldTrendMimicBook::Config c; c.trigger_tag="GoldTfBw1040"; c.live_sym="XAUUSD.M";
+                c.legs={{"T",0.08},{"W",0.20}};
+                c.arm_pct=0.15; c.lc_pct=1.0; c.cap_bars=48; c.rt_cost_bp=5.0; c.be_entry_pct=0.10; c.pend_bars=12;
+                c.notional=40000.0; c.lot=1.0; gm.add(std::move(c)); }  // LOT-GATE-OK shadow book; lot inert until live flip
+            {   omega::GoldTrendMimicBook::Config c; c.trigger_tag="GoldTfBw20100"; c.live_sym="XAUUSD.M";
+                c.legs={{"T",0.08},{"W",0.20}};
+                c.arm_pct=0.15; c.lc_pct=2.0; c.cap_bars=48; c.rt_cost_bp=5.0; c.be_entry_pct=0.10; c.pend_bars=12;
+                c.notional=40000.0; c.lot=1.0; gm.add(std::move(c)); }  // LOT-GATE-OK shadow book; lot inert until live flip
+            {   omega::GoldTrendMimicBook::Config c; c.trigger_tag="GoldDonH1"; c.live_sym="XAUUSD.M";
+                c.legs={{"T",0.08},{"W",0.20}};
+                c.arm_pct=0.50; c.lc_pct=2.0; c.cap_bars=12; c.rt_cost_bp=5.0; c.be_entry_pct=0.10; c.pend_bars=12;
+                c.notional=40000.0; c.lot=1.0; gm.add(std::move(c)); }  // LOT-GATE-OK shadow book; lot inert until live flip
             // XAU-H1 SMA200 regime gate seed (bear-gate proviso): warm from boot, 1101-bar CSV.
             gm.seed_xau_regime_h1_csv(omega::resolve_seed_path("phase1/signal_discovery/warmup_XAUUSD_H1.csv"));
             // USTEC_4h_ZMR book REMOVED here S-2026-07-14 (intrabar FAIL, see verdict above).
@@ -1705,7 +1752,7 @@ static void init_engines(const std::string& cfg_path)
                     omega::TradeRecord tr; tr.engine=engine; tr.symbol=sym; tr.side=is_long?"LONG":"SHORT";
                     tr.entryPrice=entry_px; tr.exitPrice=exit_px; tr.size=lots; tr.entryTs=entry_ts; tr.exitTs=exit_ts;
                     tr.exitReason=reason; tr.pnl=(is_long?(exit_px-entry_px):(entry_px-exit_px))*lots; handle_closed_trade(tr); });
-            printf("[OMEGA-INIT][SEED] GoldTrendMimicLadder wired: 8 trigger books (XauTf4h 4-leg, XauTf2h 2-leg, MgcFastDon 2-leg, XauTfD1 2-leg, NAS100/US500/DJ30 Turtle 2-leg SHADOW; survivor XAU_4h_DonchN20 1-leg LIVE resting-exec 1 MGC + H1-SMA200 bear-gate; USTEC_4h_ZMR disabled S-14 intrabar FAIL), specific native feeds, deploy-forward\n");
+            printf("[OMEGA-INIT][SEED] GoldTrendMimicLadder wired: 13 trigger books (XauTf4h 4-leg, XauTf2h 2-leg, MgcFastDon 2-leg, XauTfD1 2-leg, NAS100/US500/DJ30 Turtle 2-leg SHADOW; survivor XAU_4h_DonchN20 1-leg LIVE resting-exec 1 MGC + H1-SMA200 bear-gate; USTEC_4h_ZMR disabled S-14 intrabar FAIL; S-14bc BE-mimics be0.10 2-leg x5: MgcTf1h/GoldKeltM30/GoldTfBw1040/GoldTfBw20100/GoldDonH1 SHADOW), specific native feeds, deploy-forward\n");
             fflush(stdout);
         }
 

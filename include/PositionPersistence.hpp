@@ -252,6 +252,16 @@ inline void register_position_persistence() {
     // restart dropped the open MGC leg + the boot replay re-booked closed trades.
     wire_multicell(g_mgc_tf_4h,    "MgcTF4h",           "MGC");
     wire_multicell(g_mgc_tf_2h,    "MgcTF2h",           "MGC");
+    // S-2026-07-14bc: MGC 1h port (same class/persist surface as 4h/2h).
+    wire_multicell(g_mgc_tf_1h,    "MgcTF1h",           "MGC");
+    // S-2026-07-14bc: GoldBothWaysShortTf book -- multi-hour/multi-day ATR-trail
+    // rides on the MGC feed; an orphaned leg would lose its stop/trail HWM
+    // (extreme_ rides in the tp field; stop is monotonic so protection never
+    // regresses; time-stop window restarts across a restart, documented).
+    wire_cross(g_gold_kelt_m30,   "GoldKeltM30_k1.25_trail2.5",  "MGC");
+    wire_cross(g_gold_tfbw_1040,  "GoldTfBw1h_ema10_40_t2.0",    "MGC");
+    wire_cross(g_gold_tfbw_20100, "GoldTfBw1h_ema20_100_t2.0",   "MGC");
+    wire_cross(g_gold_don_h1,     "GoldDonH1_20_10_stop3ATR",    "MGC");
 
     // ---- batch 6: tail — Breakout FX, NBM, FX turtles/scalp, pyramided (base) ----
     wire_cross(g_eng_eurusd,  "BreakoutEURUSD", "EURUSD");

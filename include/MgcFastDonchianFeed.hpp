@@ -12,6 +12,8 @@
 #include "GoldVolBreakoutM30Engine.hpp"
 #include "XauTrendFollow4hEngine.hpp"
 #include "XauTrendFollow2hEngine.hpp"
+#include "XauTrendFollow1hEngine.hpp"      // S-2026-07-14bc MGC 1h port
+#include "GoldBothWaysShortTfEngine.hpp"   // S-2026-07-14bc both-ways short-TF book
 #include <cstdint>
 #include <cstdlib>
 #include <cstdio>
@@ -50,10 +52,13 @@ static omega::MgcFastDonchian30mEngine g_mgc_fastdon;   // single definition (th
 #ifdef MGC_FEED_STANDALONE
 static omega::XauTrendFollow4hEngine g_mgc_tf_4h;
 static omega::XauTrendFollow2hEngine g_mgc_tf_2h;
+static omega::XauTrendFollow1hEngine g_mgc_tf_1h;      // S-2026-07-14bc
 static int64_t g_mgc_tf_floor_ts = 0;
 #include "MgcSlowDonchian30mEngine.hpp"
 static omega::MgcSlowDonchian30mEngine g_mgc_slowdon;
 static omega::GoldVolBreakoutM30Engine g_mgc_volbrk;   // S-2026-07-11: moved to globals.hpp for persistence
+static omega::GoldBothWaysShortTfEngine g_gold_kelt_m30, g_gold_tfbw_1040,
+                                        g_gold_tfbw_20100, g_gold_don_h1;  // S-2026-07-14bc
 #endif
 // S-2026-07-08c: 5th engine on the same MGC feed -- MgcSlowDonchian30m (deep-dive
 // candidate #1, Nin40/Nout20 slow sibling, next-bar-open + 3xATR adverse-first
@@ -131,7 +136,10 @@ inline void poll_mgc_feed(const std::string& bars_csv, const std::string& hvn_js
     // first poll completes -> live bars behave exactly as before.
     const bool tf_boot_replay = (s_poll == 1);
     if (tf_boot_replay) { g_mgc_tf_4h.warmup_active_ = true; g_mgc_tf_2h.warmup_active_ = true;
-                          g_mgc_slowdon.warmup_active_ = true; }   // S-2026-07-08c: same guard (entries blocked, restored pos managed)
+                          g_mgc_slowdon.warmup_active_ = true;     // S-2026-07-08c: same guard (entries blocked, restored pos managed)
+                          g_mgc_tf_1h.warmup_active_ = true;       // S-2026-07-14bc: same guard, new instances
+                          g_gold_kelt_m30.warmup_active_ = true; g_gold_tfbw_1040.warmup_active_ = true;
+                          g_gold_tfbw_20100.warmup_active_ = true; g_gold_don_h1.warmup_active_ = true; }
     std::ifstream f(bars_csv);
     if (!f) { if (s_poll % 20 == 1) { std::printf("[MGC-FEED] poll#%ld: cannot open '%s' (cwd issue?)\n", s_poll, bars_csv.c_str()); std::fflush(stdout); } return; }
     std::string ln; bool first = true; int64_t newest = 0; int total = 0;
@@ -156,6 +164,19 @@ inline void poll_mgc_feed(const std::string& bars_csv, const std::string& hvn_js
             g_mgc_slowdon.on_30m_bar(std::atof(k[1].c_str()), std::atof(k[2].c_str()),
                                      std::atof(k[3].c_str()), std::atof(k[4].c_str()),
                                      ts, cb);
+
+        // --- S-2026-07-14bc: GoldBothWaysShortTf book (KELT m30 + TF1H ema x2 +
+        //     DON h1, symmetric L/S). Each instance self-aggregates its native
+        //     bucket, ts-dedups vs its data/mgc_30m_hist.csv warm-seed, and
+        //     honours warmup_active_ set on the boot-replay poll above.
+        {
+            const double bo = std::atof(k[1].c_str()), bhh = std::atof(k[2].c_str()),
+                         bll = std::atof(k[3].c_str()), bcc = std::atof(k[4].c_str());
+            if (g_gold_kelt_m30.enabled)   g_gold_kelt_m30.on_30m_bar(bo, bhh, bll, bcc, ts, cb);
+            if (g_gold_tfbw_1040.enabled)  g_gold_tfbw_1040.on_30m_bar(bo, bhh, bll, bcc, ts, cb);
+            if (g_gold_tfbw_20100.enabled) g_gold_tfbw_20100.on_30m_bar(bo, bhh, bll, bcc, ts, cb);
+            if (g_gold_don_h1.enabled)     g_gold_don_h1.on_30m_bar(bo, bhh, bll, bcc, ts, cb);
+        }
 
         // --- 2nd MGC engine: GoldVolBreakoutM30 (EMA200-gated Donchian runner) ---
         // Drive on_m30_bar(high,low,close,bid,ask,now_ms,cb,open) each bar; aggregate
@@ -186,7 +207,7 @@ inline void poll_mgc_feed(const std::string& bars_csv, const std::string& hvn_js
         //     warmup CSVs (data/mgc_h1_hist.csv / mgc_h4_hist.csv, regenerated
         //     at deploy) and skipped so boot replay of the live CSV neither
         //     double-feeds indicators nor books stale entries.
-        if ((g_mgc_tf_4h.enabled || g_mgc_tf_2h.enabled) && ts > g_mgc_tf_floor_ts) {
+        if ((g_mgc_tf_4h.enabled || g_mgc_tf_2h.enabled || g_mgc_tf_1h.enabled) && ts > g_mgc_tf_floor_ts) {
             const double sprd = 0.10;   // MGC 1 exchange tick
             const double hi = std::atof(k[2].c_str()), lo = std::atof(k[3].c_str()),
                          op = std::atof(k[1].c_str()), cl = std::atof(k[4].c_str());
@@ -198,13 +219,19 @@ inline void poll_mgc_feed(const std::string& bars_csv, const std::string& hvn_js
             g_mgc_tf_2h.on_tick(lo, lo + sprd, ts_ms, cb);
             g_mgc_tf_2h.on_tick(hi, hi + sprd, ts_ms, cb);
             g_mgc_tf_2h.on_tick(cl, cl + sprd, ts_ms, cb);
-            // H1 bucket -> 2h engine (it builds 2h internally from H1 bars)
+            g_mgc_tf_1h.on_tick(lo, lo + sprd, ts_ms, cb);   // S-2026-07-14bc
+            g_mgc_tf_1h.on_tick(hi, hi + sprd, ts_ms, cb);
+            g_mgc_tf_1h.on_tick(cl, cl + sprd, ts_ms, cb);
+            // H1 bucket -> 2h engine (builds 2h internally) + 1h engine (native)
             static int64_t tf_h1_b = 0; static double h1o=0, h1h=0, h1l=0, h1c=0;
             const int64_t h1b2 = (ts / 3600) * 3600;
             if (tf_h1_b != 0 && h1b2 != tf_h1_b) {
                 omega::XauTf2hBar b1{}; b1.bar_start_ms = tf_h1_b * 1000LL;
                 b1.open = h1o; b1.high = h1h; b1.low = h1l; b1.close = h1c;
                 g_mgc_tf_2h.on_h1_bar(b1, h1c, h1c + sprd, ts_ms, cb);
+                omega::XauTfBar1h b1h{}; b1h.bar_start_ms = tf_h1_b * 1000LL;   // S-2026-07-14bc
+                b1h.open = h1o; b1h.high = h1h; b1h.low = h1l; b1h.close = h1c;
+                g_mgc_tf_1h.on_h1_bar(b1h, h1c, h1c + sprd, 0.0, ts_ms, cb);
             }
             if (h1b2 != tf_h1_b) { tf_h1_b = h1b2; h1o = op; h1h = hi; h1l = lo; h1c = cl; }
             else { if (hi > h1h) h1h = hi; if (lo < h1l) h1l = lo; h1c = cl; }
@@ -230,6 +257,11 @@ inline void poll_mgc_feed(const std::string& bars_csv, const std::string& hvn_js
 #ifndef MGC_FEED_STANDALONE
     // Liveness pulse for the slow Donchian book (registered in omega_main).
     g_engine_heartbeat.pulse("MgcSlowDonchian30m");
+    // S-2026-07-14bc: new MGC books (registered in omega_main).
+    g_engine_heartbeat.pulse("GoldKeltM30");
+    g_engine_heartbeat.pulse("GoldTfBw1040");
+    g_engine_heartbeat.pulse("GoldTfBw20100");
+    g_engine_heartbeat.pulse("GoldDonH1");
 #endif
     // HEARTBEAT: proves the poll is reading the live MGC feed. Logs on any new
     // bars, else every 20th poll (~10min). newest_ts confirms freshness.

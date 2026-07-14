@@ -226,6 +226,40 @@ int main(int argc, char* argv[])
     g_mgc_tf_2h.warmup_csv_path   = "data/mgc_h1_hist.csv";
     g_mgc_tf_2h.init();
     omega::warmup_or_die(g_mgc_tf_2h, "MgcTF2h");
+    // ── S-2026-07-14bc MGC 1h PORT: XauTrendFollow1h on the MGC feed. FULL
+    //    certification S-2026-07-14ay (backtest/MGC_TF1H_PORT_FINDINGS.md,
+    //    real engine class, prod S118 config 1:1, certified MGC data, two
+    //    fidelity layers agree to the dollar): PASS at LC=0 fixed 1 MGC --
+    //    bull +$139.9k PF2.30, bear-axis +$17.8k PF1.50 (only family member
+    //    passing bear WF), 6-mo slice +$29.1k PF1.54, all 4 cells +, 1x/2x.
+    //    SHADOW until the live ledger proves the venue (house rule).
+    g_mgc_tf_1h.enabled      = true;
+    g_mgc_tf_1h.shadow_mode  = true;
+    g_mgc_tf_1h.lot          = 1.0;    // LOT-GATE-OK: lot = CONTRACTS; 1 MGC micro = 10oz = $10/pt (smallest unit)
+    g_mgc_tf_1h.max_spread   = 1.50;   // MGC futures pts (matches the family)
+    // LOSS-CUT OFF -- the spot 0.5% trap is now 3-for-3 in this family (2h
+    // parity, phase1b 2h spot, ay cert): LC=0.5 costs ~47% of bull net, flips
+    // the 2022-23 bear axis NEGATIVE with halves-FAIL, and is negative in the
+    // 2026 top+crash slice. Engine 4-5xATR cell stops + 3xATR pyramid trail
+    // are the adverse protection (backtested verdict, mandate).
+    g_mgc_tf_1h.LOSS_CUT_PCT = 0.0;
+    g_mgc_tf_1h.cell_enable_mask = 0x0F;  // all 4 cells (each certified positive)
+    g_mgc_tf_1h.min_impulse_atr  = 0.5;   // prod S118 mirror
+    g_mgc_tf_1h.er_gate_min      = 0.40;
+    g_mgc_tf_1h.er_gate_n        = 20;
+    // VT=0: vol-target's fractional-oz unit/ATR sizing has no MGC equivalent
+    // below 1 contract -- fixed 1 micro per unit, pyramid adds +1 each (the
+    // certified futures config; VT=1 clamps to min in the high-price era anyway).
+    g_mgc_tf_1h.use_vol_target   = false;
+    g_mgc_tf_1h.pyramid_max_adds = 2;
+    g_mgc_tf_1h.pyramid_step_atr = 1.0;
+    g_mgc_tf_1h.pyramid_sl_atr   = 3.0;
+    g_mgc_tf_1h.ledger_prefix    = "MgcTF1h_";
+    g_mgc_tf_1h.ledger_symbol    = "MGC";
+    g_mgc_tf_1h.mimic_tag        = "MgcTf1h";   // BE-mimic book (engine_init)
+    g_mgc_tf_1h.warmup_csv_path  = "data/mgc_h1_hist.csv";
+    g_mgc_tf_1h.init();
+    omega::warmup_or_die(g_mgc_tf_1h, "MgcTF1h");
     // Live-CSV replay floor = last warmup H1 bar ts: rows at/below it are
     // already in the engines via warmup; feeding them again would double-count.
     // The warmup file carries ts in MILLISECONDS (the XauTF2h warmup parser
@@ -237,10 +271,72 @@ int main(int argc, char* argv[])
         while (std::getline(wf, wl)) if (!wl.empty() && wl[0] >= '0' && wl[0] <= '9') wlast = wl;
         g_mgc_tf_floor_ts = wlast.empty() ? 0 : std::atoll(wlast.c_str());
         if (g_mgc_tf_floor_ts > 4000000000LL) g_mgc_tf_floor_ts /= 1000;  // ms -> s
-        std::printf("[SEED] MgcTF4h/MgcTF2h warm (replay floor ts=%lld)\n",
+        std::printf("[SEED] MgcTF4h/MgcTF2h/MgcTF1h warm (replay floor ts=%lld)\n",
                     (long long)g_mgc_tf_floor_ts);
         std::fflush(stdout);
     }
+
+    // ── S-2026-07-14bc GoldBothWaysShortTf book: the S-2026-07-14ax study's
+    //    viable both-ways mechanisms at best config, one instance each
+    //    (findings backtest/GOLD_SHORTTF_BOTHWAYS_2026H1_FINDINGS.md; certified
+    //    MGC 30m splice, 0.41pt RT + 2x stress; all WF both halves +, both
+    //    legs +). SHADOW until the live ledger proves them. Symmetric L/S by
+    //    design -- no gold_regime long-block (the short side is the bear
+    //    coverage; short-edge magnitude is regime-specific per findings #1).
+    //    Adverse protection: ATR stops + trail/channel exits + auto-retirement
+    //    latch at -2x BT maxDD (per-instance, points). Overlap disclosure:
+    //    correlated with the live MGC stack (same instrument, trend family);
+    //    operator sizes the book -- ledger tags keep every book separable.
+    g_gold_kelt_m30.enabled = true;  g_gold_kelt_m30.shadow_mode = true;
+    g_gold_kelt_m30.lot = 1.0;       // LOT-GATE-OK: lot = CONTRACTS; 1 MGC micro = 10oz = $10/pt (smallest unit)
+    g_gold_kelt_m30.mech = omega::GoldBothWaysShortTfEngine::Mech::KELT;
+    g_gold_kelt_m30.tf_secs = 1800;  g_gold_kelt_m30.atr_n = 20;
+    g_gold_kelt_m30.kelt_k = 1.25;   g_gold_kelt_m30.stop_atr = 2.0;
+    g_gold_kelt_m30.trail_atr = 2.5; g_gold_kelt_m30.time_stop_bars = 96;
+    g_gold_kelt_m30.warm_bars = 100; g_gold_kelt_m30.retire_net_pts = -1100.0; // -2x BT maxDD 546pt
+    g_gold_kelt_m30.engine_tag = "GoldKeltM30_k1.25_trail2.5";
+    g_gold_kelt_m30.mimic_tag  = "GoldKeltM30";
+    g_gold_kelt_m30.seed_from_30m_csv("data/mgc_30m_hist.csv");
+    g_engine_heartbeat.register_engine("GoldKeltM30", g_gold_kelt_m30.enabled, 1800, 0, 24);
+
+    g_gold_tfbw_1040.enabled = true;  g_gold_tfbw_1040.shadow_mode = true;
+    g_gold_tfbw_1040.lot = 1.0;       // LOT-GATE-OK: lot = CONTRACTS; 1 MGC micro = 10oz = $10/pt (smallest unit)
+    g_gold_tfbw_1040.mech = omega::GoldBothWaysShortTfEngine::Mech::EMA;
+    g_gold_tfbw_1040.tf_secs = 3600;  g_gold_tfbw_1040.atr_n = 14;
+    g_gold_tfbw_1040.ema_fast_n = 10; g_gold_tfbw_1040.ema_slow_n = 40;
+    g_gold_tfbw_1040.imp_atr = 0.5;   g_gold_tfbw_1040.stop_atr = 2.0;
+    g_gold_tfbw_1040.trail_atr = 2.0; g_gold_tfbw_1040.time_stop_bars = 0;
+    g_gold_tfbw_1040.warm_bars = 120; g_gold_tfbw_1040.retire_net_pts = -1500.0; // -2x BT maxDD 743pt
+    g_gold_tfbw_1040.engine_tag = "GoldTfBw1h_ema10_40_t2.0";
+    g_gold_tfbw_1040.mimic_tag  = "GoldTfBw1040";
+    g_gold_tfbw_1040.seed_from_30m_csv("data/mgc_30m_hist.csv");
+    g_engine_heartbeat.register_engine("GoldTfBw1040", g_gold_tfbw_1040.enabled, 3600, 0, 24);
+
+    g_gold_tfbw_20100.enabled = true;  g_gold_tfbw_20100.shadow_mode = true;
+    g_gold_tfbw_20100.lot = 1.0;       // LOT-GATE-OK: lot = CONTRACTS; 1 MGC micro = 10oz = $10/pt (smallest unit)
+    g_gold_tfbw_20100.mech = omega::GoldBothWaysShortTfEngine::Mech::EMA;
+    g_gold_tfbw_20100.tf_secs = 3600;  g_gold_tfbw_20100.atr_n = 14;
+    g_gold_tfbw_20100.ema_fast_n = 20; g_gold_tfbw_20100.ema_slow_n = 100;
+    g_gold_tfbw_20100.imp_atr = 0.5;   g_gold_tfbw_20100.stop_atr = 2.0;
+    g_gold_tfbw_20100.trail_atr = 2.0; g_gold_tfbw_20100.time_stop_bars = 0;
+    g_gold_tfbw_20100.warm_bars = 300; g_gold_tfbw_20100.retire_net_pts = -1600.0; // -2x BT maxDD 786pt
+    g_gold_tfbw_20100.engine_tag = "GoldTfBw1h_ema20_100_t2.0";
+    g_gold_tfbw_20100.mimic_tag  = "GoldTfBw20100";
+    g_gold_tfbw_20100.seed_from_30m_csv("data/mgc_30m_hist.csv");
+    g_engine_heartbeat.register_engine("GoldTfBw20100", g_gold_tfbw_20100.enabled, 3600, 0, 24);
+
+    g_gold_don_h1.enabled = true;  g_gold_don_h1.shadow_mode = true;
+    g_gold_don_h1.lot = 1.0;       // LOT-GATE-OK: lot = CONTRACTS; 1 MGC micro = 10oz = $10/pt (smallest unit)
+    g_gold_don_h1.mech = omega::GoldBothWaysShortTfEngine::Mech::DON;
+    g_gold_don_h1.tf_secs = 3600;  g_gold_don_h1.atr_n = 14;
+    g_gold_don_h1.don_in = 20;     g_gold_don_h1.don_out = 10;
+    g_gold_don_h1.stop_atr = 3.0;  g_gold_don_h1.trail_atr = 0.0;
+    g_gold_don_h1.time_stop_bars = 0;
+    g_gold_don_h1.warm_bars = 40;  g_gold_don_h1.retire_net_pts = -1600.0; // -2x BT maxDD 801pt
+    g_gold_don_h1.engine_tag = "GoldDonH1_20_10_stop3ATR";
+    g_gold_don_h1.mimic_tag  = "GoldDonH1";
+    g_gold_don_h1.seed_from_30m_csv("data/mgc_30m_hist.csv");
+    g_engine_heartbeat.register_engine("GoldDonH1", g_gold_don_h1.enabled, 3600, 0, 24);
 
     std::thread([](){
         std::this_thread::sleep_for(std::chrono::seconds(45));
