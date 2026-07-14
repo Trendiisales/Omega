@@ -34,12 +34,38 @@ OVERRIDES = [
 EXCLUDE = re.compile(r"logs[/\\]shadow[/\\]|tsmom_v2|[%<>*]|\.\.\.", re.I)
 # Seeds owned by DISABLED engines -- a stale seed they never read is harmless. Reported as
 # [skipped-disabled], NOT counted as stale, does NOT fail the audit. KEEP IN SYNC with engine_init.hpp:
-#   FX shadow book disabled 2026-06-23 ("we have no FX") -> all FX warmups inert.
-#   SPXUSD added 2026-07-02: warmup_SPXUSD_H4.csv's SOLE consumer is SurvivorPortfolio
-#   (g_survivor.enabled=false, S-2026-06-24). Now that resolve() finds the file, it gets
-#   freshness-checked -- without this entry a stale SPX seed would false-abort deploys.
-#   Remove from this regex if Survivor is re-enabled.
-DISABLED = re.compile(r"(EURUSD|GBPUSD|USDJPY|AUDUSD|NZDUSD|USDCAD|EURGBP|SPXUSD)", re.I)
+#   FX shadow book disabled 2026-06-23 ("we have no FX") -> FX warmups inert, EXCEPT
+#   GBPUSD_H1 (carved out S-2026-07-14): FxLadder GBPUSD re-enabled S-2026-07-09c boot-seeds
+#   warmup_GBPUSD_H1.csv -- this regex silently hid its staleness for 5 days. Other GBPUSD
+#   TFs (H4/D1) stay skipped (disabled FX shadow book only).
+#   SPXUSD (2026-07-02, rationale updated S-2026-07-14): warmup_SPXUSD_H4.csv's SOLE consumer
+#   is SurvivorPortfolio's SpxOverlay. Survivor itself was RE-ENABLED S-2026-07-08c, but the
+#   overlay only gates SPXVolGatedDonch-family cells and NONE are active (USDJPY_4h_SPXVG
+#   tombstoned 2026-06-11) -> seed still unread-in-effect. Remove SPXUSD from this regex if
+#   any SPXVolGatedDonch cell is re-added.
+DISABLED = re.compile(r"(EURUSD|GBPUSD(?!_H1)|USDJPY|AUDUSD|NZDUSD|USDCAD|EURGBP|SPXUSD)", re.I)
+
+# Dynamic-path seeds the literal ".csv"-scan can NEVER see (S-2026-07-14 audit-blindness fix).
+# SurvivorPortfolio::seed_all() BUILDS each cell's path at runtime:
+#     base_dir + "/warmup_" + symbol + "_" + tf_tag + ".csv"      (SurvivorPortfolio.hpp:808)
+# so no string literal exists for e.g. warmup_USTEC.F_H4.csv -> it rotted 94d unseen while
+# seeding 2 ACTIVE cells (USTEC_4h_RSI_N7, USTEC_4h_ZMR). Parse the active (uncommented)
+# add({...}) roster and synthesize the exact same paths. KEEP IN SYNC with tools/seed_refresh.py.
+SURV_TF = {14400: "H4", 3600: "H1", 1800: "M30", 900: "M15", 300: "M5"}
+SURV_ADD = re.compile(r'^\s*add\(\{.*?\.symbol="([^"]+)".*?\.tf_sec=(\d+)')
+def survivor_seeds(repo):
+    out = set()
+    hpp = os.path.join(repo, "include", "SurvivorPortfolio.hpp")
+    try:
+        lines = open(hpp, errors="ignore").read().splitlines()
+    except Exception:
+        return out
+    for ln in lines:
+        m = SURV_ADD.match(ln)
+        if not m: continue
+        tag = SURV_TF.get(int(m.group(2)))
+        if tag: out.add(f"phase1/signal_discovery/warmup_{m.group(1)}_{tag}.csv")
+    return out
 # REQUIRED-GENERATED (2026-07-02, operator decision): on-box generated, GITIGNORED files a
 # SAFETY LAYER depends on. NOT bar-series seeds (no last-bar freshness applies); required =
 # exists + >=1 data row. Missing => exit 2 so the OMEGA.ps1 [2c] fail-closed gate ABORTS the
@@ -76,6 +102,7 @@ for f in src:
         if "signal_discovery" in p or "warmup" in p.lower() or "tsmom" in p.lower() or "/data/" in p or p.startswith("data/"):
             if EXCLUDE.search(p): continue          # drop output sinks + template artifacts
             seed_paths.add(p)
+seed_paths |= survivor_seeds(REPO)   # dynamic Survivor paths -- invisible to the literal scan
 
 def last_ts(path):
     """last data row's epoch (sec). handles sec or ms; first column = ts."""

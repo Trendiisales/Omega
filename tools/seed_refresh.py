@@ -123,12 +123,26 @@ _GOLD_TFS = ["M5", "M15", "M30", "H1", "H4", "D1"]   # M10 dropped S-2026-07-13 
 _INDEX = {
     "NAS100": (("CME","NQ"),      ["H1","M30","M15","M5","D1"]),  # D1 S-2026-07-12c; H4 dropped S-2026-07-13 (BrkCascade culled)
     "USTEC":  (("CME","NQ"),      ["D1"]),                        # S-2026-07-12c: warmup_USTEC_D1 had NO refresh path (43d old, 8+ consumers)
+    "USTEC.F":(("CME","NQ"),      ["H4"]),                        # S-2026-07-14: SurvivorPortfolio USTEC cells (RSI_N7 + ZMR, ACTIVE) seed
+                                                                  # warmup_USTEC.F_H4.csv via the DYNAMIC seed_all() path (SurvivorPortfolio.hpp:808);
+                                                                  # it had NO refresh path AND was audit-blind -> rotted 94d unseen.
     "US500":  (("CME","ES"),      ["H1","D1"]),                   # H4 dropped S-2026-07-13 (BrkCascade culled)
     "M2K":    (("CME","M2K"),     ["H1"]),                        # S-2026-07-13: warmup_M2K_H1 refresh kept (FxLadder M2K seeds from it; cascade cells culled)
     "GER40":  (("EUREX","DAX"),   ["H1","H4","M30","M15","D1"]),
     "UK100":  (("ICEEU","Z"),     ["M30","M240","D1"]),
     "DJ30":   (("CBOT","YM"),     ["H1","D1"]),
     "ESTX50": (("EUREX","ESTX50"),["D1","M5"]),
+}
+# Seeds whose consumer does NOT normalize ms->sec: SurvivorPortfolio Cell::seed_from_csv
+# reads column 0 as SECONDS verbatim (b.ts_sec = atoll(tok[0])) -- an ms-format file would
+# feed it year-58000 timestamps. Write these with ms=False. (FxLadder norm_ts_ tolerates both.)
+_SEC_TS = {"USTEC.F"}
+# FX spot seeds (IDEALPRO, MIDPOINT -- forex has no TRADES prints). S-2026-07-14: FxLadder
+# GBPUSD (re-enabled S-2026-07-09c, engine_init.hpp FL[]) boot-seeds warmup_GBPUSD_H1.csv,
+# which had NO refresh path (data ended 2026-04-11) and sat behind the audit's FX skip-regex.
+# ts written in SECONDS (repo H1 convention; FxLadderPair::norm_ts_ tolerates both).
+_FOREX = {
+    "GBPUSD": ["H1"],
 }
 # consumer filenames that must MIRROR a refreshed CSV. A warmup whose exact filename is
 # outside this module never refreshes and rots until the deploy seed gate aborts (the
@@ -140,7 +154,7 @@ _ALIASES = [
 def phase_ibkr(port, seed_dir):
     print("\n========== [2/3] REFRESH seeds from IB Gateway ==========")
     try:
-        from ib_insync import IB, ContFuture
+        from ib_insync import IB, ContFuture, Forex
     except Exception as e:
         print(f"  [skip-phase] ib_insync unavailable: {e} -- keeping prior seeds"); return
     os.makedirs(seed_dir, exist_ok=True)
@@ -238,7 +252,29 @@ def phase_ibkr(port, seed_dir):
                 try:
                     bars = pull(con, tf)
                     if bars and len(bars) > 10:
-                        ok.append(f"{sym}_{tf}({write_csv(f'{seed_dir}/warmup_{sym}_{tf}.csv', bars, ms=True)})")
+                        ok.append(f"{sym}_{tf}({write_csv(f'{seed_dir}/warmup_{sym}_{tf}.csv', bars, ms=sym not in _SEC_TS)})")
+                    else:
+                        fail.append(f"{sym}_{tf}(no bars)")
+                except Exception as e:
+                    fail.append(f"{sym}_{tf}({e})")
+
+        # ---- FX SPOT (IDEALPRO, MIDPOINT) -- see _FOREX comment above ----
+        for sym, tfs in _FOREX.items():
+            fx = None
+            try:
+                c = Forex(sym); ib.qualifyContracts(c)
+                if getattr(c, "conId", 0): fx = c
+            except Exception as e:
+                fail.append(f"{sym}(qualify {e})"); continue
+            if fx is None:
+                fail.append(f"{sym}(no IDEALPRO pair)"); continue
+            for tf in tfs:
+                try:
+                    bs, dur = _TF[tf]
+                    bars = ib.reqHistoricalData(fx, "", durationStr=dur, barSizeSetting=bs,
+                                                whatToShow="MIDPOINT", useRTH=False, timeout=45)
+                    if bars and len(bars) > 10:
+                        ok.append(f"{sym}_{tf}({write_csv(f'{seed_dir}/warmup_{sym}_{tf}.csv', bars, ms=False)})")
                     else:
                         fail.append(f"{sym}_{tf}(no bars)")
                 except Exception as e:
@@ -273,7 +309,35 @@ _OVERRIDES = [
     (re.compile(r"_H4\.csv|_h4\.csv|H4", re.I),                    14),
 ]
 _EXCLUDE  = re.compile(r"logs[/\\]shadow[/\\]|tsmom_v2|[%<>*]|\.\.\.", re.I)
-_DISABLED = re.compile(r"(EURUSD|GBPUSD|USDJPY|AUDUSD|NZDUSD|USDCAD|EURGBP)", re.I)
+# GBPUSD_H1 carved OUT of the FX skip (S-2026-07-14): FxLadder GBPUSD was re-enabled
+# S-2026-07-09c but this regex still skipped its seed -> stale-invisible. Other GBPUSD
+# TFs (H4/D1) remain owned by the disabled FX shadow book -> still skipped.
+# SPXUSD added S-2026-07-14 (was in tools/seed_freshness_audit.py's copy only -- drift):
+# warmup_SPXUSD_H4's sole consumer is Survivor's SpxOverlay, which only gates
+# SPXVolGatedDonch-family cells and NONE are active. Remove if such a cell is re-added.
+_DISABLED = re.compile(r"(EURUSD|GBPUSD(?!_H1)|USDJPY|AUDUSD|NZDUSD|USDCAD|EURGBP|SPXUSD)", re.I)
+
+# Dynamic-path seeds the literal ".csv"-scan can NEVER see (S-2026-07-14 audit-blindness fix).
+# SurvivorPortfolio::seed_all() BUILDS each cell's path at runtime:
+#     base_dir + "/warmup_" + symbol + "_" + tf_tag + ".csv"      (SurvivorPortfolio.hpp:808)
+# so no string literal exists for e.g. warmup_USTEC.F_H4.csv -> it rotted 94d unseen while
+# seeding 2 ACTIVE cells. Parse the active (uncommented) add({...}) roster and synthesize
+# the exact same paths. KEEP IN SYNC with tools/seed_freshness_audit.py.
+_SURV_TF = {14400: "H4", 3600: "H1", 1800: "M30", 900: "M15", 300: "M5"}
+_SURV_ADD = re.compile(r'^\s*add\(\{.*?\.symbol="([^"]+)".*?\.tf_sec=(\d+)')
+def _survivor_seeds(repo):
+    out = set()
+    hpp = os.path.join(repo, "include", "SurvivorPortfolio.hpp")
+    try:
+        lines = open(hpp, errors="ignore").read().splitlines()
+    except Exception:
+        return out
+    for ln in lines:
+        m = _SURV_ADD.match(ln)
+        if not m: continue
+        tag = _SURV_TF.get(int(m.group(2)))
+        if tag: out.add(f"phase1/signal_discovery/warmup_{m.group(1)}_{tag}.csv")
+    return out
 
 def _last_ts(path):
     try:
@@ -328,6 +392,7 @@ def phase_audit(repo, max_age_days):
             if "signal_discovery" in p or "warmup" in p.lower() or "tsmom" in p.lower() or "/data/" in p or p.startswith("data/"):
                 if _EXCLUDE.search(p): continue
                 seed_paths.add(p)
+    seed_paths |= _survivor_seeds(repo)   # dynamic Survivor paths -- invisible to the literal scan
     now = time.time(); stale, ok, missing, skipped = [], [], [], []
     for rel in sorted(seed_paths):
         cand = os.path.join(repo, rel)

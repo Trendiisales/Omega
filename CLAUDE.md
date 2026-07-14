@@ -221,7 +221,7 @@ committed to the repo so they ship with every deploy:
 phase1/signal_discovery/warmup_XAUUSD_H4.csv  (3216 bars / 134 days)
 phase1/signal_discovery/warmup_GER40_H4.csv   (1600 bars / 11 months)
 phase1/signal_discovery/warmup_EURUSD_H1.csv  (6920 bars / 10 months)
-phase1/signal_discovery/warmup_GBPUSD_H1.csv  (7928 bars / 11 months)
+phase1/signal_discovery/warmup_GBPUSD_H1.csv  (9000 bars / 17 months, IBKR IDEALPRO; nightly OmegaSeedRefresh since S-2026-07-14)
 ```
 
 Add a new symbol/timeframe CSV here when adding an engine for it.
