@@ -152,6 +152,15 @@ try:
 except Exception as e:
     out["journal_err"] = str(e)
 out["clip_init"] = clips
+# service age (TZ-free: monotonic start vs /proc/uptime) — deploy-grace input
+try:
+    mono = int(subprocess.run(["systemctl", "show", "chimera", "-p",
+                               "ExecMainStartTimestampMonotonic", "--value"],
+                              capture_output=True, text=True, timeout=10).stdout.strip() or 0)
+    up = float(open("/proc/uptime").read().split()[0])
+    out["svc_age_s"] = up - mono / 1e6 if mono else -1
+except Exception:
+    out["svc_age_s"] = -1
 # the producer's own emitted state (for desk-copy divergence check)
 try:
     st = json.load(open("/home/jo/ChimeraCrypto/data/crypto_companion_state.json"))
@@ -385,7 +394,11 @@ def main() -> int:
 
     # ── negative-test injections (DTS_INJECT — proves each check can fire) ──────
     if "roster_missing" in INJECT and isinstance(served_cc, dict):
-        served_cc["legs"] = [l for l in served_cc.get("legs", []) if l.get("sym") != "BTC"]
+        # drop the first served sym (was hardcoded BTC — silently no-op'd once the
+        # 2026-07-14 cull removed the BTC cell; a dead negative test proves nothing)
+        _legs0 = served_cc.get("legs", [])
+        _drop = _legs0[0].get("sym") if _legs0 else None
+        served_cc["legs"] = [l for l in _legs0 if l.get("sym") != _drop]
     if "roster_extra" in INJECT and isinstance(served_cc, dict):
         served_cc.setdefault("legs", []).append(
             {"sym": "FAKE", "tag": "FAKE-UJ9-CLIP", "cell": "UJ9", "det_w": 1, "det_thr_pct": 9.0})
@@ -424,10 +437,21 @@ def main() -> int:
         clip_tags = set(clip.keys())
         missing = sorted(clip_tags - served_tags)
         ghost = sorted(served_tags - clip_tags)
+        # DEPLOY GRACE (S-2026-07-14): a deploy restarts chimera with a new roster;
+        # the desk relay copy lags ~2-3 min, so a cron run landing inside that window
+        # cried RED twice today (17-cell add 14:09, cull-to-4 14:39) — both self-healed.
+        # A roster mismatch while the service is < DTS_DEPLOY_GRACE_S old is the relay
+        # catching up, not divergence: WARN, and the NEXT run (30 min later, far past
+        # grace) still enforces for real. Ghost-while-old (the TRX class) is unaffected.
+        grace_s = float(os.environ.get("DTS_DEPLOY_GRACE_S", 600))
+        age = float(chim.get("svc_age_s", -1))
+        in_grace = (missing or ghost) and 0 <= age < grace_s
+        mm_state = "WARN" if in_grace else "FAIL"
+        gnote = " [deploy grace: chimera restarted %dmin ago — relay catching up; next run enforces]" % (age // 60) if in_grace else ""
         if missing:
-            rec("FAIL", "CRYPTO-ROSTER", "live cells MISSING from desk state: %s" % ",".join(missing))
+            rec(mm_state, "CRYPTO-ROSTER", "live cells MISSING from desk state: %s%s" % (",".join(missing), gnote))
         if ghost:
-            rec("FAIL", "CRYPTO-ROSTER", "desk shows cells the box does NOT run (stale/ghost, the TRX class): %s" % ",".join(ghost))
+            rec(mm_state, "CRYPTO-ROSTER", "desk shows cells the box does NOT run (stale/ghost, the TRX class): %s%s" % (",".join(ghost), gnote))
         if not missing and not ghost:
             coins = sorted(set(t.split("-")[0] for t in clip_tags))
             rec("PASS", "CRYPTO-ROSTER", "%d/%d cells match boot [CLIP-INIT] exactly (%s)" %
@@ -499,7 +523,13 @@ def main() -> int:
         got = set(l.get("sym", "") for l in legs)
         miss = sorted(want - got)
         if miss:
-            rec("FAIL", "SYMBOL-COV", "chimera grid coins missing from desk panel: %s" % ",".join(miss))
+            # same deploy-grace as CRYPTO-ROSTER: new-roster coins reach the panel
+            # with the relayed state copy, one cycle behind a restart
+            age3 = float(chim.get("svc_age_s", -1))
+            g3 = 0 <= age3 < float(os.environ.get("DTS_DEPLOY_GRACE_S", 600))
+            rec("WARN" if g3 else "FAIL", "SYMBOL-COV",
+                "chimera grid coins missing from desk panel: %s%s" %
+                (",".join(miss), " [deploy grace]" if g3 else ""))
         else:
             rec("PASS", "SYMBOL-COV", "chimera grid: all %d coins on the desk panel" % len(want))
     # 3a2 S-2026-07-13: TRADED-vs-TICKER parity — every symbol the chimera box has actually
