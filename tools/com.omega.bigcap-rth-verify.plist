@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  One-shot RTH live-fire proof for the bigcap up-jump ladder tee (HEAD 6d2b4df2).
+  Fires daily at NZ-local 08:25 == 20:25 UTC (just after the 20:00 UTC US RTH
+  close, well before the 22:35 UTC yfinance batch). tools/bigcap_rth_verify.sh
+  self-unloads this job on the first clean PASS (drops /tmp/bigcap_rth_verify.DONE);
+  on weekends/thin days it logs INCONCLUSIVE and stays loaded to retry next RTH.
+  Mac local TZ = Pacific/Auckland (NZST) — launchd StartCalendarInterval is LOCAL.
+  Install:
+    cp tools/com.omega.bigcap-rth-verify.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.omega.bigcap-rth-verify.plist
+  Remove:
+    launchctl unload ~/Library/LaunchAgents/com.omega.bigcap-rth-verify.plist
+    rm ~/Library/LaunchAgents/com.omega.bigcap-rth-verify.plist
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.omega.bigcap-rth-verify</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/jo/Omega/tools/bigcap_rth_verify.sh</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key><integer>8</integer>
+    <key>Minute</key><integer>25</integer>
+  </dict>
+  <key>StandardOutPath</key><string>/tmp/bigcap-rth-verify.out</string>
+  <key>StandardErrorPath</key><string>/tmp/bigcap-rth-verify.err</string>
+  <key>RunAtLoad</key><false/>
+</dict>
+</plist>
