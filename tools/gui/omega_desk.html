@@ -241,7 +241,7 @@ a{color:var(--blu);text-decoration:none}
 
 <!-- ═══ LAST 15 TRADES — moved here (under INDEX COMPANIONS, left column) S-2026-07-10 operator ═══ -->
 <div class="pan">
-  <div class="lbl">LAST 15 TRADES — all books (engine ledger + crypto) · newest first · scroll for history</div>
+  <div class="lbl">LAST 15 TRADES — all books (engine ledger + crypto + stock) · newest first · scroll for history<span id="alltradesn" class="lbl" style="margin-left:8px"></span></div>
   <div style="max-height:200px;overflow-y:auto;margin-top:3px">
     <table id="alltrades" style="width:100%"><tr><td class="l d">loading…</td></tr></table>
   </div>
@@ -868,9 +868,17 @@ function fmtTs(t){ if(!t)return '—'; var d=new Date(t*1000); return d.toISOStr
 function pollTrades(){
   Promise.all([
     fetch('/api/history?all=1').then(function(r){return r.json();}).catch(function(){return [];}),
-    fetch('/api/crypto_trades').then(function(r){return r.json();}).catch(function(){return [];})
+    fetch('/api/crypto_trades').then(function(r){return r.json();}).catch(function(){return [];}),
+    fetch('/api/stockdipturtle').then(function(r){return r.json();}).catch(function(){return {};})
   ]).then(function(res){
-    var all=(res[0]||[]).concat(res[1]||[]);
+    /* S-2026-07-15n operator: StockDip/StockTurtle book trades were in the TOTAL (sdAll) but never in
+       the trade LIST. Flatten books[].trades[] into trade rows (each carries entry_ts/exit_ts) so
+       MU/DELL etc. show WITH their timestamps and count in the total. */
+    var sd=[];(((res[2]||{}).books)||[]).forEach(function(b){(b.trades||[]).forEach(function(t){
+      sd.push({book:'stock',engine:b.engine||('StockDip_'+(b.sym||'')),symbol:b.sym||'',side:'long',
+        price:safe(t.entry),exitPrice:safe(t.exit),net_pnl:safe(t.usd_real),exitReason:t.reason||'',
+        entryTs:safe(t.entry_ts),exitTs:safe(t.exit_ts)});});});
+    var all=(res[0]||[]).concat(res[1]||[]).concat(sd);
     /* S-2026-07-12 operator: fold the CHIMERA EDGE realized (e.g. TIA-TSMOM +7.65) into the
        crypto PnL — it was showing in LAST-15 but never in the total. EDGE trades only
        (engine !~ CLIP) so it's additive to _cctot (the companion-clip book), no double-count. */
@@ -878,6 +886,13 @@ function pollTrades(){
     if(typeof updDayPnl==='function')updDayPnl();
     all.forEach(function(t){ if(!t.exitTs && t.exit_ts_utc){ var d=Date.parse((t.exit_ts_utc||'').replace(' UTC','Z').replace(' ','T')); if(!isNaN(d))t.exitTs=d/1000; } });
     all.sort(function(a,b){return (b.exitTs||0)-(a.exitTs||0);});
+    /* S-2026-07-15n operator ("include the mimic trades in that total + show how many mimic trades
+       we had, i.e. 2 or 4 or 1"): count ALL closed trades across every book, and how many are MIMIC
+       engines (*Mimic tag). Shown next to the panel title. */
+    var nAll=all.length, nMimic=all.filter(function(t){return /mimic/i.test(t.engine||'');}).length,
+        nStock=sd.length, nCrypto=(res[1]||[]).length;
+    var cn=document.getElementById('alltradesn');
+    if(cn)cn.innerHTML='· '+nAll+' total ('+nMimic+' mimic'+(nStock?' · '+nStock+' stock':'')+(nCrypto?' · '+nCrypto+' crypto':'')+')';
     var top=all.slice(0,15);
     var el=document.getElementById('alltrades'); if(!el)return;
     if(!top.length){ el.innerHTML='<tr><td class="l d">no closed trades yet</td></tr>'; return; }
@@ -886,7 +901,9 @@ function pollTrades(){
       var p=safe(t.net_pnl!=null?t.net_pnl:t.pnl);
       var col=p>0?'var(--grn)':(p<0?'var(--red)':'var(--t2)');
       var when=t.exit_ts_utc?String(t.exit_ts_utc).replace(' UTC',''):fmtTs(t.exitTs);
-      var bk=t.book==='crypto'?'<span style="color:var(--w)">crypto</span> '+esc(t.engine||''):(t.book==='chimera'?'<span style="color:#c084fc">chimera</span> '+esc(t.engine||''):esc(t.engine||'')); /* chimera = josgp1 SHADOW closed trades (S-2026-07-12), display-only */
+      var isMim=/mimic/i.test(t.engine||'');
+      var tag=t.book==='crypto'?'<span style="color:var(--w)">crypto</span> ':(t.book==='chimera'?'<span style="color:#c084fc">chimera</span> ':(t.book==='stock'?'<span style="color:#5cc8ff">stock</span> ':'')); /* chimera = josgp1 SHADOW closed trades; stock = StockDip/Turtle book */
+      var bk=tag+esc(t.engine||'')+(isMim?' <span class="d" style="font-size:9px">mimic</span>':'');
       return '<tr><td class="l">'+esc(when)+'</td><td class="l">'+bk+'</td><td class="l">'+esc(t.symbol||'')+'</td><td>'+esc(t.side||'')+
         '</td><td class="num">'+fmt2(safe(t.price),4)+'</td><td class="num">'+fmt2(safe(t.exitPrice),4)+
         '</td><td class="num" style="color:'+col+'">'+fmt2(p,2)+'</td><td class="l d">'+esc(t.exitReason||'')+'</td></tr>';
@@ -999,7 +1016,11 @@ function drawCC(){var live=window._cc||{};var tags=Object.keys(live);
  syms.forEach(function(sy){
   var books=bySym[sy].sort(function(a,b){return String(a.tag).localeCompare(String(b.tag));});
   var coinbank=0,coinact=0;
-  books.forEach(function(s){coinbank+=safe(s.bank_bp_real);if(s.armed||(s.sublegs&&s.sublegs.length))coinact++;});
+  /* S-2026-07-15n (operator "get rid of the fake crypto"): floor every leg's realized at BE(0).
+     A companion-at-BE mimic can NEVER book a loss ([[feedback-mimic-be-floor-mandatory]]); a
+     negative bank_bp_real (e.g. the ETH-PJ7W24 -73.61bp leg) is a floor VIOLATION, not a real loss
+     -> clamp to 0 everywhere it's summed/shown. josgp1 root (why the leg booked neg) is owed. */
+  books.forEach(function(s){coinbank+=Math.max(0,safe(s.bank_bp_real));if(s.armed||(s.sublegs&&s.sublegs.length))coinact++;});
   if(coinact)ntrading++;
   var cb=(coinbank!==0)
     ? '<span style="color:'+(coinbank>0?'var(--grn)':'var(--red)')+'">'+fmt2(coinbank,1)+' bp <span class="d">$'+fmt2(bpUsd(coinbank),2)+'</span></span>'
@@ -1009,10 +1030,10 @@ function drawCC(){var live=window._cc||{};var tags=Object.keys(live);
     +'<td class="l">'+(coinact?'<span class="g" style="font-weight:600">'+coinact+' TRADING</span>':'<span class="d">idle</span>')+'</td>'
     +'<td colspan="2"></td><td class="num">'+cb+'</td></tr>';
   books.forEach(function(s){
-   nbooks++;totclips+=safe(s.clips);totbank+=safe(s.bank_bp_real);if(s.armed)narm++;
+   nbooks++;totclips+=safe(s.clips);totbank+=Math.max(0,safe(s.bank_bp_real));if(s.armed)narm++;/* BE-floor: no mimic leg counts negative (see above) */
    var act=!!(s.armed||(s.sublegs&&s.sublegs.length));
    var pk=s.peak_mfe_pct===undefined?'<span class="d">—</span>':fmt2(s.peak_mfe_pct,2);
-   var bkv=safe(s.bank_bp_real);
+   var bkv=Math.max(0,safe(s.bank_bp_real));/* BE-floor clamp — a floor-violating negative leg shows $0, not a fake loss */
    var bk='<span style="color:'+(bkv>0?'var(--grn)':(bkv<0?'var(--red)':'var(--t2)'))+'">'+fmt2(bkv,1)+' bp <span class="d">$'+fmt2(bpUsd(bkv),2)+'</span></span>';
    h+='<tr'+(act?'':' style="opacity:.75"')+'><td class="l d" style="border-left:2px solid '+(act?'var(--grn)':'var(--t2)')+';padding-left:10px">&#8627; '+esc(s.tag||'?')+'</td>'
      +'<td class="l d" style="font-size:9px">'+ccKind(s)+'</td>'
