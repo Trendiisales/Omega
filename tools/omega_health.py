@@ -106,10 +106,18 @@ def chk_log_fresh():
     return (GREEN,f"fresh {a:.0f}s")
 
 def chk_gateway():
-    up=_proc("ibgateway.exe"); listen=_port(4002)
-    if up and listen: return (GREEN,"ibgateway up, :4002 listening")
-    if not up: return (RED,"ibgateway.exe DOWN -- all IBKR feeds blind")
-    return (RED,":4002 not listening -- gateway not accepting API")
+    # Key on the API LISTENER, not a process name. Post-2026-07-07 migration the ForexVPS box
+    # runs IB Gateway as java.exe (install4j i4j_jres JRE) -- there is NO ibgateway.exe process,
+    # so the old _proc("ibgateway.exe") check returned RED on EVERY run even with 4002 live and
+    # feeds fresh. That false RED wrote HEALTH_RED.flag; when this daemon then died (15min task
+    # ExecutionTimeLimit) the flag orphaned and the GUI/alarm showed RED forever (2026-07-15
+    # recurring HEALTH RED root cause). The listener is the correct, migration-proof signal and
+    # matches omega_health_alarm.ps1 ($gwUp=listener) + healthcheck.ps1 ib.port_4002. Operator
+    # mandate 2026-07-01: "alarm on the LISTENER, not the process."
+    listen=_port(4002)
+    if listen: return (GREEN,":4002 listening -- IBKR API up")
+    if not _fx_open(): return (AMBER,":4002 down -- broker closed (weekend), expected")
+    return (RED,":4002 NOT listening -- IBKR API down, all IBKR feeds blind")
 
 def chk_fix_feed():
     last=None
@@ -266,11 +274,15 @@ def chk_aurora():
     if a>240: return (AMBER,f"aurora {a/60:.0f}min old -- snapshotter lagging")
     return (GREEN,f"aurora fresh {a:.0f}s")
 
-# Aurora is NOT in CRIT_TASKS: as a periodic --once task its State is "Ready"
-# between runs (not "Running"), so a task-state check would false-RED. Its OUTPUT
-# freshness (chk_aurora) is the correct liveness signal and catches a dead/disabled
-# task during RTH. Do not re-add it here without making it a resident task again.
-CRIT_TASKS=["OmegaBigCapBridge","OmegaIbkrBridge","OmegaMgcLiveBars","OmegaHealthMonitor"]
+# Neither Aurora NOR OmegaHealthMonitor is in CRIT_TASKS: both are periodic --once
+# tasks whose State is "Ready" between runs (not "Running"), so a task-state check
+# false-REDs them. OmegaHealthMonitor was moved to the --once pattern 2026-07-15 (it
+# was a resident loop that a 15min ExecutionTimeLimit kept killing) and self-checking
+# its own task-state is doubly wrong -- if it were dead it could not run to report, and
+# as --once it is "Ready" not "Running". Its real liveness backstop is the HEALTH_RED.flag
+# heartbeat + omega_health_alarm.ps1 staleness guard. A task's OUTPUT freshness (e.g.
+# chk_aurora) is the correct liveness signal; do not re-add a --once task here.
+CRIT_TASKS=["OmegaBigCapBridge","OmegaIbkrBridge","OmegaMgcLiveBars"]
 def chk_crit_tasks():
     st=_tasks(); bad=[t for t in CRIT_TASKS if st.get(t)!="Running"]
     if bad: return (RED,"NOT running: "+", ".join(f"{t}={st.get(t,'missing')}" for t in bad))
@@ -304,10 +316,12 @@ def collect():
     return {"ts":_now().isoformat(timespec="seconds"),"overall":overall,"maint":note,
             "rth":_us_rth(),"fx":_fx_open(),"components":comps}
 
+def _flag_msg(r):
+    return "\n".join([f"{r['ts']} OVERALL={r['overall']}"]+[
+        f"  [{c['status']}] {c['name']}: {c['detail']}" for c in r["components"] if c["status"] in (RED,AMBER)])
+
 def send_alert(r):
-    lines=[f"{r['ts']} OVERALL={r['overall']}"]+[
-        f"  [{c['status']}] {c['name']}: {c['detail']}" for c in r["components"] if c["status"] in (RED,AMBER)]
-    msg="\n".join(lines)
+    msg=_flag_msg(r)
     with open(ALERTS,"a") as f: f.write(msg+"\n")
     REDFLAG.write_text(msg)
     # push channel (ntfy/telegram) hooks here once operator picks one
@@ -317,8 +331,16 @@ def write_and_alert(r):
     try: prev=json.loads(HEALTH.read_text())
     except Exception: pass
     HEALTH.write_text(json.dumps(r,indent=2))
-    if r["overall"]==RED and prev.get("overall")!=RED: send_alert(r)
-    if r["overall"]!=RED and REDFLAG.exists():
+    if r["overall"]==RED:
+        # Refresh HEALTH_RED.flag EVERY loop while RED (heartbeat), so its mtime tracks this
+        # daemon's liveness. If the daemon dies mid-RED the flag goes stale and the alarm
+        # (omega_health_alarm.ps1) treats a stale flag as an orphan and clears it -- self-heals
+        # instead of a phantom RED forever. Log/push still fire ONLY on transition (no spam).
+        if prev.get("overall")!=RED: send_alert(r)
+        else:
+            try: REDFLAG.write_text(_flag_msg(r))
+            except Exception: pass
+    elif REDFLAG.exists():
         try: REDFLAG.unlink()
         except Exception: pass
 

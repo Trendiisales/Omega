@@ -32,9 +32,21 @@ if ($behind -gt 0 -and -not $execRetired) {
     if ($sev -eq 'RED') { $overall = 'RED' } elseif ($overall -eq 'GREEN') { $overall = 'AMBER' }
     $reasons += "[$sev] DEPLOY-STALE: binary=$built behind origin/main=$head by $behind commit(s); code-touching=$codeBehind"
 }
-if (Test-Path C:\Omega\HEALTH_RED.flag) {
-    $hr = (Get-Content C:\Omega\HEALTH_RED.flag -Raw).Trim() -replace "`r?`n", ' / '
-    $overall = 'RED'; $reasons += "[RED] HEALTH_RED.flag: $hr"
+# HEALTH_RED.flag is a HEARTBEAT written by omega_health.py every loop (~45s) while RED and
+# unlinked when it clears. Trust it ONLY if FRESH. If that daemon dies mid-RED (2026-07-15: the
+# OmegaHealthMonitor task killed it via a 15min ExecutionTimeLimit right after it wrote the flag),
+# the flag strands and this script would RED forever off a dead 4h-old snapshot -- the recurring
+# phantom HEALTH RED. A stale flag = orphaned writer -> ignore it and delete it (self-heal).
+$redFlagPath = 'C:\Omega\HEALTH_RED.flag'
+if (Test-Path $redFlagPath) {
+    $flagAgeMin = ((Get-Date) - (Get-Item $redFlagPath).LastWriteTime).TotalMinutes
+    if ($flagAgeMin -le 5) {
+        $hr = (Get-Content $redFlagPath -Raw).Trim() -replace "`r?`n", ' / '
+        $overall = 'RED'; $reasons += "[RED] HEALTH_RED.flag: $hr"
+    } else {
+        Remove-Item $redFlagPath -Force -ErrorAction SilentlyContinue
+        $reasons += "[INFO] cleared orphaned HEALTH_RED.flag ($([int]$flagAgeMin)min stale -- omega_health.py daemon not refreshing it)"
+    }
 }
 $c = Get-PSDrive C
 $pct = [math]::Round($c.Free/($c.Used+$c.Free)*100,1)
