@@ -10,7 +10,8 @@ and screams when anything rides a fallback.
 
 CHECKS (all must pass in market hours):
   [1] SERVICE-ENV   registry AppEnvironmentExtra carries every required env
-                    (OMEGA_IBKR_BRIDGE=1 — extend REQUIRED_ENVS when new ones ship).
+                    (OMEGA_IBKR_BRIDGE=1 + OMEGA_BIGCAP_BRIDGE=1 — extend
+                    REQUIRED_ENVS when new ones ship).
   [2] CONSUMER-UP   current boot stdout has an [IBKR-CONSUMER] line AND port 9701
                     shows an ESTABLISHED pair (listener alone = consumer dead).
   [3] BRIDGE-FRESH  today's bridge L1 csv for an IBKR-ONLY canary (USDCAD) is
@@ -20,6 +21,12 @@ CHECKS (all must pass in market hours):
                     lag) — proves bridge -> consumer -> dispatch -> H1 roll -> book.
   [5] NO-FALLBACK   if [3] fresh but [2] fails => "PRIMARY DOWN — RUNNING ON
                     FALLBACK" (the exact silent state this test exists to kill).
+  [6] BIGCAP-CONSUMER  the bigcap L1 bridge (:7784) heartbeat shows consumer=Y — the
+                    binary is consuming live mids so the in-binary daily-close writer
+                    is fed. consumer=N => sp500_long_close.csv freezes and the bigcap
+                    up-jump ladder silently stops firing (S-2026-07-16 root cause: the
+                    Omega service env was missing OMEGA_BIGCAP_BRIDGE=1 — the SAME
+                    missing-env failure class as [1], for a bridge nothing guarded).
 
 Exit 0 GREEN / 2 RED. Run from SessionStart hook + Mac cron (30 min, notification
 on RED via install_feedpath_cron.sh). FX weekend (Sat/Sun UTC + Fri>=22 UTC) skips
@@ -48,7 +55,18 @@ def _desk_url() -> str:
         pass
     return "http://45.85.3.79:7779"
 DESK = _desk_url()
-REQUIRED_ENVS = ["OMEGA_IBKR_BRIDGE=1"]
+REQUIRED_ENVS = ["OMEGA_IBKR_BRIDGE=1", "OMEGA_BIGCAP_BRIDGE=1"]
+# S-2026-07-16: the bigcap L1 bridge (:7784) publishes its own heartbeat with a consumer=Y/N
+# flag + a [BIGCAP-ALERT] when the binary isn't consuming. Read the LAST heartbeat: single-quoted
+# PowerShell literals only (no nested double-quotes) so the ssh->cmd->powershell hop can't mangle
+# it. Output form "<log_age_min>~<last HB line>".
+_BIGCAP_HB_CMD = (
+    "powershell -NoProfile -Command "
+    "\"$f='C:\\Omega\\logs\\bigcap_bridge.log'; "
+    "$a=[int]((Get-Date).ToUniversalTime()-(Get-Item $f).LastWriteTimeUtc).TotalMinutes; "
+    "$l=(Get-Content $f -Tail 40 | Select-String 'HB ' | Select-Object -Last 1); "
+    "Write-Output ([string]$a + '~' + [string]$l)\""
+)
 CANARY_L1 = "USDCAD"          # IBKR-only: no fallback can mask a dead primary (bridge L1 freshness)
 # S-2026-07-10: DOWNSTREAM checks the ACTIVE ladder pair. USDCAD was disabled from the FX ladder
 # (S-2026-07-09c: FAIL all-6 on 3Y IBKR; only GBPUSD passes) -> its ladder ts never advances ->
@@ -169,6 +187,33 @@ def main():
             "PRIMARY DOWN — bridge records but binary not connected: FX is RIDING THE BLACKBULL FALLBACK silently")
     else:
         rec("NO-FALLBACK", True, "no silent-fallback state detected")
+
+    # [6] BIGCAP-CONSUMER — the bigcap L1 bridge (:7784) primary path. IDENTICAL failure class to
+    #     [1]/[2] for FX. S-2026-07-16: the Omega service env was missing OMEGA_BIGCAP_BRIDGE=1, so
+    #     the binary never consumed :7784 -> in-binary daily-close writer got 0 fresh mids ->
+    #     data/rdagent/sp500_long_close.csv froze -> the bigcap up-jump ladder never saw a new day
+    #     and never fired, silently masked by the yfinance OmegaStockMoverFeed fallback. The bridge
+    #     screams "[BIGCAP-ALERT] consumer=N ... Omega NOT consuming :7784" every heartbeat but
+    #     nothing surfaced it. Connection is independent of RTH (holds post-close), so this is NOT
+    #     market-gated: consumer=Y is required whenever the bridge is alive. If the bridge itself
+    #     isn't emitting fresh heartbeats (no fresh HB) -> SKIP (down/off-hours), don't false-RED.
+    hb_out = ssh(_BIGCAP_HB_CMD)
+    try:
+        age_s, _, hb = hb_out.strip().partition("~")
+        hb_age = int(age_s)
+    except Exception:
+        hb_age, hb = None, ""
+    if hb_age is None or hb_age > 10 or "HB " not in hb:
+        rec("BIGCAP-CONSUMER", True,
+            f"bigcap bridge heartbeat not fresh (log age {hb_age}min) — bridge down/off-hours, consumer not assessable",
+            skip=True)
+    else:
+        consumer_y = "consumer=Y" in hb
+        rec("BIGCAP-CONSUMER", consumer_y,
+            "bigcap bridge :7784 consumer=Y — binary consuming live mids, daily-close writer fed" if consumer_y
+            else "bigcap bridge :7784 consumer=N — binary NOT consuming; check OMEGA_BIGCAP_BRIDGE=1 in the "
+                 "Omega service env + single bridge proc (daily-close writer starved -> sp500_long_close.csv "
+                 "FREEZES -> bigcap up-jump ladder stops firing, masked by the yfinance fallback)")
 
     hdr = "FEED-PATH SELFTEST " + ("RED — PRIMARY FEED PATH BROKEN, fix before trusting any FX/MGC signal"
                                     if red else "GREEN — primary IBKR path live end-to-end")

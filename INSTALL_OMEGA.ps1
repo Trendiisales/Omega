@@ -218,7 +218,16 @@ if ($InstallService) {
     # l2_bid_vol/l2_ask_vol on every tick. Captures Apr-30 to May-26 lost ~all
     # depth data because of this. Setting the env here keeps the fix across
     # re-installs of the service.
-    & $NssmExe set $OmegaSvcName AppEnvironmentExtra "OMEGA_IBKR_BRIDGE=1"
+    # S-2026-07-16: BOTH bridge envs must be set here. OMEGA_BIGCAP_BRIDGE=1 wires
+    # the bigcap L1 consumer (omega_main.hpp:1050, port :7784) that feeds the
+    # in-binary daily-close writer -> data/rdagent/sp500_long_close.csv. This env
+    # was NEVER set on the omega-new box, so the bigcap up-jump ladder silently
+    # rode the yfinance fallback and its daily feed went stale (operator asked about
+    # "staleness every single day"). A re-provision that set only OMEGA_IBKR_BRIDGE=1
+    # here is exactly how the var stayed missing. nssm set with multiple values writes
+    # a REG_MULTI_SZ (one env per line) -- pass BOTH so neither is ever dropped again.
+    # Guarded end-to-end by tools/feedpath_selftest.py ([SERVICE-ENV] + [BIGCAP-CONSUMER]).
+    & $NssmExe set $OmegaSvcName AppEnvironmentExtra "OMEGA_IBKR_BRIDGE=1" "OMEGA_BIGCAP_BRIDGE=1"
     & $NssmExe set $OmegaSvcName DisplayName       "Omega Trading Engine"
     & $NssmExe set $OmegaSvcName Description       "Omega commodities + indices breakout trading engine. Managed by NSSM. Use OMEGA.ps1 to start/stop/restart."
 
