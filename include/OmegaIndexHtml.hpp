@@ -912,11 +912,20 @@ function pollTrades(){
       var col=p>0?'var(--grn)':(p<0?'var(--red)':'var(--t2)');
       var when=t.exit_ts_utc?String(t.exit_ts_utc).replace(' UTC',''):fmtTs(t.exitTs);
       var isMim=/mimic/i.test(t.engine||'');
-      var tag=t.book==='crypto'?'<span style="color:var(--w)">crypto</span> ':(t.book==='chimera'?'<span style="color:#c084fc">chimera</span> ':(t.book==='stock'?'<span style="color:#5cc8ff">stock</span> ':'')); /* chimera = josgp1 SHADOW closed trades; stock = StockDip/Turtle book */
-      var bk=tag+esc(t.engine||'')+(isMim?' <span class="d" style="font-size:9px">mimic</span>':'');
-      return '<tr><td class="l">'+esc(when)+'</td><td class="l">'+bk+'</td><td class="l">'+esc(t.symbol||'')+'</td><td>'+esc(t.side||'')+
+      /* S-2026-07-15s (operator "shown in the correct box"): name the ACTUAL stock sub-book, not a
+         generic 'stock' bucket -- a StockDip closed dip-buy (DELL +704) read as the STOCK BASKET's
+         still-open DELL (+331), the same-ticker double-DELL box confusion. stockdip vs stockturtle so
+         trade history attributes the right book (the basket keeps no closed-trade log -> its DELL only
+         ever lives in the STOCK BASKET panel, never here). */
+      var stkLbl=t.book==='stock'?(/turtle/i.test(t.engine||'')?'stockturtle':'stockdip'):'';
 )OMEGAD4"
-R"OMEGAD5(        '</td><td class="num">'+fmt2(safe(t.price),4)+'</td><td class="num">'+fmt2(safe(t.exitPrice),4)+
+R"OMEGAD5(      var tag=t.book==='crypto'?'<span style="color:var(--w)">crypto</span> ':(t.book==='chimera'?'<span style="color:#c084fc">chimera</span> ':(t.book==='stock'?'<span style="color:#5cc8ff">'+stkLbl+'</span> ':'')); /* chimera = josgp1 SHADOW closed trades; stock = StockDip/Turtle book */
+      /* S-2026-07-15s (operator "mimics referenced via an indent"): mimic rows get a leading indent
+         + hook glyph so they read as the mimic OF the engine, nested under it, not a peer trade. */
+      var ind=isMim?'<span class="d" style="padding-left:16px">&#8627; </span>':'';
+      var bk=ind+tag+esc(t.engine||'')+(isMim?' <span class="d" style="font-size:9px">mimic</span>':'');
+      return '<tr><td class="l">'+esc(when)+'</td><td class="l">'+bk+'</td><td class="l">'+esc(t.symbol||'')+'</td><td>'+esc(t.side||'')+
+        '</td><td class="num">'+fmt2(safe(t.price),4)+'</td><td class="num">'+fmt2(safe(t.exitPrice),4)+
         '</td><td class="num" style="color:'+col+'">'+fmt2(p,2)+'</td><td class="l d">'+esc(t.exitReason||'')+'</td></tr>';
     }).join('');
     el.innerHTML=hdr+rows;
@@ -1092,7 +1101,8 @@ function renderCompanionOpenTrades(pfx, open, trades, pxPrec){
    h+='<tr><td class="l">'+esc(o.flavor)+'</td><td class="l">'+esc(o.dir)+'</td><td class="l">'+esc(o.tier)+'</td>'
      +'<td class="num">'+fmt2(safe(o.entry),pxPrec)+'</td><td class="num">'+fmt2(safe(o.cur),pxPrec)+'</td>'
      +'<td class="num">'+fmt2(safe(o.wm),pxPrec)+'</td>'
-     +'<td class="num" style="color:'+(u>0?'var(--grn)':(u<0?'var(--red)':'var(--t2)'))+'">'+fmt$(u)+'</td></tr>';});
+)OMEGAD5"
+R"OMEGAD6(     +'<td class="num" style="color:'+(u>0?'var(--grn)':(u<0?'var(--red)':'var(--t2)'))+'">'+fmt$(u)+'</td></tr>';});
   ot.innerHTML=h; ow.style.display='';
  } else { ot.innerHTML=''; ow.style.display='none'; }
  var tw=el(pfx+'tradeswrap'), tt=el(pfx+'trades');
@@ -1103,8 +1113,7 @@ function renderCompanionOpenTrades(pfx, open, trades, pxPrec){
    var dt=t.exit_ts?new Date(t.exit_ts*1000).toISOString().slice(5,16).replace('T',' '):'';
    th+='<tr><td class="l">'+esc(t.flavor)+'</td><td class="l">'+esc(t.dir)+'</td><td class="l">'+esc(t.tier)+'</td>'
      +'<td class="num">'+fmt2(safe(t.entry),pxPrec)+'</td><td class="num">'+fmt2(safe(t.exit),pxPrec)+'</td>'
-)OMEGAD5"
-R"OMEGAD6(     +'<td class="num" style="color:'+(u>0?'var(--grn)':(u<0?'var(--red)':'var(--t2)'))+'">'+fmt$(u)+'</td>'
+     +'<td class="num" style="color:'+(u>0?'var(--grn)':(u<0?'var(--red)':'var(--t2)'))+'">'+fmt$(u)+'</td>'
      +'<td class="l d">'+esc(t.reason||'')+'</td><td class="l d">'+dt+'</td></tr>';});
   tt.innerHTML=th; tw.style.display='';
  } else { tt.innerHTML=''; tw.style.display='none'; }
@@ -1258,7 +1267,8 @@ function drawIndex(){var j=window._idx||null;
       +'<td class="lbl">wins</td><td class="lbl">pts real</td><td class="lbl">forward($ real)</td></tr>';
  var syms=(j&&j.syms)||[];
  if(!syms.length){el('ictab').innerHTML=h+'<tr><td class="l d" colspan="9">no trades yet (deploy-forward · $0 until first forward clip closes)</td></tr>';
-  el('icinfo').textContent='native C++ · shadow · real forward trades only';renderCompanionOpenTrades('ic',[],[],2);return;}
+)OMEGAD6"
+R"OMEGAD7(  el('icinfo').textContent='native C++ · shadow · real forward trades only';renderCompanionOpenTrades('ic',[],[],2);return;}
  var desk=0,allOpen=[],allTrades=[];
  syms.forEach(function(p){
   desk+=safe(p.usd_real);(p.open||[]).forEach(function(o){desk+=safe(o.upnl_usd_real!==undefined?o.upnl_usd_real:o.upnl_usd);});
@@ -1273,8 +1283,7 @@ function drawIndex(){var j=window._idx||null;
    runs.forEach(function(c){
     h+='<tr>';
     if(firstSym){h+='<td class="l" rowspan="'+prows+'" style="font-weight:700">'+esc(p.sym)+'</td>';firstSym=false;}
-)OMEGAD6"
-R"OMEGAD7(    if(first){h+='<td class="l" rowspan="'+rs+'" style="font-weight:600">'+esc(fl.name)+'</td>'
+    if(first){h+='<td class="l" rowspan="'+rs+'" style="font-weight:600">'+esc(fl.name)+'</td>'
                 +'<td class="l" rowspan="'+rs+'">'+esc(fl.dir)+'</td>';}
     h+='<td class="l">'+esc(c.tier)+'</td><td class="num">'+safe(c.gb_bp)+'</td>'
       +'<td class="num">'+safe(c.clips)+'</td><td class="num">'+safe(c.wins)+'</td>'
@@ -1436,7 +1445,8 @@ function parseShadow(txt){
   var ts=parseInt(f[ix.exit_ts_unix],10);if(!ts)continue;
   var sym=unq(f[ix.symbol]),eng=unq(f[ix.engine]);
   if(sym==='__BOOT__'||eng==='boot_writetest')continue;
-  var side=unq(f[ix.side]);if(side==='BUY')side='LONG';if(side==='SELL')side='SHORT';
+)OMEGAD7"
+R"OMEGAD8(  var side=unq(f[ix.side]);if(side==='BUY')side='LONG';if(side==='SELL')side='SHORT';
   out.push({ts:ts,sym:sym,side:side,eng:eng,
    ets:ix.entry_ts_unix!==undefined?(parseInt(f[ix.entry_ts_unix],10)||0):0,
    epx:ix.entry_px!==undefined?(parseFloat(f[ix.entry_px])||0):0,
@@ -1451,8 +1461,7 @@ function parseShadow(txt){
    lat:ix.latency_ms!==undefined?(parseFloat(f[ix.latency_ms])||0):0});}
  out.sort(function(a,b){return a.ts-b.ts;});return out;}
 function winRows(){if(WIN>=9999)return ROWS;
-)OMEGAD7"
-R"OMEGAD8( var cut=WIN===1?(Math.floor(Date.now()/86400000)*86400):(Date.now()/1000-WIN*86400);
+ var cut=WIN===1?(Math.floor(Date.now()/86400000)*86400):(Date.now()/1000-WIN*86400);
  return ROWS.filter(function(r){return r.ts>=cut;});}
 /* ── per-asset-class PnL split (operator 2026-07-11) ──
    Assigns EVERY money source updDayPnl folds into ALL-TIME to exactly one of 4 classes
@@ -1588,7 +1597,8 @@ function drawLedger(){var t=el('ledger');var cc=bpUsd(safe(window._cctot));/* cr
    +(smc?' · stk '+fmt$(smc):'')
    +(flc?' · fxlad '+fmt$(flc):'')
    +(ilc?' · ixlad '+fmt$(ilc):'')
-   +((omc||cc||fxc||gbc||ixc||xgc||uoc||smc||flc||ilc)?' · Σ '+fmt$(tot):'');}
+)OMEGAD8"
+R"OMEGAD9(   +((omc||cc||fxc||gbc||ixc||xgc||uoc||smc||flc||ilc)?' · Σ '+fmt$(tot):'');}
 
 function drawEquity(){var cv=el("eqc");if(!cv)return;/* SHADOW EQUITY panel removed 2026-07-06 (operator: useless) */var H=110,ctx=prep(cv,H);
  var W=cv.clientWidth;ctx.clearRect(0,0,W,H);
@@ -1597,8 +1607,7 @@ function drawEquity(){var cv=el("eqc");if(!cv)return;/* SHADOW EQUITY panel remo
   var ct=window._comptot||{};var cw=WIN===1?safe(ct.today):WIN===7?safe(ct.d7):WIN===30?safe(ct.d30):safe(ct.all);
   var cc0=(WIN!==1&&WIN!==7&&WIN!==30)?bpUsd(safe(window._cctot)):0;/* crypto bank is all-time -> only fold in 'all' window */
   var chim0=(WIN!==1&&WIN!==7&&WIN!==30)?safe(window._chimtot):0;/* + chimera EDGE realized (all-time, $) into the grand total */
-)OMEGAD8"
-R"OMEGAD9(  var fg0=(WIN!==1&&WIN!==7&&WIN!==30)?(safe(window._fxtot)+safe(window._goldtot)+safe(window._idxtot)+safe(window._xagtot)+safe(window._usoiltot)+safe(window._smtot)+safe(window._fxladtot)+safe(window._ixladtot)):0;/* FX + gold + xag + usoil + stockmover-ladder forward banks are all-time -> only fold in 'all' window */
+  var fg0=(WIN!==1&&WIN!==7&&WIN!==30)?(safe(window._fxtot)+safe(window._goldtot)+safe(window._idxtot)+safe(window._xagtot)+safe(window._usoiltot)+safe(window._smtot)+safe(window._fxladtot)+safe(window._ixladtot)):0;/* FX + gold + xag + usoil + stockmover-ladder forward banks are all-time -> only fold in 'all' window */
   var cwT=cw+cc0+chim0+fg0;tweenNum('eqtot',cwT,fmt$);el('eqtot').style.color=cwT>=0?'var(--grn)':'var(--red)';el('eqstats').innerHTML=cwT?'<span style="color:var(--t3)">paper only</span>':'';return;}
  var cum=[],c=0,pk=0,mdd=0,wins=0,gp=0,gl=0;
  rs.forEach(function(r){c+=r.pnl;cum.push(c);pk=Math.max(pk,c);mdd=Math.min(mdd,c-pk);
@@ -1757,7 +1766,8 @@ function drawPR(){var cv=el("prc");
      var rightH=tg.children[1].offsetHeight;
      var lt=el('ltpan');var ltH=lt?lt.offsetHeight:0;
      var pan=cv.parentElement;var nonCanvas=pan.offsetHeight-cv.offsetHeight;
-     var want=Math.round(rightH-ltH-nonCanvas-8);
+)OMEGAD9"
+R"OMEGAD10(     var want=Math.round(rightH-ltH-nonCanvas-8);
      if(want>160&&want<620)H=want;
    }}catch(e){}
  var ctx=prep(cv,H);
@@ -1772,8 +1782,7 @@ function drawPR(){var cv=el("prc");
  var n=bars.length,padR=58,padB=18,padT=8,padL=4,pw=W-padL-padR,ph=H-padT-padB;
  var lo=1e18,hi=-1e18;
  // range from candles always; include r2/s2 ONLY when warmed (>0) so an unwarmed
-)OMEGAD9"
-R"OMEGAD10( // 0-level bar can't collapse lo to 0 and squash the whole chart (was hiding bands).
+ // 0-level bar can't collapse lo to 0 and squash the whole chart (was hiding bands).
  bars.forEach(function(b){lo=Math.min(lo,b[3]);hi=Math.max(hi,b[2]);
   if(b[9]>0)lo=Math.min(lo,b[9]); if(b[7]>0)hi=Math.max(hi,b[7]);});
  var pad=(hi-lo)*0.06||1;lo-=pad;hi+=pad;
@@ -1967,7 +1976,8 @@ function prTip(m,cx,cy){var tip=el('prtip');
  if(PRMOUSE||(window._prNewest&&(Date.now()/1000-window._prNewest)<600))drawPR();})();
 
 function redrawAll(){drawEquity();drawHeat();drawMM();drawTOD();drawPromo();updDayPnl();drawPR();drawHist();drawLedger();}
-function loadCsv(){fetch('/api/shadow_csv').then(function(r){return r.text();}).then(function(t){
+)OMEGAD10"
+R"OMEGAD11(function loadCsv(){fetch('/api/shadow_csv').then(function(r){return r.text();}).then(function(t){
  ROWS=parseShadow(t);el('csvinfo').textContent=ROWS.length+' shadow closes loaded';
  fillSymSel();redrawAll();}).catch(function(){el('csvinfo').textContent='shadow csv unavailable';});}
 loadCsv();setInterval(loadCsv,120000);
@@ -1980,6 +1990,6 @@ window.addEventListener('resize',function(){drawEquity();drawMM();drawPR();});
 </script>
 </body>
 </html>
-)OMEGAD10"
+)OMEGAD11"
 ;
 } // namespace omega_gui

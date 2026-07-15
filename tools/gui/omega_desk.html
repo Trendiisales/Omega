@@ -902,8 +902,17 @@ function pollTrades(){
       var col=p>0?'var(--grn)':(p<0?'var(--red)':'var(--t2)');
       var when=t.exit_ts_utc?String(t.exit_ts_utc).replace(' UTC',''):fmtTs(t.exitTs);
       var isMim=/mimic/i.test(t.engine||'');
-      var tag=t.book==='crypto'?'<span style="color:var(--w)">crypto</span> ':(t.book==='chimera'?'<span style="color:#c084fc">chimera</span> ':(t.book==='stock'?'<span style="color:#5cc8ff">stock</span> ':'')); /* chimera = josgp1 SHADOW closed trades; stock = StockDip/Turtle book */
-      var bk=tag+esc(t.engine||'')+(isMim?' <span class="d" style="font-size:9px">mimic</span>':'');
+      /* S-2026-07-15s (operator "shown in the correct box"): name the ACTUAL stock sub-book, not a
+         generic 'stock' bucket -- a StockDip closed dip-buy (DELL +704) read as the STOCK BASKET's
+         still-open DELL (+331), the same-ticker double-DELL box confusion. stockdip vs stockturtle so
+         trade history attributes the right book (the basket keeps no closed-trade log -> its DELL only
+         ever lives in the STOCK BASKET panel, never here). */
+      var stkLbl=t.book==='stock'?(/turtle/i.test(t.engine||'')?'stockturtle':'stockdip'):'';
+      var tag=t.book==='crypto'?'<span style="color:var(--w)">crypto</span> ':(t.book==='chimera'?'<span style="color:#c084fc">chimera</span> ':(t.book==='stock'?'<span style="color:#5cc8ff">'+stkLbl+'</span> ':'')); /* chimera = josgp1 SHADOW closed trades; stock = StockDip/Turtle book */
+      /* S-2026-07-15s (operator "mimics referenced via an indent"): mimic rows get a leading indent
+         + hook glyph so they read as the mimic OF the engine, nested under it, not a peer trade. */
+      var ind=isMim?'<span class="d" style="padding-left:16px">&#8627; </span>':'';
+      var bk=ind+tag+esc(t.engine||'')+(isMim?' <span class="d" style="font-size:9px">mimic</span>':'');
       return '<tr><td class="l">'+esc(when)+'</td><td class="l">'+bk+'</td><td class="l">'+esc(t.symbol||'')+'</td><td>'+esc(t.side||'')+
         '</td><td class="num">'+fmt2(safe(t.price),4)+'</td><td class="num">'+fmt2(safe(t.exitPrice),4)+
         '</td><td class="num" style="color:'+col+'">'+fmt2(p,2)+'</td><td class="l d">'+esc(t.exitReason||'')+'</td></tr>';
