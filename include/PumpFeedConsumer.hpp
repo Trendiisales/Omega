@@ -24,6 +24,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <functional>
 #include <string>
 #include <thread>
 
@@ -80,10 +81,18 @@ inline int64_t feed_now_ms() {
 }
 static constexpr int64_t FEED_STALE_MS = 60000;   // drop now-stamped P/C lines older than 60s
 
+// S-2026-07-16: optional TEE of each fresh per-name live price (P/C lines) to a second consumer.
+// Used to feed the bigcap up-jump LADDER's live-confirm gate (stockmover_ladder_book().on_live_tick)
+// off THIS :7784 bridge — the 45 bigcap STK names ride here, not the :9701 IBKR bridge, so the ladder
+// had no live-tick source and never opened a leg. Default {} = no tee = byte-identical to the old path.
+using PriceTickCb = std::function<void(const char* sym, double px, int64_t ts_ms)>;
+
 // Parse + dispatch one feed line into the manager. Tolerant: bad lines dropped.
 // mgr_b (optional, default null): A/B twin fed the SAME lines so it gets IDENTICAL
 // entries (S-2026-06-24). When null, byte-identical to the single-manager path.
-inline void dispatch_line(PumpScalpManager& mgr, const char* ln, PumpScalpManager* mgr_b=nullptr) {
+// live_cb (optional, default {}): teed each fresh P/C price for the ladder live-confirm gate.
+inline void dispatch_line(PumpScalpManager& mgr, const char* ln, PumpScalpManager* mgr_b=nullptr,
+                          const PriceTickCb& live_cb={}) {
     if (!ln[0]) return;
     char sym[64]; double o,h,l,c,v,px,dopen,up; int tf; long long ts;
     if (ln[0]=='B' || ln[0]=='S') {
@@ -96,12 +105,14 @@ inline void dispatch_line(PumpScalpManager& mgr, const char* ln, PumpScalpManage
             if (feed_now_ms() - (int64_t)ts > FEED_STALE_MS) return;   // G3: stale price -> drop
             mgr.on_price(sym, px, (int64_t)ts);
             if (mgr_b) mgr_b->on_price(sym, px, (int64_t)ts);
+            if (live_cb) live_cb(sym, px, (int64_t)ts);               // tee -> ladder live-confirm gate
         }
     } else if (ln[0]=='C') {
         if (std::sscanf(ln+1, ",%63[^,],%lf,%lf,%lf,%lld", sym,&px,&dopen,&up,&ts)==5) {
             if (feed_now_ms() - (int64_t)ts > FEED_STALE_MS) return;   // G3: stale candidate -> drop
             mgr.set_candidate(sym, px, dopen, up, (int64_t)ts);
             if (mgr_b) mgr_b->set_candidate(sym, px, dopen, up, (int64_t)ts);
+            if (live_cb) live_cb(sym, px, (int64_t)ts);               // tee -> ladder live-confirm gate
         }
     } else if (ln[0]=='R') {
         if (std::sscanf(ln+1, ",%63[^,\n]", sym)==1) {
@@ -114,7 +125,8 @@ inline void dispatch_line(PumpScalpManager& mgr, const char* ln, PumpScalpManage
 // Thread body: connect -> read lines -> dispatch -> reconnect on drop.
 // mgr_b (optional): A/B twin driven off the SAME feed lines (default null = unchanged).
 inline void run(PumpScalpManager& mgr, std::atomic<bool>& stop,
-                const char* host, uint16_t port, PumpScalpManager* mgr_b=nullptr) {
+                const char* host, uint16_t port, PumpScalpManager* mgr_b=nullptr,
+                const PriceTickCb& live_cb={}) {
     std::string buf; char tmp[8192];
     while (!stop.load(std::memory_order_relaxed)) {
         socket_t s = connect_localhost(host, port);
@@ -129,7 +141,7 @@ inline void run(PumpScalpManager& mgr, std::atomic<bool>& stop,
             while ((nl = buf.find('\n')) != std::string::npos) {
                 std::string line = buf.substr(0, nl);
                 buf.erase(0, nl + 1);
-                if (!line.empty() && line[0] != '#') dispatch_line(mgr, line.c_str(), mgr_b);
+                if (!line.empty() && line[0] != '#') dispatch_line(mgr, line.c_str(), mgr_b, live_cb);
             }
             if (buf.size() > 1u<<20) buf.clear();      // runaway guard
         }

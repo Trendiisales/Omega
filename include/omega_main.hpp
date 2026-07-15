@@ -1060,8 +1060,23 @@ int main(int argc, char* argv[])
                   << (s_bigcap_ab ? "  (A/B twin BigCapMomoGB ON)" : "") << "\n";
         std::cout.flush();
         std::thread([bport]{
+            // S-2026-07-16: TEE this :7784 bigcap price stream into the up-jump LADDER's live-confirm
+            // gate. The 45 bigcap STK names are carried on THIS bridge (healthy, tradeable in RTH) but
+            // were NEVER on the :9701 IBKR bridge $Symbols, so stockmover_ladder_book().on_live_tick
+            // (the ONLY confirm path, omega_main.hpp:1035) never fired -> the ladder opened ZERO legs
+            // since the live-confirm gate shipped 07-10, and the in-binary daily-close writer stayed
+            // inert. Route each fresh P/C price here so the gate can confirm (session+fresh+rising) and
+            // the writer gets live mids. Bridge sends one price/name -> mid = bid = ask = px. Cheap
+            // no-op unless a +thr window is pending for that name. Guarded by feedpath_selftest
+            // [BIGCAP-CONSUMER] (:7784 consumer=Y) + [BIGCAP-LADDER-FEED].
             omega::pump_feed::run(g_bigcap_momo, g_bigcap_stop, s_bigcap_host.c_str(), bport,
-                                  s_bigcap_ab ? &g_bigcap_momo_b : nullptr);
+                                  s_bigcap_ab ? &g_bigcap_momo_b : nullptr,
+                                  [](const char* sym, double px, int64_t /*ts*/){
+                                      const int64_t now_ms = static_cast<int64_t>(
+                                          std::chrono::duration_cast<std::chrono::milliseconds>(
+                                              std::chrono::system_clock::now().time_since_epoch()).count());
+                                      omega::stockmover_ladder_book().on_live_tick(sym, px, px, now_ms);
+                                  });
         }).detach();
         g_bigcap_feed_ok = true;   // bridge feed path configured (consumer-drop covered by bridge-side consumer=N alert)
     }

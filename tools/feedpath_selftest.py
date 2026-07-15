@@ -209,11 +209,17 @@ def main():
             skip=True)
     else:
         consumer_y = "consumer=Y" in hb
+        # S-2026-07-16: post-TEE (omega_main.hpp pump_feed::run live_cb), the :7784 consumer is the
+        # up-jump LADDER's ONLY live-confirm tick source (the 45 bigcap STK names ride here, not the
+        # :9701 bridge). consumer=Y => ticks reach stockmover_ladder_book().on_live_tick, so a pending
+        # +thr window can actually confirm + open, AND the daily-close writer gets live mids. consumer=N
+        # => the ladder is BLIND (opens zero legs) even with a fresh CSV — the exact silent state that
+        # made it "not fire daily". OMEGA_BIGCAP_BRIDGE=1 in the service env is what starts this consumer.
         rec("BIGCAP-CONSUMER", consumer_y,
-            "bigcap bridge :7784 consumer=Y — binary consuming live mids, daily-close writer fed" if consumer_y
-            else "bigcap bridge :7784 consumer=N — binary NOT consuming; check OMEGA_BIGCAP_BRIDGE=1 in the "
-                 "Omega service env + single bridge proc (daily-close writer starved -> sp500_long_close.csv "
-                 "FREEZES -> bigcap up-jump ladder stops firing, masked by the yfinance fallback)")
+            "bigcap bridge :7784 consumer=Y — binary consuming live ticks (ladder live-confirm gate fed + daily-close writer fed)" if consumer_y
+            else "bigcap bridge :7784 consumer=N — binary NOT consuming; the up-jump LADDER is BLIND (live-confirm "
+                 "gate starved -> opens ZERO legs) and the daily-close writer is starved. Check OMEGA_BIGCAP_BRIDGE=1 "
+                 "in the Omega service env + single bridge proc.")
 
     hdr = "FEED-PATH SELFTEST " + ("RED — PRIMARY FEED PATH BROKEN, fix before trusting any FX/MGC signal"
                                     if red else "GREEN — primary IBKR path live end-to-end")
