@@ -1311,6 +1311,19 @@ function pollStockMover(){fetch('/api/stockladder_companion').then(function(r){r
  }).catch(function(){drawStockMover();});}
 setInterval(pollStockMover,15000);pollStockMover();
 
+/* ── STOCK DIP/TURTLE single-name daily-close LONG book (native C++ · shadow · additive · STANDALONE) ──
+   S-2026-07-15m: stockdipturtle_state.json (total_usd_real, books:[{sym,usd_real,..}]) was persisted +
+   servable but NEVER folded into the desk headline nor given a poller/endpoint -> real banked stock
+   winners (MU +$484 real, DELL ~$705) displayed as $0 STOCK. Surface it like every other companion book:
+   own /api/stockdipturtle endpoint + _sdtot global + sdAll fold into totT + STOCK class. REALIZED forward
+   clips ONLY (usd_real), same rule as _smtot. Judge STANDALONE ([[feedback-companion-independent-engine]]). */
+function pollStockDip(){fetch('/api/stockdipturtle').then(function(r){return r.json();}).then(function(j){
+ if(j&&(j.books||[]).length)window._sd=j;
+ window._sdtot=(((window._sd||{}).books)||[]).reduce(function(s,p){return s+safe(p.usd_real);},0);/* ALL-TIME folds REALIZED clips only (usd_real) */
+ if(typeof updDayPnl==='function')updDayPnl();if(typeof drawLedger==='function')drawLedger();
+ }).catch(function(){});}
+setInterval(pollStockDip,15000);pollStockDip();
+
 /* ── FX + INDEX upjump LADDER panels (S-2026-07-07x wire; /api/fxladder_companion +
    /api/idxladder_companion, written in-binary by FxUpJumpLadderCompanion registries).
    FORWARD TRADES ONLY — deploy-forward, $0 until a live clip closes; per-clip rt cost
@@ -1430,7 +1443,8 @@ function updDayPnl(){var cut=Math.floor(Date.now()/86400000)*86400;var n=0,p=0,t
  var rdaAll=safe(window._rdatot);/* S-2026-07-11: rdagent stock basket paper P&L, $ (additive, all-time -- the META-type picks now fold into the desk headline like crypto) */
  var bc2All=safe(window._bc2tot);/* S-2026-07-11: BigCap2pct impulse companion REALIZED bank, $ (additive, all-time). Endpoint existed but was orphaned from the fold -> mimic_pnl_completeness_gate now enforces it. */
  var chimAll=safe(window._chimtot);/* S-2026-07-12b: chimera EDGE realized, $ (additive, all-time; engine!~CLIP so no _cctot overlap). Was folded into cls.crypto + eqtot only -- pnl_completeness gate caught the missing updDayPnl term. */
- var pT=p+cToday,totT=tot+cAll+ccAll+fxAll+gbAll+ixAll+xgAll+uoAll+smAll+flAll+ilAll+rdaAll+bc2All+chimAll;
+ var sdAll=safe(window._sdtot);/* S-2026-07-15m: StockDip/StockTurtle single-name book REALIZED bank, $ (additive, all-time). Book was persisted+servable but never folded -> real stock winners (MU/DELL) showed $0. Routes to STOCK class below. */
+ var pT=p+cToday,totT=tot+cAll+ccAll+fxAll+gbAll+ixAll+xgAll+uoAll+smAll+flAll+ilAll+rdaAll+bc2All+chimAll+sdAll;
  tweenNum('daypnl',pT,fmt$);el('daypnl').style.color=pT>=0?'var(--grn)':'var(--red)';
  el('daypnln').textContent=n+' closes today (UTC)'+(cToday?' · incl '+fmt$(cToday)+' paper':'');
  tweenNum('totpnl',totT,fmt$);el('totpnl').style.color=totT>=0?'var(--grn)':'var(--red)';
@@ -1443,7 +1457,7 @@ function updDayPnl(){var cut=Math.floor(Date.now()/86400000)*86400;var n=0,p=0,t
  /* 2. class-pure forward/paper book globals (each already realized-only per the 07-10 fold rule) */
  cls.crypto+=ccAll;                       /* crypto ladder companion (32-cell grid banks) */
  cls.crypto+=safe(window._chimtot);       /* + chimera EDGE realized (TIA-TSMOM etc.); additive, no CLIP overlap */
- cls.stock +=smAll+rdaAll+bc2All+ilAll+ixAll; /* bigcap ladder + rdagent basket + bigcap2pct + index ladder + index befloor($0) */
+ cls.stock +=smAll+rdaAll+bc2All+ilAll+ixAll+sdAll; /* bigcap ladder + rdagent basket + bigcap2pct + index ladder + index befloor($0) + stockdip/turtle single-name book */
  cls.fx    +=flAll+fxAll;                  /* fx ladder + fx befloor($0) */
  cls.gold  +=gbAll+xgAll+uoAll;            /* gold+xag+usoil befloor ($0) */
  /* 3. OMEGA stall-clip (cAll, gold+index only) — split per-engine via window._gcPer.
