@@ -2529,9 +2529,17 @@ static void init_engines(const std::string& cfg_path)
             size_t sdt_seeded   = sdt.seed_from_wide_csv(sdt_csv);   // indicators + boot catch-up
             size_t sdt_restored = sdt.seed_dumps_all();              // persisted forward daily bars
             sdt.finalize_all();
+            // S-2026-07-15 PHANTOM-DROP FIX: a StockDip position genuinely restored
+            // across a restart has an entry that predates boot; exempt its entry_ts
+            // from the central phantom-drop guard so its (multi-day) SMA5_BOUNCE/
+            // TIME_STOP close BOOKS into g_omegaLedger instead of being dropped as a
+            // warm-seed phantom. Without this the real dip winners (DELL +$712,
+            // MU +$492, 07-11->12) never reached the desk headline.
+            size_t sdt_exempt = 0;
+            for (int64_t ets : sdt.restored_open_entry_ts()) { g_restored_entry_ts.insert(ets); ++sdt_exempt; }
             sdt.start_poller(sdt_csv, 900000);   // own 15-min poller
-            printf("[OMEGA-INIT][SEED] StockDip/StockTurtle books wired: %d dip + %d turtle names, %zu seed rows, %zu forward bars restored, $10k notional, rt 8bp, retire dip -$9.5k / turtle -$8.5k, LONG-only, SHADOW, deploy-forward, daily-CSV-polled\n",
-                   n_dip, n_tur, sdt_seeded, sdt_restored);
+            printf("[OMEGA-INIT][SEED] StockDip/StockTurtle books wired: %d dip + %d turtle names, %zu seed rows, %zu forward bars restored, %zu open entry_ts exempted from phantom-drop, $10k notional, rt 8bp, retire dip -$9.5k / turtle -$8.5k, LONG-only, SHADOW, deploy-forward, daily-CSV-polled\n",
+                   n_dip, n_tur, sdt_seeded, sdt_restored, sdt_exempt);
             fflush(stdout);
         }
 

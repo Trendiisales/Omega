@@ -149,6 +149,16 @@ public:
     double  book_usd_real() const { return banked_ret_real_ * cfg_.notional; }
     int     clips() const { return clips_; }
     bool    in_pos() const { return pos_.active; }
+    // S-2026-07-15: entry_ts of the currently-OPEN position (0 if flat). The
+    // registry collects these at boot so the central phantom-drop guard
+    // (trade_lifecycle.hpp) can EXEMPT them: a StockDip position genuinely
+    // restored across a restart has a real entry that predates boot, and its
+    // eventual SMA5_BOUNCE/TIME_STOP close must BOOK its (often multi-day) PnL
+    // into g_omegaLedger, not be silently dropped as a warm-seed phantom.
+    // History: DELL +$712 / MU +$492 (07-11->12, +7.1%/+4.9%) were phantom-
+    // dropped because a reboot fell between entry and exit -> the real dip
+    // winners never reached the desk headline.
+    int64_t open_entry_ts() const noexcept { return pos_.active ? pos_.entry_ts : 0; }
 
     // seed one historical daily close (primes indicators only — deploy-forward gate).
     void seed_bar(int64_t ts_sec, double close) noexcept {
@@ -584,6 +594,16 @@ public:
     }
     size_t count(int family) const {
         size_t n = 0; for (const auto& s : syms_) if (s.family() == family) ++n; return n;
+    }
+    // S-2026-07-15: entry_ts of every currently-OPEN position across all names.
+    // engine_init inserts these into g_restored_entry_ts after finalize_all() so
+    // the central phantom-drop guard exempts genuine restored positions whose
+    // close spans a reboot (see StockDipTurtleSym::open_entry_ts()).
+    std::vector<int64_t> restored_open_entry_ts() const {
+        std::lock_guard<std::mutex> lk(mu_);
+        std::vector<int64_t> v;
+        for (const auto& s : syms_) { const int64_t e = s.open_entry_ts(); if (e > 0) v.push_back(e); }
+        return v;
     }
 
 private:
