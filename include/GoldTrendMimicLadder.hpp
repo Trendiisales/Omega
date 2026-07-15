@@ -41,6 +41,7 @@
 #include <sstream>
 #include <functional>
 #include <unordered_map>
+#include <unordered_set>
 #include <mutex>
 
 namespace omega {
@@ -109,6 +110,7 @@ public:
         if (cfg_.closed_path.empty()) cfg_.closed_path = "goldmimic_" + s + "_closed.csv";
         load_book_();
         load_open_();
+        load_closed_keys_();
     }
 
     const std::string& tag() const { return cfg_.trigger_tag; }
@@ -272,6 +274,14 @@ private:
     struct Book { double ret = 0, ret_real = 0; int clips = 0, wins = 0; };
     std::vector<Book> books_;   // one per leg config index
     struct Closed { int li; double entry, exit, ret_real; int64_t ets, xts; std::string reason; };
+    // idempotency for the APPEND-ONLY closed.csv audit log. A leg (li) with a given
+    // entry_ts clips exactly once (book_clip_ sets open=false + drops it), so the key
+    // li|ets|xts uniquely identifies a real clip -- it can never collide across two
+    // genuine trades. Legacy seed-replay re-clips (pre S-2026-07-14 arm-gating) had
+    // triplicated this file; the ledger + state.txt aggregate were already deduped
+    // (entry_ts key / atomic overwrite), closed.csv was the only unguarded sink and
+    // is read by nobody. This guard makes it idempotent + self-heals existing dups.
+    mutable std::unordered_set<std::string> closed_keys_;
 
     OpenFn open_fn_; CloseFn close_fn_; GateFn gate_fn_; LedgerFn ledger_fn_;
 
@@ -337,9 +347,38 @@ private:
         std::rename(tmp.c_str(), p.c_str());
     }
     void append_closed_(const Closed& c) const {
+        const std::string key = std::to_string(c.li) + "|" + std::to_string((long long)c.ets)
+                              + "|" + std::to_string((long long)c.xts);
+        if (!closed_keys_.insert(key).second) return;   // already logged this leg-clip -> idempotent
         std::ofstream f(cfg_.closed_path, std::ios::app); if (!f.is_open()) return;
         f << c.li << "," << c.entry << "," << c.exit << "," << c.ret_real << ","
           << (long long)c.ets << "," << (long long)c.xts << "," << c.reason << "\n";
+    }
+    // Load existing (li,ets,xts) keys so append_closed_ is idempotent across restarts,
+    // and SELF-HEAL any pre-existing duplicate rows (atomic rewrite, first-seen order
+    // preserved). Runs once at construction, before any clip. Touches ONLY the unread
+    // audit CSV -- never the ledger, aggregate, or live clip path.
+    void load_closed_keys_() {
+        std::ifstream f(cfg_.closed_path); if (!f.is_open()) return;
+        std::vector<std::string> keep; std::string line; bool dropped = false;
+        while (std::getline(f, line)) {
+            if (line.empty()) continue;
+            std::vector<std::string> p; std::string tok; std::stringstream ss(line);
+            while (std::getline(ss, tok, ',')) p.push_back(tok);
+            if (p.size() < 6) { keep.push_back(line); continue; }   // keep malformed rows as-is
+            const std::string key = p[0] + "|" + p[4] + "|" + p[5];
+            if (closed_keys_.insert(key).second) keep.push_back(line);
+            else dropped = true;                                    // duplicate -> drop
+        }
+        f.close();
+        if (!dropped) return;
+        const std::string tmp = cfg_.closed_path + ".dedup.tmp";
+        { std::ofstream o(tmp, std::ios::trunc); if (!o.is_open()) return;
+          for (const auto& l : keep) o << l << "\n"; }
+        std::rename(tmp.c_str(), cfg_.closed_path.c_str());
+        std::printf("[GMIMIC][%s] closed.csv de-duplicated (%zu unique rows kept)\n",
+                    cfg_.trigger_tag.c_str(), keep.size());
+        std::fflush(stdout);
     }
     static std::string lower_(std::string s) { for (auto& ch : s) ch = (char)std::tolower((unsigned char)ch); return s; }
 };
