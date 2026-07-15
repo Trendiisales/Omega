@@ -51,6 +51,22 @@ CRITICAL_FEED_TASKS = ["OmegaStockMoverFeed", "OmegaSeedRefresh", "OmegaMacroGol
                        # producer (fetch_macro_regime.py) — was never scheduled anywhere.
                        "OmegaMacroRegime"]
 
+# S-2026-07-16: a scheduled task freezes a feed in TWO further ways the old State-only
+# check was blind to, BOTH while State stays "Ready" (so State==Ready is NOT proof of a
+# live feed): (a) the last run FAILED — LastTaskResult is a nonzero error code — yet a
+# stale prior file lingers; (b) the SCHEDULER STOPPED ADVANCING — NextRunTime has slid
+# into the past and no run fired (missed trigger not caught up, corrupt trigger, service
+# degraded). Both are the exact "producer wired-but-frozen, invisible for days" class the
+# operator has been repeatedly burned by. We now RED on either. All time math is computed
+# VPS-SIDE (Get-Date on the box) so a Mac↔VPS clock/timezone skew — the very thing that
+# masqueraded as a "stale feed" on 2026-07-16 (UTC feed read as NZ-missed-refresh) — can
+# never produce a false RED or false GREEN here.
+# PASS result codes: 0 = success; 267009 (0x41301) = task currently running.
+TASK_RESULT_PASS_CODES = {0, 267009}
+# NextRunTime may legitimately sit slightly in the past between the trigger firing and the
+# scheduler recomputing it, or while a run is in flight — allow this much slack before RED.
+TASK_OVERDUE_SLACK_MIN = 120
+
 
 def _easter(year: int) -> dt.date:
     # Anonymous Gregorian computus -> Easter Sunday. Needed for Good Friday (NYSE closed).
@@ -484,18 +500,29 @@ FEEDS = [
 
 def vps_feed_task_health() -> list[tuple[str, str, str]]:
     """ONE `ssh omega-new` call. For each CRITICAL_FEED_TASKS producer, returns
-    (task, status, detail). A Disabled state => RED (the exact 2026-07-13 failure:
-    a producer disabled during migration froze its feed for days, invisible until
-    the data aged out). A missing task or never-run (last=1999) => RED too. This is
-    the task-level early-warning that complements the downstream data-age checks.
-    ssh MUST start literally `ssh omega-new`. Returns a single RED row on ssh failure."""
+    (task, status, detail). REDs on ALL FOUR silent-freeze modes — three of which
+    leave State=="Ready", so State alone is NOT proof of a live feed:
+      1. State==Disabled  — producer disabled (the 2026-07-13 migration failure: a
+         disabled task froze the bigcap feed for days, invisible until data aged out).
+      2. MISSING / never-run (last=1999) — producer wired but idle.
+      3. LastTaskResult != 0 (and != running) — the last run ERRORED; a stale prior
+         file lingers while State stays Ready.
+      4. NextRunTime slid > TASK_OVERDUE_SLACK_MIN into the PAST — the scheduler stopped
+         advancing (missed trigger not caught up / corrupt trigger), so no run fires
+         though State stays Ready.
+    Modes 3 & 4 are the early-warning the old State-only check was blind to. ALL time
+    math is computed VPS-side (Get-Date on the box) so a Mac↔VPS clock/tz skew cannot
+    yield a false RED/GREEN. ssh MUST start literally `ssh omega-new`. Single RED on ssh
+    failure."""
     names = ",".join(f"'{t}'" for t in CRITICAL_FEED_TASKS)
     ps = (
+        f"$now=Get-Date;"
         f"foreach($n in @({names})){{"
         f"$t=Get-ScheduledTask -TaskName $n -ErrorAction SilentlyContinue;"
-        f"if($null-eq$t){{Write-Output ($n+[char]9+'MISSING'+[char]9+'-')}}"
+        f"if($null-eq$t){{Write-Output ($n+[char]9+'MISSING'+[char]9+'-'+[char]9+'-'+[char]9+'NA')}}"
         f"else{{$i=Get-ScheduledTaskInfo -TaskName $n -ErrorAction SilentlyContinue;"
-        f"Write-Output ($n+[char]9+$t.State+[char]9+$i.LastRunTime)}}}}"
+        f"$od=if($i.NextRunTime){{[string][math]::Round((($now-$i.NextRunTime).TotalMinutes))}}else{{'NA'}};"
+        f"Write-Output ($n+[char]9+$t.State+[char]9+$i.LastRunTime+[char]9+[string]$i.LastTaskResult+[char]9+$od)}}}}"
     )
     try:
         r = subprocess.run(
@@ -514,15 +541,41 @@ def vps_feed_task_health() -> list[tuple[str, str, str]]:
             continue
         name, state = parts[0].strip(), parts[1].strip()
         last = parts[2].strip() if len(parts) > 2 else "-"
+        result = parts[3].strip() if len(parts) > 3 else ""
+        overdue = parts[4].strip() if len(parts) > 4 else "NA"
         seen.add(name)
         if state == "Disabled":
             out.append((name, "RED", f"scheduled task DISABLED -- feed will freeze silently (re-enable + StartWhenAvailable)"))
-        elif state == "MISSING":
+            continue
+        if state == "MISSING":
             out.append((name, "RED", f"scheduled task MISSING on {VPS_HOST} -- producer never installed"))
-        elif last.startswith("11/30/1999") or last in ("", "-"):
+            continue
+        if last.startswith("11/30/1999") or last in ("", "-"):
             out.append((name, "RED", f"scheduled task never ran (last={last}) -- producer wired but idle"))
+            continue
+        # mode 3: last run errored (result code nonzero and not "currently running")
+        try:
+            rc = int(result)
+        except ValueError:
+            rc = 0  # unparseable -> don't manufacture a RED on the result axis
+        if rc not in TASK_RESULT_PASS_CODES:
+            out.append((name, "RED", f"last run FAILED (LastTaskResult={result}/0x{rc & 0xFFFFFFFF:X}) -- producer errored though State={state}; feed frozen at last-good until fixed"))
+            continue
+        # mode 4: scheduler stopped advancing (NextRunTime slid into the past)
+        try:
+            od = float(overdue)
+        except ValueError:
+            od = None
+        if od is not None and od > TASK_OVERDUE_SLACK_MIN:
+            out.append((name, "RED", f"scheduler OVERDUE by {od/60:.1f}h -- NextRunTime already passed with no run (trigger not advancing / silent freeze; last ran {last})"))
+            continue
+        if od is None:
+            nextinfo = "next=?"
+        elif od <= 0:
+            nextinfo = f"next in {(-od)/60:.1f}h"
         else:
-            out.append((name, "PASS", f"task {state}, last ran {last}"))
+            nextinfo = f"next {od:.0f}m overdue (within {TASK_OVERDUE_SLACK_MIN}m slack)"
+        out.append((name, "PASS", f"task {state}, last ran {last} (rc={result}), {nextinfo}"))
     for t in CRITICAL_FEED_TASKS:
         if t not in seen:
             out.append((t, "RED", f"no state returned -- producer unverifiable"))
