@@ -40,6 +40,22 @@ if git merge-base --is-ancestor "$BOX" origin/main 2>/dev/null && [[ "$BOXN" != 
         exit 0
     fi
     N=$(printf '%s\n' "$BUILD_CHANGES" | wc -l | tr -d ' ')
+    # IN-FLIGHT SUPPRESSION (S-2026-07-15, operator "if we deploy we do not get this error"):
+    # a deploy actively running for this exact origin hash writes /tmp/omega_deploy.inflight
+    # ("<epoch> <hash>"). While that deploy is in flight (marker fresh AND its target == the
+    # origin we're behind), the drift is being fixed RIGHT NOW — report in-flight, not RED.
+    # This is NOT a mute: an undeployed commit with NO deploy running still REDs, and a stale
+    # marker (deploy died/disconnected) is ignored once older than the max build window.
+    INFLIGHT="/tmp/omega_deploy.inflight"
+    INFLIGHT_MAX_MIN="${DEPLOY_INFLIGHT_MAX_MIN:-20}"
+    if [[ -f "$INFLIGHT" ]]; then
+        read -r IF_TS IF_HASH < "$INFLIGHT" 2>/dev/null || { IF_TS=0; IF_HASH=""; }
+        IF_AGE_MIN=$(( ( $(date +%s) - ${IF_TS:-0} ) / 60 ))
+        if [[ "${IF_HASH:0:7}" == "${ORIGIN:0:7}" ]] && (( IF_AGE_MIN < INFLIGHT_MAX_MIN )); then
+            echo "DEPLOY-DRIFT: ⏳ deploy IN-FLIGHT for $ORIGIN (started ${IF_AGE_MIN}m ago) — box $BOXN catching up, not drift."
+            exit 0
+        fi
+    fi
     echo "DEPLOY-DRIFT: ❌ RED — running binary $BOXN is BEHIND origin/main $ORIGIN with $N undeployed BUILD file(s):"
     printf '%s\n' "$BUILD_CHANGES" | sed 's/^/    /'
     echo "  Undeployed commits touching the binary:"

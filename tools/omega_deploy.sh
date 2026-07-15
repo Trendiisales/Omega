@@ -42,6 +42,16 @@ fi
 WANT=$(git rev-parse --short origin/main)
 echo "[deploy] target hash = $WANT"
 
+# IN-FLIGHT MARKER (S-2026-07-15): tells deploy_drift_check.sh a deploy is actively
+# running for $WANT so the staleness scan does NOT cry "LIVE feed stale" during the
+# legitimate ~10-min build window (operator: "if we deploy we do not get this error").
+# NOT a mute — a genuinely undeployed commit with NO deploy in flight still REDs, and
+# a stale marker (deploy died/disconnected) expires by age so it can't suppress forever.
+# Format: "<epoch> <target-hash>". Removed on any exit.
+DEPLOY_INFLIGHT="/tmp/omega_deploy.inflight"
+printf '%s %s\n' "$(date +%s)" "$WANT" > "$DEPLOY_INFLIGHT" 2>/dev/null || true
+trap 'rm -f "$DEPLOY_INFLIGHT" 2>/dev/null || true' EXIT
+
 echo "[deploy] launching DETACHED deploy on $HOST (survives disconnect)..."
 # NOTE: log path + redirect MUST be powershell-side with single backslashes.
 # A bash-interpolated forward-slash path (C:/Omega/...) mangles through
