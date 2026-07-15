@@ -1762,10 +1762,16 @@ static void init_engines(const std::string& cfg_path)
             // SHADOW, judged STANDALONE; bull_only=false (both-ways parents).
             // cap/pend in NATIVE parent bars (15m: 96=24h cap, 12=3h pend;
             // 10m: 144=24h, 12=2h) — the engine feeds on_bar per native fine bar.
-            {   omega::GoldTrendMimicBook::Config c; c.trigger_tag="GoldDon15m"; c.live_sym="XAUUSD.M";
-                c.legs={{"T",0.08},{"W",0.20}};
-                c.arm_pct=1.00; c.lc_pct=0.5; c.cap_bars=96; c.rt_cost_bp=5.0; c.be_entry_pct=0.10; c.pend_bars=12;
-                c.notional=40000.0; c.lot=1.0; gm.add(std::move(c)); }  // LOT-GATE-OK shadow book; lot inert until live flip
+            // GoldDon15m book CULLED S-2026-07-16 (operator directive: "cull the 15 min,
+            // this just keeps losing money"). Live shadow record was net-losing (07-15
+            // 19:00Z both legs LOSS_CUT -22.47 each) despite the 6mo faithful study above;
+            // the arm1.0/lc0.5 15m re-open mimic did not hold up forward. 10m sibling
+            // (winner, +36.95/+31.86 TRAIL_STOP same window) RETAINED. To revive: restore
+            // this block + bump the SEED banner back to x2.
+            // {   omega::GoldTrendMimicBook::Config c; c.trigger_tag="GoldDon15m"; c.live_sym="XAUUSD.M";
+            //     c.legs={{"T",0.08},{"W",0.20}};
+            //     c.arm_pct=1.00; c.lc_pct=0.5; c.cap_bars=96; c.rt_cost_bp=5.0; c.be_entry_pct=0.10; c.pend_bars=12;
+            //     c.notional=40000.0; c.lot=1.0; gm.add(std::move(c)); }  // LOT-GATE-OK shadow book; lot inert until live flip
             {   omega::GoldTrendMimicBook::Config c; c.trigger_tag="GoldDon10m"; c.live_sym="XAUUSD.M";
                 c.legs={{"T",0.08},{"W",0.20}};
                 c.arm_pct=1.00; c.lc_pct=1.0; c.cap_bars=144; c.rt_cost_bp=5.0; c.be_entry_pct=0.10; c.pend_bars=12;
@@ -1789,7 +1795,7 @@ static void init_engines(const std::string& cfg_path)
                     // positive magnitudes in price units x size (S-2026-07-15 mfe/mae=0 fix)
                     tr.mfe=(mfe_pct/100.0)*entry_px*lots; tr.mae=(std::fabs(mae_pct)/100.0)*entry_px*lots;
                     handle_closed_trade(tr); });
-            printf("[OMEGA-INIT][SEED] GoldTrendMimicLadder wired: 15 trigger books (XauTf4h 4-leg, XauTf2h 2-leg, MgcFastDon 2-leg, XauTfD1 2-leg, NAS100/US500/DJ30 Turtle 2-leg SHADOW; survivor XAU_4h_DonchN20 1-leg LIVE resting-exec 1 MGC + H1-SMA200 bear-gate; USTEC_4h_ZMR disabled S-14 intrabar FAIL; S-14bc BE-mimics be0.10 2-leg x5: MgcTf1h/GoldKeltM30/GoldTfBw1040/GoldTfBw20100/GoldDonH1 SHADOW; S-14 sub-30m re-open x2: GoldDon15m arm1.0/lc0.5 + GoldDon10m arm1.0/lc1.0 SHADOW 1m-truth-validated), specific native feeds, deploy-forward\n");
+            printf("[OMEGA-INIT][SEED] GoldTrendMimicLadder wired: 14 trigger books (XauTf4h 4-leg, XauTf2h 2-leg, MgcFastDon 2-leg, XauTfD1 2-leg, NAS100/US500/DJ30 Turtle 2-leg SHADOW; survivor XAU_4h_DonchN20 1-leg LIVE resting-exec 1 MGC + H1-SMA200 bear-gate; USTEC_4h_ZMR disabled S-14 intrabar FAIL; S-14bc BE-mimics be0.10 2-leg x5: MgcTf1h/GoldKeltM30/GoldTfBw1040/GoldTfBw20100/GoldDonH1 SHADOW; S-14 sub-30m re-open x1: GoldDon10m arm1.0/lc1.0 SHADOW 1m-truth-validated [GoldDon15m CULLED S-16 operator: kept losing]), specific native feeds, deploy-forward\n");
             fflush(stdout);
         }
 
