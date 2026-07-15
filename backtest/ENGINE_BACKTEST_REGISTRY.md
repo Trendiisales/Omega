@@ -329,3 +329,40 @@ Kill is mechanism-faithful (real engine classes, certified data, shipped mimic m
 shipped params inside the sweep). Consistent with the §5 BeFloor XAG RETIRED verdict. Do not
 re-open without a NEW basis (different chassis family or a genuine silver-native edge, judged
 on BOTH the 2022-24 range AND a post-rally regime).
+
+## 12. BIGCAP 2% impulse companion — faithful harness + 45/45 megacap self-heal (S-2026-07-15)
+
+Shipped live-shadow engine `omega::BigCapImpulseSym` (`include/BigCap2pctImpulseCompanion.hpp`,
+45 wired names + 2 BE-mimic legs, `engine_init.hpp`). Faithful validator:
+
+```
+g++ -std=c++17 -O2 -Iinclude backtest/clip_path_bigcap_impulse.cpp -o /tmp/bc2_impulse
+# run from the repo root (paths are CWD-relative):
+/tmp/bc2_impulse data/rdagent/sp500_long_close.csv 0.02 20 0.90 60 15 8 0.5 5
+#   argv: <wide_close.csv> thr hi_window gb max_hold catastrophe rt_bp mimic_be mimic_pend
+```
+
+**45/45 SELF-HEAL (the fix for the recurring "22/45" trap).** The wide close matrix
+`data/rdagent/sp500_long_close.csv` is a FROZEN-2019 S&P block: 24 of the 45 wired names
+(TSLA/META/PLTR/DELL/…) are present as header columns but NEAR-EMPTY (0..513 of ~1788 rows).
+`on_daily_bar` is guarded by `close>0`, so those engines were never fed → the backtest
+silently exercised only ~21 names, blind to the exact high-flyers that carry the edge. The
+harness now OVERLAYS any under-filled wanted name from its real split-adjusted per-name file
+in `backtest/data/bigcap_daily_ohlc/<SYM>.csv` (within-name % returns → split-adjust anchor
+invariant). Data-driven (deficient + has-OHLC-source → healed), so a future roster change
+can't reopen the hole. Boot stderr prints one `[bc2] OVERLAY <SYM> …` line per patched name
+plus `… ; 45/45 names now have data`. If a name is under-filled AND has no OHLC source it
+prints `NO OHLC source -> still blind` — treat that as a P1 (add the OHLC file).
+
+Verified (repo CSV, self-heal active, all 45 trading), parent / mimic all-6 PASS at every cost:
+- rt=8bp : parent PF 2.86, mimic PF 2.37 — ALL-6 PASS
+- rt=16bp: parent PF 2.80, mimic PF 2.32 — ALL-6 PASS
+- rt=20bp: parent PF 2.76, mimic PF 2.30 — ALL-6 PASS
+
+Note: `data/rdagent/sp500_long_close.csv` and `backtest/data/bigcap_daily_ohlc/` are LOCAL
+data (untracked, like all price feeds) — they live on the operator's box. The tracked, durable
+part of the fix is the harness self-heal in `clip_path_bigcap_impulse.cpp`. The scratchpad
+`build_merged_close.py` pre-build step is now REDUNDANT (the harness heals in-process).
+The full-universe siblings `clip_path_bigcap_{mimic,universe}.cpp` (the abandoned 529 3% test,
+§ BigCap3pct529Universe) read the whole header and do NOT carry this overlay — the 529 path
+is NO-GO so it was not extended.

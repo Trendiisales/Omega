@@ -23,6 +23,7 @@
 #include <fstream>
 #include <sstream>
 #include <algorithm>
+#include <unordered_map>
 #include <ctime>
 #include "BigCap2pctImpulseCompanion.hpp"
 
@@ -96,6 +97,66 @@ int main(int argc, char** argv) {
     }
     std::fprintf(stderr, "[bc2] parsed %zu rows, %zu/%zu names mapped\n", rows.size(), want_name.size(), sizeof(UNIVERSE)/sizeof(UNIVERSE[0]));
     if (rows.size() < 50) { std::fprintf(stderr, "too few rows\n"); return 1; }
+
+    // ── MEGACAP OVERLAY (durable 45/45 self-heal, S-2026-07-15) ──
+    // The wide close matrix data/rdagent/sp500_long_close.csv is a FROZEN-2019 S&P
+    // block: 24 of the 45 wired BIGCAP names (TSLA/META/PLTR/DELL/...) are PRESENT as
+    // header columns but NEAR-EMPTY (0..513 of ~1788 rows) -> those engines are never
+    // fed (on_daily_bar guarded by r.v[k]>0) -> the backtest SILENTLY exercised only
+    // ~21 names, blind to the very high-flyers that carry the edge. This is the
+    // "22/45" trap the shipped 2% validation kept hitting.
+    // SELF-HEAL: for any wanted name that is under-filled in the wide matrix AND has a
+    // real split-adjusted per-name file in the OHLC dir, overlay that name's closes
+    // from the OHLC file. The engine + basket regime use only WITHIN-name % returns
+    // (each name normalized to its first valid close), so a different split-adjust
+    // anchor is invariant (see scratchpad/build_merged_close.py basis note). Data-
+    // driven, not a hardcoded patch list: whatever is deficient + has an OHLC source
+    // gets healed, so a future roster change can't silently reopen the 22/45 hole.
+    {
+        const char* od = std::getenv("BIGCAP_OHLC_DIR");
+        const std::string odir = od ? od : "backtest/data/bigcap_daily_ohlc";
+        auto load_ohlc = [&](const std::string& sym, std::unordered_map<int64_t,double>& out)->bool {
+            std::ifstream of(odir + "/" + sym + ".csv");
+            if (!of.is_open()) return false;
+            std::string ln; std::getline(of, ln);            // header: date,o,h,l,c
+            while (std::getline(of, ln)) {
+                if (ln.empty()) continue;
+                std::vector<std::string> fs; std::stringstream ss(ln); std::string t;
+                while (std::getline(ss, t, ',')) fs.push_back(t);
+                if (fs.size() < 5 || fs[0].size() < 8) continue;   // need YYYYMMDD + close
+                const std::string iso = fs[0].substr(0,4)+"-"+fs[0].substr(4,2)+"-"+fs[0].substr(6,2);
+                int64_t ts = parse_ts(iso); if (ts <= 0) continue;
+                double c = std::strtod(fs[4].c_str(), nullptr);
+                if (c > 0) out[ts] = c;
+            }
+            return true;
+        };
+        const int half = (int)(rows.size() / 2);
+        int patched_names = 0, patched_cells = 0;
+        for (size_t k = 0; k < want_name.size(); ++k) {
+            int nz = 0; for (const auto& r : rows) if (r.v[k] > 0.0) ++nz;
+            if (nz >= half) continue;                        // well-filled -> keep wide-CSV column
+            std::unordered_map<int64_t,double> om;
+            if (!load_ohlc(want_name[k], om) || om.empty()) {
+                std::fprintf(stderr, "[bc2] OVERLAY %-6s under-filled (%d/%zu) but NO OHLC source -> still blind\n",
+                             want_name[k].c_str(), nz, rows.size());
+                continue;
+            }
+            int applied = 0;
+            for (auto& r : rows) { auto it = om.find(r.ts); if (it != om.end()) { r.v[k] = it->second; ++applied; } }
+            if (applied > 0) {
+                ++patched_names; patched_cells += applied;
+                std::fprintf(stderr, "[bc2] OVERLAY %-6s wide=%d/%zu -> OHLC filled %d rows\n",
+                             want_name[k].c_str(), nz, rows.size(), applied);
+            }
+        }
+        // count names that will actually trade (>=1 valid bar) after the overlay
+        int live_names = 0;
+        for (size_t k = 0; k < want_name.size(); ++k)
+            for (const auto& r : rows) if (r.v[k] > 0.0) { ++live_names; break; }
+        std::fprintf(stderr, "[bc2] megacap overlay: %d name(s) patched (%d cells) from %s ; %d/%zu names now have data\n",
+                     patched_names, patched_cells, odir.c_str(), live_names, want_name.size());
+    }
 
     // ── principled REGIME label: equal-weight basket (each name normalized to its
     //   first valid close) vs its own 200-day SMA. Bear = basket < 200DMA that day.
