@@ -296,3 +296,16 @@ backtest/xau_tf2h_rider_dump
 backtest/xau_tf4h_rider_dump
 backtest/xau_tf_4h2h_bt
 backtest/xau_tick_to_m1
+
+# Stale companion decoy files (operator 2026-07-16): the live companion books run
+# on the VPS; any *_live.txt / *_book.txt / *_companion_state.json that lands in the
+# Mac repo root is a stale snapshot that has repeatedly tricked sessions into misreading
+# "flat". Ignore them so they can never be committed; run tools/open_positions_now.py
+# (authoritative VPS API) to answer "what's open". See open_positions_now.py header.
+/fxladder_companion_*_live.txt
+/fxladder_companion_*_book.txt
+/fxladder_companion_*_h1.csv
+/fxladder_companion_*_closed.csv
+/*_companion_state.json
+/data/*_companion_state.json
+/open_positions.json
