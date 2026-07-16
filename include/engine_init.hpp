@@ -2627,6 +2627,73 @@ static void init_engines(const std::string& cfg_path)
                         c.state_path  = std::string("stockdipmimic_stockdipmimw_") + nm + "_state.txt";
                         c.closed_path = std::string("stockdipmimic_stockdipmimw_") + nm + "_closed.csv";
                         sdm.add(std::move(c)); }
+                    // S-2026-07-16p: 2 ADDITIONAL DIP cells (operator "add 2 as well"). Diverse
+                    // arm/gb from the shipped T/W, both all-6 VIABLE ungated (TURTLE_MIMIC_
+                    // FINDINGS_2026-07-16, mimic_cell_sweep.py, QQQ split bear+): X = tight-arm/
+                    // wide-trail (PF 2.19, the sweep's top PF), Y = mid arm. Same pre-arm BE +
+                    // BE-floor protection, half-of-arm pbe, SHADOW.
+                    {   omega::GoldTrendMimicBook::Config c;
+                        c.trigger_tag = std::string("StockDipMimX_") + nm; c.live_sym = nm;
+                        c.legs = {{"", 0.70}};                    // X: keep 30% of peak (BE-floored)
+                        c.arm_pct = 1.5; c.lc_pct = 1.5; c.cap_bars = 10;
+                        c.pre_arm_be_pct = 0.75;                  // half-of-arm
+                        c.be_entry_pct = 0.0;
+                        c.rt_cost_bp = 8.0; c.notional = 10000.0; c.bull_only = false;
+                        c.state_path  = std::string("stockdipmimic_stockdipmimx_") + nm + "_state.txt";
+                        c.closed_path = std::string("stockdipmimic_stockdipmimx_") + nm + "_closed.csv";
+                        sdm.add(std::move(c)); }
+                    {   omega::GoldTrendMimicBook::Config c;
+                        c.trigger_tag = std::string("StockDipMimY_") + nm; c.live_sym = nm;
+                        c.legs = {{"", 0.60}};                    // Y: keep 40% of peak (BE-floored)
+                        c.arm_pct = 2.5; c.lc_pct = 2.5; c.cap_bars = 10;
+                        c.pre_arm_be_pct = 1.25;                  // half-of-arm
+                        c.be_entry_pct = 0.0;
+                        c.rt_cost_bp = 8.0; c.notional = 10000.0; c.bull_only = false;
+                        c.state_path  = std::string("stockdipmimic_stockdipmimy_") + nm + "_state.txt";
+                        c.closed_path = std::string("stockdipmimic_stockdipmimy_") + nm + "_closed.csv";
+                        sdm.add(std::move(c)); }
+                }
+                // S-2026-07-16p: 4 TURTLE BE-mimic cells per TURTLE name (operator "with this pf
+                // i want 4 mimics added"). Layered on the TURTLE breakout family (previously NOT
+                // mimicked). Diverse arm ladder A/B/C/D, all all-6 VIABLE ungated + bear-positive
+                // under the QQQ-200DMA regime split (TURTLE_MIMIC_FINDINGS_2026-07-16, harness
+                // backtest/mimic_cell_sweep.py; faithful flat-gated 20-close-high entry cadence).
+                // Same pre-arm BE-ratchet + post-arm BE-floor protection (half-of-arm pbe), 8bp RT,
+                // $10k, SHADOW. Judged STANDALONE (feedback-companion-independent-engine). QQQ>200DMA
+                // gate = optional mdd-halving risk overlay, deferred (needs a QQQ regime feed).
+                for (const char* nm : TUR_NAMES) {
+                    {   omega::GoldTrendMimicBook::Config c;
+                        c.trigger_tag = std::string("StockTurtleMimA_") + nm; c.live_sym = nm;
+                        c.legs = {{"", 0.50}};
+                        c.arm_pct = 1.5; c.lc_pct = 1.5; c.cap_bars = 10; c.pre_arm_be_pct = 0.75;
+                        c.be_entry_pct = 0.0; c.rt_cost_bp = 8.0; c.notional = 10000.0; c.bull_only = false;
+                        c.state_path  = std::string("stockturtlemimic_stockturtlemima_") + nm + "_state.txt";
+                        c.closed_path = std::string("stockturtlemimic_stockturtlemima_") + nm + "_closed.csv";
+                        sdm.add(std::move(c)); }
+                    {   omega::GoldTrendMimicBook::Config c;
+                        c.trigger_tag = std::string("StockTurtleMimB_") + nm; c.live_sym = nm;
+                        c.legs = {{"", 0.50}};
+                        c.arm_pct = 2.0; c.lc_pct = 2.0; c.cap_bars = 10; c.pre_arm_be_pct = 1.0;
+                        c.be_entry_pct = 0.0; c.rt_cost_bp = 8.0; c.notional = 10000.0; c.bull_only = false;
+                        c.state_path  = std::string("stockturtlemimic_stockturtlemimb_") + nm + "_state.txt";
+                        c.closed_path = std::string("stockturtlemimic_stockturtlemimb_") + nm + "_closed.csv";
+                        sdm.add(std::move(c)); }
+                    {   omega::GoldTrendMimicBook::Config c;
+                        c.trigger_tag = std::string("StockTurtleMimC_") + nm; c.live_sym = nm;
+                        c.legs = {{"", 0.40}};
+                        c.arm_pct = 2.5; c.lc_pct = 2.5; c.cap_bars = 10; c.pre_arm_be_pct = 1.25;
+                        c.be_entry_pct = 0.0; c.rt_cost_bp = 8.0; c.notional = 10000.0; c.bull_only = false;
+                        c.state_path  = std::string("stockturtlemimic_stockturtlemimc_") + nm + "_state.txt";
+                        c.closed_path = std::string("stockturtlemimic_stockturtlemimc_") + nm + "_closed.csv";
+                        sdm.add(std::move(c)); }
+                    {   omega::GoldTrendMimicBook::Config c;
+                        c.trigger_tag = std::string("StockTurtleMimD_") + nm; c.live_sym = nm;
+                        c.legs = {{"", 0.40}};
+                        c.arm_pct = 3.5; c.lc_pct = 3.5; c.cap_bars = 10; c.pre_arm_be_pct = 1.75;
+                        c.be_entry_pct = 0.0; c.rt_cost_bp = 8.0; c.notional = 10000.0; c.bull_only = false;
+                        c.state_path  = std::string("stockturtlemimic_stockturtlemimd_") + nm + "_state.txt";
+                        c.closed_path = std::string("stockturtlemimic_stockturtlemimd_") + nm + "_closed.csv";
+                        sdm.add(std::move(c)); }
                 }
                 sdm.set_exec(
                     [](const std::string& sym, bool is_long, double lots, double px)->std::string { return send_live_order(sym, is_long, lots, px); },
@@ -2644,17 +2711,34 @@ static void init_engines(const std::string& cfg_path)
                         tr.mfe=(mfe_pct/100.0)*entry_px*lots; tr.mae=(std::fabs(mae_pct)/100.0)*entry_px*lots;
                         tr.shadow=true;   // SHADOW book: audit-only ledger row
                         handle_closed_trade(tr); });
-                // Fan the ONE StockDip DIP open (per name) out to BOTH cells (T + W).
+                // Fan the ONE StockDip DIP open (per name) out to all 4 DIP cells (T + W + X + Y).
                 sdt.set_mimic_cbs(
                     [](const std::string& sym, int dir, double px, int64_t ts){
                         omega::stockdip_trend_mimic().on_trend_open(std::string("StockDipMimT_") + sym, dir, px, ts);
-                        omega::stockdip_trend_mimic().on_trend_open(std::string("StockDipMimW_") + sym, dir, px, ts); },
+                        omega::stockdip_trend_mimic().on_trend_open(std::string("StockDipMimW_") + sym, dir, px, ts);
+                        omega::stockdip_trend_mimic().on_trend_open(std::string("StockDipMimX_") + sym, dir, px, ts);
+                        omega::stockdip_trend_mimic().on_trend_open(std::string("StockDipMimY_") + sym, dir, px, ts); },
                     [](const std::string& sym, double close, int64_t ts){
                         omega::stockdip_trend_mimic().on_bar(std::string("StockDipMimT_") + sym, close, close, close, ts);
-                        omega::stockdip_trend_mimic().on_bar(std::string("StockDipMimW_") + sym, close, close, close, ts); });
-                sdm.arm();   // DEPLOY-FORWARD: only live (post-seed) DIP opens spawn legs
-                printf("[OMEGA-INIT][SEED] StockDip BE-MIMIC wired: %d DIP names x 2 cells (T arm2/gb50/lc2/pbe1.0 + W arm3/gb70/lc3/pbe1.5, cap10, pre-arm BE-ratchet + post-arm BE-floor, rt 8bp, $10k), triggered one-way from StockDip DIP opens, close-grade daily feed, SHADOW deploy-forward, VALIDATED all-6 PASS (STOCKDIP_MIMIC_FINDINGS_2026-07-15 + PREARM_FLOOR)\n",
-                       (int)(sizeof(DIP_NAMES)/sizeof(DIP_NAMES[0])));
+                        omega::stockdip_trend_mimic().on_bar(std::string("StockDipMimW_") + sym, close, close, close, ts);
+                        omega::stockdip_trend_mimic().on_bar(std::string("StockDipMimX_") + sym, close, close, close, ts);
+                        omega::stockdip_trend_mimic().on_bar(std::string("StockDipMimY_") + sym, close, close, close, ts); });
+                // S-2026-07-16p: fan the ONE StockTurtle breakout open (per name) out to all 4
+                // TURTLE cells (A/B/C/D). Independent SHADOW; disjoint from the DIP fan (turtle syms).
+                sdt.set_turtle_mimic_cbs(
+                    [](const std::string& sym, int dir, double px, int64_t ts){
+                        omega::stockdip_trend_mimic().on_trend_open(std::string("StockTurtleMimA_") + sym, dir, px, ts);
+                        omega::stockdip_trend_mimic().on_trend_open(std::string("StockTurtleMimB_") + sym, dir, px, ts);
+                        omega::stockdip_trend_mimic().on_trend_open(std::string("StockTurtleMimC_") + sym, dir, px, ts);
+                        omega::stockdip_trend_mimic().on_trend_open(std::string("StockTurtleMimD_") + sym, dir, px, ts); },
+                    [](const std::string& sym, double close, int64_t ts){
+                        omega::stockdip_trend_mimic().on_bar(std::string("StockTurtleMimA_") + sym, close, close, close, ts);
+                        omega::stockdip_trend_mimic().on_bar(std::string("StockTurtleMimB_") + sym, close, close, close, ts);
+                        omega::stockdip_trend_mimic().on_bar(std::string("StockTurtleMimC_") + sym, close, close, close, ts);
+                        omega::stockdip_trend_mimic().on_bar(std::string("StockTurtleMimD_") + sym, close, close, close, ts); });
+                sdm.arm();   // DEPLOY-FORWARD: only live (post-seed) opens spawn legs
+                printf("[OMEGA-INIT][SEED] StockDip/Turtle BE-MIMIC wired: %d DIP names x 4 cells (T arm2/gb50 + W arm3/gb70 + X arm1.5/gb70 + Y arm2.5/gb60) + %d TURTLE names x 4 cells (A arm1.5/gb50, B arm2/gb50, C arm2.5/gb40, D arm3.5/gb40); cap10, half-of-arm pre-arm BE-ratchet + post-arm BE-floor, rt 8bp, $10k, triggered one-way from real DIP/breakout opens, close-grade daily feed, SHADOW deploy-forward, VALIDATED all-6 PASS ungated (STOCKDIP_MIMIC_FINDINGS_2026-07-15 + PREARM_FLOOR + TURTLE_MIMIC_FINDINGS_2026-07-16)\n",
+                       (int)(sizeof(DIP_NAMES)/sizeof(DIP_NAMES[0])), (int)(sizeof(TUR_NAMES)/sizeof(TUR_NAMES[0])));
                 fflush(stdout);
             }
 

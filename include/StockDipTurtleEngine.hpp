@@ -431,10 +431,13 @@ private:
                     if (!gate_fn_ || gate_fn_(cfg_.live_sym, tp_dist, shares)) {
                         pos_.active = true; pos_.epx = cur; pos_.held = 0; pos_.entry_ts = ts_sec;
                         pos_.token.clear();
-                        // S-2026-07-16l: one-way fire to the StockDip BE-mimic (LONG, at the
-                        // entry close). Independent book, never touches this real position
-                        // (feedback-companion-independent-engine). DIP family only; no-op pre-arm.
-                        if (mimic_open_cb_ && cfg_.family == DIP) mimic_open_cb_(cfg_.sym, +1, cur, ts_sec);
+                        // S-2026-07-16l: one-way fire to the BE-mimic (LONG, at the entry
+                        // close). Independent book, never touches this real position
+                        // (feedback-companion-independent-engine). S-2026-07-16p: fire for
+                        // whichever family has a cb installed -- DIP syms carry the DIP-cell
+                        // fan (set_mimic_cbs), TURTLE syms carry the 4 TURTLE-cell fan
+                        // (set_turtle_mimic_cbs); disjoint, family-routed by the setter.
+                        if (mimic_open_cb_) mimic_open_cb_(cfg_.sym, +1, cur, ts_sec);
                         if (fwd && !g_sdt_catchup.load(std::memory_order_relaxed)) {
                             pos_.token = open_fn_(cfg_.live_sym, true, cfg_.lot, cur);
                             std::printf("[SDT][OPEN] %s LONG @%.2f lot=%.2f tok=%s\n",
@@ -637,6 +640,16 @@ public:
     void set_mimic_cbs(StockDipTurtleSym::MimicOpenCb o, StockDipTurtleSym::MimicBarCb b) {
         std::lock_guard<std::mutex> lk(mu_);
         for (auto& s : syms_) if (s.is_dip()) s.set_mimic_cbs(o, b);
+    }
+
+    // S-2026-07-16p: install the TURTLE BE-mimic hooks on every TURTLE-family sym. engine_init
+    // sets these to fan-out lambdas that fire the per-name 4 TURTLE mimic cells (A/B/C/D arm
+    // ladder) in stockdip_trend_mimic(). Independent SHADOW book (never touches the real trade);
+    // validated STANDALONE all-6 PASS ungated (TURTLE_MIMIC_FINDINGS_2026-07-16). Disjoint from
+    // the DIP setter (is_dip vs !is_dip). Call AFTER add()-ing all syms, once.
+    void set_turtle_mimic_cbs(StockDipTurtleSym::MimicOpenCb o, StockDipTurtleSym::MimicBarCb b) {
+        std::lock_guard<std::mutex> lk(mu_);
+        for (auto& s : syms_) if (!s.is_dip()) s.set_mimic_cbs(o, b);
     }
 
 private:
