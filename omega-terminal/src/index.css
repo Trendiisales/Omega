@@ -139,3 +139,23 @@ body {
 /* Direction arrows used by ticker rows. */
 .dir-arrow.up   { color: var(--green); }
 .dir-arrow.down { color: var(--red); }
+
+/* ─── New-trade flash (LdgPanel) ─────────────────────────────────────────
+ * A trade appears in the ledger only when it CLOSES/finalises. Its row
+ * pulses for 20s so the operator sees where it landed — a visual cue that
+ * replaces reliance on the audible alarm. Green = win, red = loss. Honours
+ * prefers-reduced-motion (static tint, no pulse). */
+@keyframes tradeFlashWin {
+  0%, 100% { background-color: rgba(34, 197, 94, 0.08); }
+  50%      { background-color: rgba(34, 197, 94, 0.42); }
+}
+@keyframes tradeFlashLoss {
+  0%, 100% { background-color: rgba(239, 68, 68, 0.08); }
+  50%      { background-color: rgba(239, 68, 68, 0.42); }
+}
+.trade-flash-win  { animation: tradeFlashWin  1.1s ease-in-out infinite; box-shadow: inset 0 0 0 1px rgba(34, 197, 94, 0.7); }
+.trade-flash-loss { animation: tradeFlashLoss 1.1s ease-in-out infinite; box-shadow: inset 0 0 0 1px rgba(239, 68, 68, 0.7); }
+@media (prefers-reduced-motion: reduce) {
+  .trade-flash-win  { animation: none; background-color: rgba(34, 197, 94, 0.30); }
+  .trade-flash-loss { animation: none; background-color: rgba(239, 68, 68, 0.30); }
+}

@@ -26,7 +26,7 @@
 // once thousands of trades accrue. Date-range filtering UX is deferred
 // to a follow-up.
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getLedger } from '@/api/omega';
 import type { LedgerEntry, OmegaApiError } from '@/api/types';
 import { usePanelData } from '@/hooks/usePanelData';
@@ -36,8 +36,14 @@ interface Props {
   onNavigate?: (target: string) => void;
 }
 
-const LEDGER_POLL_MS = 30000;
+// Poll fast enough that a freshly-CLOSED (finalised) trade surfaces within a
+// few seconds, so its 20s flash is fresh when the operator looks. The ledger
+// only changes on a close, and a 1000-row JSON is small — 8s is cheap.
+const LEDGER_POLL_MS = 8000;
 const LEDGER_LIMIT   = 1000;
+// Highlight a newly-appeared trade row for this long (operator: a visible cue
+// on every new/finalised trade instead of relying on the audible alarm).
+const FLASH_MS       = 20000;
 
 type SortKey =
   | 'id'
@@ -66,6 +72,59 @@ export function LdgPanel({ args, onNavigate }: Props) {
   });
 
   const all = state.status === 'ok' ? state.data : (state.data ?? []);
+
+  // ── NEW-TRADE FLASH ────────────────────────────────────────────────────
+  // A trade appears in this ledger only when it CLOSES/finalises, so a row
+  // that shows up in a later poll is a brand-new trade. Flash it for FLASH_MS
+  // so the operator can see exactly where it landed (visual cue, not just the
+  // audible alarm). The FIRST successful load is NOT flashed — that would
+  // light up the entire history; only trades arriving in a subsequent poll do.
+  const seenRef = useRef<Set<string>>(new Set());
+  const primedRef = useRef(false);
+  const [flashUntil, setFlashUntil] = useState<Map<string, number>>(new Map());
+
+  useEffect(() => {
+    if (state.status !== 'ok') return;
+    const now = Date.now();
+    const fresh: string[] = [];
+    for (const r of all) {
+      if (!seenRef.current.has(r.id)) {
+        seenRef.current.add(r.id);
+        if (primedRef.current) fresh.push(r.id);
+      }
+    }
+    if (!primedRef.current) {
+      primedRef.current = true; // prime on first load, no flash
+      return;
+    }
+    if (fresh.length > 0) {
+      setFlashUntil((prev) => {
+        const next = new Map(prev);
+        for (const id of fresh) next.set(id, now + FLASH_MS);
+        return next;
+      });
+    }
+  }, [all, state.status]);
+
+  // Tick once a second to expire flashes so rows stop highlighting after 20s.
+  useEffect(() => {
+    if (flashUntil.size === 0) return;
+    const t = setInterval(() => {
+      const now = Date.now();
+      setFlashUntil((prev) => {
+        let changed = false;
+        const next = new Map(prev);
+        for (const [id, exp] of next) {
+          if (exp <= now) {
+            next.delete(id);
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
+    }, 1000);
+    return () => clearInterval(t);
+  }, [flashUntil]);
 
   // First-arg overload: try engine match first, fall back to symbol match.
   // We don't preflight the engine list -- a substring match against any row
@@ -152,7 +211,7 @@ export function LdgPanel({ args, onNavigate }: Props) {
             Closed trades
           </h3>
           <span className="font-mono text-[10px] uppercase tracking-widest text-amber-700">
-            {visible.length} {visible.length === 1 ? 'row' : 'rows'} &middot; poll 30s
+            {visible.length} {visible.length === 1 ? 'row' : 'rows'} &middot; poll 8s &middot; new trades flash 20s
           </span>
         </div>
         <table className="w-full border-collapse font-mono text-xs">
@@ -181,13 +240,17 @@ export function LdgPanel({ args, onNavigate }: Props) {
                   : 'No trades in the ledger yet.'}
               </td></tr>
             )}
-            {visible.map((r) => (
+            {visible.map((r) => {
+              const flashing = (flashUntil.get(r.id) ?? 0) > Date.now();
+              return (
               <tr
                 key={r.id}
                 onClick={() => {
                   if (onNavigate) onNavigate(`TRADE ${r.id}`);
                 }}
-                className="cursor-pointer border-b border-amber-900/40 transition-colors hover:bg-amber-950/40"
+                className={`cursor-pointer border-b border-amber-900/40 transition-colors hover:bg-amber-950/40 ${
+                  flashing ? (r.pnl >= 0 ? 'trade-flash-win' : 'trade-flash-loss') : ''
+                }`}
               >
                 <td className="px-3 py-2 text-amber-400">{r.id}</td>
                 <td className="px-3 py-2 font-bold text-amber-300">{r.engine}</td>
@@ -202,7 +265,8 @@ export function LdgPanel({ args, onNavigate }: Props) {
                 </td>
                 <td className="px-3 py-2 text-amber-500/80">{r.reason || '—'}</td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
         <FetchStatusBar state={state} onRetry={refetch} />
