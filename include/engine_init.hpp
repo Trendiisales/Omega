@@ -1626,33 +1626,39 @@ static void init_engines(const std::string& cfg_path)
                 // Faithful re-validation (clip_path_noprebe_floor.cpp, real XauTf4h entries): ALL6-PASS,
                 // net +151->+142 (-6%), worst-clip 0.00, nNeg 0.
                 c.arm_pct=0.25; c.lc_pct=1.5; c.cap_bars=12; c.rt_cost_bp=15.0; c.be_entry_pct=0.15; c.no_prebe_loss=true; c.pend_bars=6; gm.add(std::move(c)); }
-            {   omega::GoldTrendMimicBook::Config c; c.trigger_tag="MgcFastDon"; c.live_sym="XAUUSD";
-                c.legs={{"T",0.08},{"W",0.20}};
-                // NO-PRE-BE-LOSS: be_entry bumped 0.10->0.15 so entry buffer >= rt(0.15%) covers cost by
-                // construction. FLAG: on the available 2yr M30 sample this cell is net-negative even OFF
-                // (does not reproduce the header +34/+35 -- period/cost mismatch); the floor is enabled for
-                // rule-compliance (worst-clip 0.00, nNeg 0) but the cell's EDGE needs re-validation on the
-                // original dataset before any live sizing. SHADOW.
-                c.arm_pct=0.15; c.lc_pct=1.0; c.cap_bars=24; c.rt_cost_bp=15.0; c.be_entry_pct=0.15; c.no_prebe_loss=true; c.pend_bars=12; gm.add(std::move(c)); }
+            // MgcFastDon — RETIRED S-2026-07-17 (full-grid floored re-val, no live money lost; was SHADOW).
+            // The no_prebe_loss floor enabled S-17c for compliance edge-REGRESSED it, and the full re-val
+            // shows there is NO recoverable edge: (1) close-grade OFF-floor on the current 2yr XAU-M30 sample
+            // does NOT reproduce the header +34/+35 — it is net-NEGATIVE at shipped params (2yr -4%, 2yr+2022
+            // -15%), so the original claim does not hold on the available data; (2) floored + intrabar-faithful
+            // shipped params = 2yr -29.6 PF0.42 / 2022bear -21.2 PF0.15, both FAIL all-6; (3) a 576-config
+            // arm×lc×cap×gbT×gbW sweep (floor ON, both datasets) = 0 passers, and the grid CEILING is net
+            // -15.7 (2yr) / -18.7 (2022) — no config is even net-positive. Retired, not grandfathered.
+            // Evidence: clip_path_noprebe_floor.cpp + npt_sweep (this session). Do NOT re-wire without a NEW
+            // basis (different chassis, or a genuine MGC-native edge judged on both regimes).
+            // {   omega::GoldTrendMimicBook::Config c; c.trigger_tag="MgcFastDon"; c.live_sym="XAUUSD";
+            //     c.legs={{"T",0.08},{"W",0.20}};
+            //     c.arm_pct=0.15; c.lc_pct=1.0; c.cap_bars=24; c.rt_cost_bp=15.0; c.be_entry_pct=0.15; c.no_prebe_loss=true; c.pend_bars=12; gm.add(std::move(c)); }
             {   omega::GoldTrendMimicBook::Config c; c.trigger_tag="XauTfD1"; c.live_sym="XAUUSD";
                 c.legs={{"T",0.08},{"W",0.20}};
                 // NO-PRE-BE-LOSS: be_entry(0.15)>=rt(0.15%). Faithful re-val (real XauTfD1 entries):
                 // ALL6-PASS, net +143->+118, worst-clip 0.00, nNeg 0.
                 c.arm_pct=0.25; c.lc_pct=2.0; c.cap_bars=8; c.rt_cost_bp=15.0; c.be_entry_pct=0.15; c.no_prebe_loss=true; c.pend_bars=4; gm.add(std::move(c)); }
-            // XauTf2h (S-2026-07-10, mimic-extension sweep): 2 legs T gb8 + W gb30, fed on the
-            // native 2h close. Validated STANDALONE over the FULL grid incl REAL 2022 bear
-            // (backtest/clip_path_xau_tf.cpp 2h + mimic_ladder_overlay.cpp): TIGHT +76.9% PF1.39
-            // (bull+51.6/bear+25.2), WIDE +88.5% PF1.44 (bull+55.2/bear+33.3), both WF halves + ,
-            // both regimes + ; 8 tight / 12 wide passers across the sweep (robust plateau). The
-            // strongest NEW mimic candidate of the sweep (2h is a diverse addition to 4h/D1).
-            {   omega::GoldTrendMimicBook::Config c; c.trigger_tag="XauTf2h"; c.live_sym="XAUUSD";
-                c.legs={{"T",0.08},{"W",0.30}};
-                // NO-PRE-BE-LOSS: be_entry(0.15)>=rt(0.15%). FLAG: the tight BE-from-open floor REGRESSES
-                // this cell on the 2yr (bull-heavy) sample (net +12->-45; the 2h intrabar noise triggers
-                // the floor on dip-then-recover winners). Floor enabled for rule-compliance (worst-clip
-                // 0.00, nNeg 0) but the EDGE needs full-grid (incl 2022 bear) re-validation, or retire.
-                // SHADOW -- no live money.
-                c.arm_pct=0.25; c.lc_pct=1.0; c.cap_bars=24; c.rt_cost_bp=15.0; c.be_entry_pct=0.15; c.no_prebe_loss=true; c.pend_bars=6; gm.add(std::move(c)); }
+            // XauTf2h — RETIRED S-2026-07-17 (full-grid floored re-val; was SHADOW, no live money lost).
+            // The original S-10 validation (TIGHT +76.9%/WIDE +88.5%, both regimes+) was CLOSE-GRADE and
+            // still reproduces OFF-floor close-grade (mimic_ladder_overlay 2yr+2022 be0.10: TIGHT +75.8
+            // PF1.42 / WIDE +91.5 PF1.50, all-6 PASS) — but it is a close-grade granularity artifact (same
+            // class as the §5 model-fill trap / USTEC survivor mimic). Under the SHIPPED intrabar-faithful
+            // floor the edge collapses: shipped params 2yr -45.5 PF0.71 / 2022bear -43.6 PF0.30, both FAIL.
+            // A 576-config arm×lc×cap×gbT×gbW sweep (floor ON, both datasets) = 0 passers; grid CEILING is
+            // net -40.9 (2yr, PF0.76) / -42.0 (2022) — no floored config is even net-positive. Root cause:
+            // the BE-floor exits any pre-arm leg to BE on the first intrabar dip below entry, paying rt cost
+            // on ~900 BE-flat clips (cost-bleed) while giving up the dip-then-recover winners the close-grade
+            // model kept. Retired, not grandfathered. Evidence: clip_path_noprebe_floor.cpp + npt_sweep
+            // (this session). Do NOT re-wire from the close-grade figures.
+            // {   omega::GoldTrendMimicBook::Config c; c.trigger_tag="XauTf2h"; c.live_sym="XAUUSD";
+            //     c.legs={{"T",0.08},{"W",0.30}};
+            //     c.arm_pct=0.25; c.lc_pct=1.0; c.cap_bars=24; c.rt_cost_bp=15.0; c.be_entry_pct=0.15; c.no_prebe_loss=true; c.pend_bars=6; gm.add(std::move(c)); }
             // Index D1 turtle mimics (S-2026-07-09b, operator "all symbols"): 2 legs each (tight+wide),
             // fed on the D1 bar (turtle cadence). Validated STANDALONE (clip_path_idx_turtle real
             // entries, independent D1 window exit): NAS100 T+80.9/W+79.5 80%win; US500 +45.8/+47.2
@@ -1824,7 +1830,7 @@ static void init_engines(const std::string& cfg_path)
                     // positive magnitudes in price units x size (S-2026-07-15 mfe/mae=0 fix)
                     tr.mfe=(mfe_pct/100.0)*entry_px*lots; tr.mae=(std::fabs(mae_pct)/100.0)*entry_px*lots;
                     handle_closed_trade(tr); });
-            printf("[OMEGA-INIT][SEED] GoldTrendMimicLadder wired: 14 trigger books (XauTf4h 4-leg, XauTf2h 2-leg, MgcFastDon 2-leg, XauTfD1 2-leg, NAS100/US500/DJ30 Turtle 2-leg SHADOW; survivor XAU_4h_DonchN20 1-leg LIVE resting-exec 1 MGC + H1-SMA200 bear-gate; USTEC_4h_ZMR disabled S-14 intrabar FAIL; S-14bc BE-mimics be0.10 2-leg x5: MgcTf1h/GoldKeltM30/GoldTfBw1040/GoldTfBw20100/GoldDonH1 SHADOW; S-14 sub-30m re-open x1: GoldDon10m arm1.0/lc1.0 SHADOW 1m-truth-validated [GoldDon15m CULLED S-16 operator: kept losing]), specific native feeds, deploy-forward\n");
+            printf("[OMEGA-INIT][SEED] GoldTrendMimicLadder wired: 12 trigger books (XauTf4h 4-leg, XauTfD1 2-leg, NAS100/US500/DJ30 Turtle 2-leg SHADOW [XauTf2h + MgcFastDon RETIRED S-2026-07-17: 0/576 floored configs pass, grid ceiling net-negative]; survivor XAU_4h_DonchN20 1-leg LIVE resting-exec 1 MGC + H1-SMA200 bear-gate; USTEC_4h_ZMR disabled S-14 intrabar FAIL; S-14bc BE-mimics be0.10 2-leg x5: MgcTf1h/GoldKeltM30/GoldTfBw1040/GoldTfBw20100/GoldDonH1 SHADOW; S-14 sub-30m re-open x1: GoldDon10m arm1.0/lc1.0 SHADOW 1m-truth-validated [GoldDon15m CULLED S-16 operator: kept losing]), specific native feeds, deploy-forward\n");
             fflush(stdout);
         }
 
