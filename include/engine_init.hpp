@@ -1981,6 +1981,15 @@ static void init_engines(const std::string& cfg_path)
                 c.pair = fc.pair; c.live_sym = fc.pair;
                 c.W = fc.W; c.thr = fc.thr; c.rt_cost_bp = fc.rt;
                 c.short_downjump = fc.short_dj; c.notional = fc.notional; c.retire_usd = fc.retire;
+                // LOT SIZE = real $10k-notional clip, NOT a 100k standard lot. handle_closed_trade
+                //   scales raw pts*lot by tick_value_multiplier(GBPUSD)=100000, so the default lot
+                //   1.0 booked the 2026-07-15 GBPUSDLad_S clip as a full ~$135k lot -> +$609.76
+                //   (should be ~+$44 at $10k). lot = notional/(px*100000) ~= 0.074 at GBPUSD~1.35
+                //   books the intended $10k, matches the companion book, and is the tradeable size
+                //   at live flip. Operator S-2026-07-16: "we cannot trade 2x ... use the 10k number
+                //   not the 100k". project-revisit-lot-sizes: finalize exact contract size later.
+                //   NOTE: 1.35 is the GBPUSD reference px; any re-enabled pair must set its own ref.
+                c.lot = fc.notional / (100000.0 * 1.35);
                 // S-2026-07-09 WIDE peak-profit trail: keep ~90% of the peak gain, engage at +1% MFE
                 // (LADDER_WIDE_TRAIL_TIGHTEN_2026-07-09.md — NZD +5.6% / GBP +5.4%, arm0 hurts FX).
                 c.wide_gb_frac = 0.10; c.wide_arm_pct = 1.0; c.be_entry_pct = 0.08; c.pend_bars = 4;
