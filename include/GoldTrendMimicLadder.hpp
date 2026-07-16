@@ -25,9 +25,14 @@
 //   (close-grade first-pass; intrabar re-check owed before LIVE sizing.)
 //
 // ADVERSE-PROTECTION: per-leg backtested verdict — pre-arm LOSS_CUT (lc_pct of
-//   entry) + post-arm peak-profit trail (keep 1-gb of the peak) + BE-floor
-//   (armed leg stop >= entry) + window-cap flush. The PASS figures above are net
-//   of the loss-cut. Books in RETURN units (USD = ret * notional/clip).
+//   entry) + OPTIONAL pre-arm BE-ratchet (pre_arm_be_pct: a pre-arm winner that
+//   reverses exits at BE, never rides back to the -lc cut; 0=off) + post-arm
+//   peak-profit trail (keep 1-gb of the peak) + BE-floor (armed leg stop >= entry)
+//   + window-cap flush. "must always exit if the price reverses" (operator
+//   S-2026-07-16): armed legs always did; the pre-arm BE-ratchet extends it to
+//   pre-arm winners. StockDip cells backtested all-6 PASS with the ratchet on
+//   (PF+/mdd+/2022+). The PASS figures above are net of the loss-cut. Books in
+//   RETURN units (USD = ret * notional/clip).
 // =============================================================================
 #include <algorithm>
 #include <cstdint>
@@ -57,6 +62,13 @@ public:
         double lc_pct      = 1.5;    // DRAWDOWN-CANCEL: pre-arm LOSS_CUT, cut a leg at -lc_pct% before it
                                      //   arms (mimic never touches real trade -> free). Backtested: PASS
                                      //   figures in header are NET of this cut. Fires L152 (book_clip LOSS_CUT).
+        double pre_arm_be_pct = 0.0; // PRE-ARM BE-RATCHET (operator S-2026-07-16: "must always exit if the
+                                     //   price reverses"). Once a NOT-yet-armed leg shows >= pre_arm_be_pct MFE,
+                                     //   its floor ratchets from -lc_pct up to BE: a reversal to ret<=0 exits at
+                                     //   0 (never rides a pre-arm winner back down to the -lc cut). 0 = disabled
+                                     //   (default -> every existing Gold book keeps its validated behaviour).
+                                     //   StockDip mimic: T=1.0 (arm2), W=1.5 (arm3) = half-of-arm. Backtested
+                                     //   all-6 PASS, PF+ / mdd+ / 2022-bleed+ (STOCKDIP_MIMIC_PREARM_FLOOR).
         // BE-ENTRY (operator S-2026-07-09b): a leg does NOT open at the trigger. It stays PENDING
         // until price clears +be_entry_pct in favor (costs covered / break-even made), then enters
         // THERE. A move that fades before covering cost never opens a leg -> no open-into-loss.
@@ -175,7 +187,10 @@ public:
             const double gb = cfg_.legs[(L.li >= 0 && L.li < (int)cfg_.legs.size()) ? L.li : 0].gb;
             bool closed = false;
             if (!L.armed) {
-                if (ret <= -cfg_.lc_pct) { book_clip_(L, ret, ts_sec, "LOSS_CUT"); closed = true; changed = true; }
+                // pre-arm BE-ratchet (see Config::pre_arm_be_pct): reversal to BE once shown MFE.
+                if (cfg_.pre_arm_be_pct > 0.0 && L.peak >= cfg_.pre_arm_be_pct) {
+                    if (ret <= 0.0) { book_clip_(L, 0.0, ts_sec, "BE_FLOOR"); closed = true; changed = true; }
+                } else if (ret <= -cfg_.lc_pct) { book_clip_(L, ret, ts_sec, "LOSS_CUT"); closed = true; changed = true; }
                 else if (L.peak >= cfg_.arm_pct) L.armed = true;
             } else {
                 const double stop_ret = (1.0 - gb) * L.peak;   // keep (1-gb) of peak, BE-floored
@@ -225,7 +240,11 @@ public:
                 if (ret > L.peak)   L.peak   = ret;
                 if (ret < L.trough) L.trough = ret;
                 if (!L.armed) {
-                    if (ret <= -cfg_.lc_pct) { book_clip_(L, -cfg_.lc_pct, ts_sec, "LOSS_CUT"); closed = true; break; }
+                    // pre-arm BE-ratchet: once shown pre_arm_be_pct MFE, a reversal exits at BE
+                    // (never rides a pre-arm winner back to the -lc cut). 0 = disabled.
+                    if (cfg_.pre_arm_be_pct > 0.0 && L.peak >= cfg_.pre_arm_be_pct) {
+                        if (ret <= 0.0) { book_clip_(L, 0.0, ts_sec, "BE_FLOOR"); closed = true; break; }
+                    } else if (ret <= -cfg_.lc_pct) { book_clip_(L, -cfg_.lc_pct, ts_sec, "LOSS_CUT"); closed = true; break; }
                     if (L.peak >= cfg_.arm_pct) L.armed = true;
                 } else {
                     const double stop_ret = (1.0 - gb) * L.peak;   // keep (1-gb) of peak -> BE-floored (>=0)

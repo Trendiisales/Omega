@@ -2611,7 +2611,8 @@ static void init_engines(const std::string& cfg_path)
                         c.trigger_tag = std::string("StockDipMimT_") + nm; c.live_sym = nm;
                         c.legs = {{"", 0.50}};                    // T: keep 50% of peak (BE-floored)
                         c.arm_pct = 2.0; c.lc_pct = 2.0; c.cap_bars = 10;
-                        c.be_entry_pct = 0.0;                     // enter at trigger; protection = lc + BE-floor
+                        c.pre_arm_be_pct = 1.0;                   // half-of-arm: pre-arm winner reversal -> BE exit
+                        c.be_entry_pct = 0.0;                     // enter at trigger; protection = lc + pre-arm BE + BE-floor
                         c.rt_cost_bp = 8.0; c.notional = 10000.0; c.bull_only = false;
                         c.state_path  = std::string("stockdipmimic_stockdipmimt_") + nm + "_state.txt";
                         c.closed_path = std::string("stockdipmimic_stockdipmimt_") + nm + "_closed.csv";
@@ -2620,6 +2621,7 @@ static void init_engines(const std::string& cfg_path)
                         c.trigger_tag = std::string("StockDipMimW_") + nm; c.live_sym = nm;
                         c.legs = {{"", 0.70}};                    // W: keep 30% of peak (BE-floored)
                         c.arm_pct = 3.0; c.lc_pct = 3.0; c.cap_bars = 10;
+                        c.pre_arm_be_pct = 1.5;                   // half-of-arm: pre-arm winner reversal -> BE exit
                         c.be_entry_pct = 0.0;
                         c.rt_cost_bp = 8.0; c.notional = 10000.0; c.bull_only = false;
                         c.state_path  = std::string("stockdipmimic_stockdipmimw_") + nm + "_state.txt";
@@ -2651,7 +2653,7 @@ static void init_engines(const std::string& cfg_path)
                         omega::stockdip_trend_mimic().on_bar(std::string("StockDipMimT_") + sym, close, close, close, ts);
                         omega::stockdip_trend_mimic().on_bar(std::string("StockDipMimW_") + sym, close, close, close, ts); });
                 sdm.arm();   // DEPLOY-FORWARD: only live (post-seed) DIP opens spawn legs
-                printf("[OMEGA-INIT][SEED] StockDip BE-MIMIC wired: %d DIP names x 2 cells (T arm2/gb50/lc2 + W arm3/gb70/lc3, cap10, be-floored, rt 8bp, $10k), triggered one-way from StockDip DIP opens, close-grade daily feed, SHADOW deploy-forward, VALIDATED all-6 PASS (STOCKDIP_MIMIC_FINDINGS_2026-07-15)\n",
+                printf("[OMEGA-INIT][SEED] StockDip BE-MIMIC wired: %d DIP names x 2 cells (T arm2/gb50/lc2/pbe1.0 + W arm3/gb70/lc3/pbe1.5, cap10, pre-arm BE-ratchet + post-arm BE-floor, rt 8bp, $10k), triggered one-way from StockDip DIP opens, close-grade daily feed, SHADOW deploy-forward, VALIDATED all-6 PASS (STOCKDIP_MIMIC_FINDINGS_2026-07-15 + PREARM_FLOOR)\n",
                        (int)(sizeof(DIP_NAMES)/sizeof(DIP_NAMES[0])));
                 fflush(stdout);
             }
