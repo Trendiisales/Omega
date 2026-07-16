@@ -2199,6 +2199,19 @@ static void init_engines(const std::string& cfg_path)
         //   FEED: same wide daily-close CSV as befloor (RDAgent refresh_close_ibkr.py, IBKR 4002).
         //   NOTE: sp500_long_close.csv stale since 2026-06-29 (IBKR sub lapse — operator item);
         //   engine seeds+arms now, books resume the day the feed does.
+        // ── S-2026-07-16l KILL (operator: "kill the upjumps for stockdip they will never
+        //    work" / "remove the upjump engines in bigcap"). The BIGCAP up-jump LADDER
+        //    (stockmover_ladder_book) AND the 2%-impulse book (bigcap_impulse_book) below
+        //    NEVER booked a single trade all-time (0 rows in the mirror ledger, both files)
+        //    — a dead limb even after the 07-16k mimic-only conversion. Retired to a clean
+        //    #if 0 disable (headers KEPT, fully revert-safe; the on_live_tick call sites in
+        //    omega_main.hpp still compile, the empty singleton no-ops). Their intended job —
+        //    a BE-mimic overlay on the ONE bigcap book that actually fires (StockDip) — is
+        //    now the StockDip BE-MIMIC cells wired below (validated STANDALONE all-6 PASS,
+        //    backtest/STOCKDIP_MIMIC_FINDINGS_2026-07-15.md). SHADOW -> zero live-money impact.
+        //    NOTE: the INDEX up-jump ladder (US500/NAS100/GER40/M2K) is a DIFFERENT engine and
+        //    is left untouched — only the two STOCK/bigcap up-jump books are killed here.
+#if 0  // S-2026-07-16l BIGCAP up-jump LADDER + 2%-impulse DISABLED (never traded; replaced by StockDip BE-mimics)
         {
             auto& sl = omega::stockmover_ladder_book();
             // the RDAgent BIGCAP universe (tools/rdagent/refresh_close_ibkr.py) — the exact
@@ -2476,6 +2489,7 @@ static void init_engines(const std::string& cfg_path)
                    (int)(sizeof(BC2_UNIV)/sizeof(BC2_UNIV[0])), bi_seeded, bi_restored);
             fflush(stdout);
         }
+#endif  // S-2026-07-16l BIGCAP up-jump LADDER + 2%-impulse DISABLED
 
         // ── StockDip + StockTurtle per-name daily-close books (S-2026-07-08c) ──
         //   TWO validated LONG-only single-stock families in ONE registry
@@ -2558,6 +2572,90 @@ static void init_engines(const std::string& cfg_path)
             // MU +$492, 07-11->12) never reached the desk headline.
             size_t sdt_exempt = 0;
             for (int64_t ets : sdt.restored_open_entry_ts()) { g_restored_entry_ts.insert(ets); ++sdt_exempt; }
+
+            // ── StockDip BE-MIMIC cells (S-2026-07-16l, operator: "remove the upjump engines in
+            //    bigcap and replace with 2x mimic engines"). 2 INDEPENDENT SHADOW cells per DIP
+            //    name, layered on the ONE bigcap book that actually fires (StockDip). Each cell is
+            //    a GoldTrendMimicBook (proven mechanics): opens its OWN leg the instant StockDip
+            //    opens that name (LONG, at the entry close), manages on the name's daily close.
+            //    Protection = pre-arm LOSS_CUT drawdown-cancel + post-arm BE-FLOORED peak-profit
+            //    trail (feedback-mimic-be-floor-mandatory: peak>=arm>0 => an armed leg can never
+            //    book negative; findings verified no armed leg books neg). NEVER compared to riding
+            //    the stock / to StockDip's own return — judged STANDALONE (feedback-companion-
+            //    independent-engine). Two cells = the validated pair from the STANDALONE all-6 PASS
+            //    backtest (backtest/STOCKDIP_MIMIC_FINDINGS_2026-07-15.md, python harness
+            //    backtest/stockdip_mimic_bt.py over Yahoo split/div-adj daily OHLC, 11 DIP names,
+            //    8bp RT):
+            //      T (Tight, RECOMMENDED)  arm2.0/gb0.50/lc2.0/cap10: +3023% net PF1.79 WR52.7%
+            //          worst clip -2.08% banked-mdd -91%, H1 +1217 H2 +1806, bull +2736 bear +287,
+            //          all-6 PASS, all-11 names +.  (best protection.)
+            //      W (Wide, higher gross) arm3.0/gb0.70/lc3.0/cap10: +4085% net PF1.78 WR55.1%
+            //          worst clip -3.08% banked-mdd -167%, H1 +1665 H2 +2420, bull +3775 bear +310,
+            //          all-6 PASS, all-11 names +.  (looser, ~880/3892 clips ride to the 10d cap.)
+            //    DRAWDOWN-CANCEL verdict (project-mimic-drawdown-cancel-gate): grid monotone —
+            //    net improves as lc loosens (the StockDipTurtleEngine mean-reverter warning: a cold
+            //    cut clips the dip it's paid to buy), BUT the cut ~HALVES the banked mdd + 2022
+            //    bleed, so KEEP it as the mandated free protection (mimic never touches the real
+            //    trade). lc set at the cell's validated point (T 2.0 / W 3.0).
+            //    LIVE-FIDELITY NOTE: the live feed (sp500_long_close.csv) is CLOSE-ONLY, so on_bar
+            //    is fed h=l=c=close -> close-grade leg management (the backtest used real O/H/L).
+            //    This UNDER-detects intrabar arm/stop => conservative (under-books, never over-books)
+            //    — consistent with the daily-close-grade caveat in the findings doc. SHADOW (send_
+            //    live_order no-ops until mode=LIVE); real single-name equity cost row owed before
+            //    LIVE sizing (OM-03 fail-closed, same as StockDip/ladder). Deploy-forward: armed
+            //    AFTER seeding so the boot catch-up replay spawns NO phantom legs.
+            {
+                auto& sdm = omega::stockdip_trend_mimic();
+                for (const char* nm : DIP_NAMES) {
+                    {   omega::GoldTrendMimicBook::Config c;
+                        c.trigger_tag = std::string("StockDipMimT_") + nm; c.live_sym = nm;
+                        c.legs = {{"", 0.50}};                    // T: keep 50% of peak (BE-floored)
+                        c.arm_pct = 2.0; c.lc_pct = 2.0; c.cap_bars = 10;
+                        c.be_entry_pct = 0.0;                     // enter at trigger; protection = lc + BE-floor
+                        c.rt_cost_bp = 8.0; c.notional = 10000.0; c.bull_only = false;
+                        c.state_path  = std::string("stockdipmimic_stockdipmimt_") + nm + "_state.txt";
+                        c.closed_path = std::string("stockdipmimic_stockdipmimt_") + nm + "_closed.csv";
+                        sdm.add(std::move(c)); }
+                    {   omega::GoldTrendMimicBook::Config c;
+                        c.trigger_tag = std::string("StockDipMimW_") + nm; c.live_sym = nm;
+                        c.legs = {{"", 0.70}};                    // W: keep 30% of peak (BE-floored)
+                        c.arm_pct = 3.0; c.lc_pct = 3.0; c.cap_bars = 10;
+                        c.be_entry_pct = 0.0;
+                        c.rt_cost_bp = 8.0; c.notional = 10000.0; c.bull_only = false;
+                        c.state_path  = std::string("stockdipmimic_stockdipmimw_") + nm + "_state.txt";
+                        c.closed_path = std::string("stockdipmimic_stockdipmimw_") + nm + "_closed.csv";
+                        sdm.add(std::move(c)); }
+                }
+                sdm.set_exec(
+                    [](const std::string& sym, bool is_long, double lots, double px)->std::string { return send_live_order(sym, is_long, lots, px); },
+                    [](const std::string& sym, bool orig_is_long, double lots, double px, const std::string& token){ send_live_order(sym, !orig_is_long, lots, px, token); },
+                    [](const std::string& /*sym*/, double /*tp_dist_pts*/, double /*lots*/)->bool {
+                        // Single-name equity: ExecutionCostGuard has NO cost row (befloor lesson);
+                        // the 8bp RT debit in the book is the validated gate. OM-03: FAIL CLOSED in
+                        // LIVE (no single-name order without a real cost model). SHADOW unaffected
+                        // (send_live_order no-ops on mode!=LIVE) -> zero behaviour change today.
+                        return g_cfg.mode != "LIVE"; },
+                    [](const std::string& engine, const std::string& sym, bool is_long, double entry_px, double exit_px, double lots, int64_t entry_ts, int64_t exit_ts, const char* reason, double mfe_pct, double mae_pct){
+                        omega::TradeRecord tr; tr.engine=engine; tr.symbol=sym; tr.side=is_long?"LONG":"SHORT";
+                        tr.entryPrice=entry_px; tr.exitPrice=exit_px; tr.size=lots; tr.entryTs=entry_ts; tr.exitTs=exit_ts;
+                        tr.exitReason=reason; tr.pnl=(is_long?(exit_px-entry_px):(entry_px-exit_px))*lots;
+                        tr.mfe=(mfe_pct/100.0)*entry_px*lots; tr.mae=(std::fabs(mae_pct)/100.0)*entry_px*lots;
+                        tr.shadow=true;   // SHADOW book: audit-only ledger row
+                        handle_closed_trade(tr); });
+                // Fan the ONE StockDip DIP open (per name) out to BOTH cells (T + W).
+                sdt.set_mimic_cbs(
+                    [](const std::string& sym, int dir, double px, int64_t ts){
+                        omega::stockdip_trend_mimic().on_trend_open(std::string("StockDipMimT_") + sym, dir, px, ts);
+                        omega::stockdip_trend_mimic().on_trend_open(std::string("StockDipMimW_") + sym, dir, px, ts); },
+                    [](const std::string& sym, double close, int64_t ts){
+                        omega::stockdip_trend_mimic().on_bar(std::string("StockDipMimT_") + sym, close, close, close, ts);
+                        omega::stockdip_trend_mimic().on_bar(std::string("StockDipMimW_") + sym, close, close, close, ts); });
+                sdm.arm();   // DEPLOY-FORWARD: only live (post-seed) DIP opens spawn legs
+                printf("[OMEGA-INIT][SEED] StockDip BE-MIMIC wired: %d DIP names x 2 cells (T arm2/gb50/lc2 + W arm3/gb70/lc3, cap10, be-floored, rt 8bp, $10k), triggered one-way from StockDip DIP opens, close-grade daily feed, SHADOW deploy-forward, VALIDATED all-6 PASS (STOCKDIP_MIMIC_FINDINGS_2026-07-15)\n",
+                       (int)(sizeof(DIP_NAMES)/sizeof(DIP_NAMES[0])));
+                fflush(stdout);
+            }
+
             sdt.start_poller(sdt_csv, 900000);   // own 15-min poller
             printf("[OMEGA-INIT][SEED] StockDip/StockTurtle books wired: %d dip + %d turtle names, %zu seed rows, %zu forward bars restored, %zu open entry_ts exempted from phantom-drop, $10k notional, rt 8bp, retire dip -$9.5k / turtle -$8.5k, LONG-only, SHADOW, deploy-forward, daily-CSV-polled\n",
                    n_dip, n_tur, sdt_seeded, sdt_restored, sdt_exempt);

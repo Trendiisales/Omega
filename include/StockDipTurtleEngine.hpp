@@ -160,6 +160,20 @@ public:
     // winners never reached the desk headline.
     int64_t open_entry_ts() const noexcept { return pos_.active ? pos_.entry_ts : 0; }
 
+    // S-2026-07-16l STOCKDIP BE-MIMIC hooks (operator: bigcap up-jump engines killed,
+    // replaced by 2x BE-mimic cells layered on the ONE bigcap book that fires — StockDip).
+    // The mimic runs its OWN independent book (feedback-companion-independent-engine): it
+    // never touches this real position. open_cb fires one-way the instant a DIP entry opens
+    // (LONG, at the entry close); bar_cb feeds the mimic that name's ACCEPTED daily close each
+    // live bar for leg management. Both are no-ops until engine_init arms the mimic registry
+    // (deploy-forward). DIP family only (StockTurtle is a separate character, not mimicked).
+    using MimicOpenCb = std::function<void(const std::string& sym, int dir, double px, int64_t ts)>;
+    using MimicBarCb  = std::function<void(const std::string& sym, double close, int64_t ts)>;
+    void set_mimic_cbs(MimicOpenCb o, MimicBarCb b) noexcept {
+        mimic_open_cb_ = std::move(o); mimic_bar_cb_ = std::move(b);
+    }
+    bool is_dip() const noexcept { return cfg_.family == DIP; }
+
     // seed one historical daily close (primes indicators only — deploy-forward gate).
     void seed_bar(int64_t ts_sec, double close) noexcept {
         if (close <= 0.0) return;
@@ -209,6 +223,10 @@ public:
         ingest_(ts_sec, close);
         append_dump_(ts_sec, close);
         live_step_(ts_sec);
+        // S-2026-07-16l: feed the StockDip BE-mimic this name's ACCEPTED daily close (torn/
+        // resync bars returned early above, so the mimic never sees a fake ×1000 seam). No-op
+        // until the mimic registry is armed (deploy-forward) and for non-DIP names.
+        if (mimic_bar_cb_) mimic_bar_cb_(cfg_.sym, close, ts_sec);
     }
 
     // Reload persisted LIVE forward daily bars (price history continuity across restart).
@@ -279,6 +297,8 @@ private:
     CloseFn  close_fn_;
     GateFn   gate_fn_;
     LedgerFn ledger_fn_;
+    MimicOpenCb mimic_open_cb_;   // S-2026-07-16l: one-way DIP-open trigger -> StockDip BE-mimic
+    MimicBarCb  mimic_bar_cb_;    // S-2026-07-16l: per-name daily-close feed -> mimic leg mgmt
 
     struct Pos {
         bool    active = false;
@@ -411,6 +431,10 @@ private:
                     if (!gate_fn_ || gate_fn_(cfg_.live_sym, tp_dist, shares)) {
                         pos_.active = true; pos_.epx = cur; pos_.held = 0; pos_.entry_ts = ts_sec;
                         pos_.token.clear();
+                        // S-2026-07-16l: one-way fire to the StockDip BE-mimic (LONG, at the
+                        // entry close). Independent book, never touches this real position
+                        // (feedback-companion-independent-engine). DIP family only; no-op pre-arm.
+                        if (mimic_open_cb_ && cfg_.family == DIP) mimic_open_cb_(cfg_.sym, +1, cur, ts_sec);
                         if (fwd && !g_sdt_catchup.load(std::memory_order_relaxed)) {
                             pos_.token = open_fn_(cfg_.live_sym, true, cfg_.lot, cur);
                             std::printf("[SDT][OPEN] %s LONG @%.2f lot=%.2f tok=%s\n",
@@ -604,6 +628,15 @@ public:
         std::vector<int64_t> v;
         for (const auto& s : syms_) { const int64_t e = s.open_entry_ts(); if (e > 0) v.push_back(e); }
         return v;
+    }
+
+    // S-2026-07-16l: install the StockDip BE-mimic hooks on every DIP-family sym (StockTurtle
+    // is not mimicked). engine_init sets these to fan-out lambdas that fire the per-name T + W
+    // mimic cells in stockdip_trend_mimic(). Independent SHADOW book (never touches the real
+    // trade). Call AFTER add()-ing all syms, once.
+    void set_mimic_cbs(StockDipTurtleSym::MimicOpenCb o, StockDipTurtleSym::MimicBarCb b) {
+        std::lock_guard<std::mutex> lk(mu_);
+        for (auto& s : syms_) if (s.is_dip()) s.set_mimic_cbs(o, b);
     }
 
 private:

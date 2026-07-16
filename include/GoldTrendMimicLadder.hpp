@@ -486,4 +486,17 @@ inline GoldTrendMimicRegistry& gold_trend_mimic() noexcept {
     return inst;
 }
 
+// S-2026-07-16l: SEPARATE registry instance for the StockDip BE-MIMIC cells (operator wire
+// order: "remove the upjump engines in bigcap and replace with 2x mimic engines"). Reuses the
+// exact validated GoldTrendMimicBook mechanics (pre-arm LOSS_CUT drawdown-cancel + post-arm
+// BE-floored peak-profit trail; feedback-mimic-be-floor-mandatory), keyed per-name+cell tag,
+// triggered one-way from StockDipTurtleSym's DIP open, fed the name's daily close via on_bar.
+// A DISTINCT singleton (not the gold instance) so the two book sets never collide on tag and
+// the XAU-H1 regime feed stays gold-only (stock cells are bull_only=false -> ignore it anyway).
+// Validated STANDALONE all-6 PASS: backtest/STOCKDIP_MIMIC_FINDINGS_2026-07-15.md.
+inline GoldTrendMimicRegistry& stockdip_trend_mimic() noexcept {
+    static GoldTrendMimicRegistry inst;
+    return inst;
+}
+
 } // namespace omega
