@@ -2,6 +2,113 @@
 // omega_main.hpp -- extracted from main.cpp
 // SINGLE-TRANSLATION-UNIT include -- only include from main.cpp
 
+// ─────────────────────────────────────────────────────────────────────────────
+// omega_sync_ledger_from_daily_csv (S-2026-07-16)
+//   Sync today's closed trades from the daily-rotating CSV
+//   (logs/trades/omega_trade_closes_YYYY-MM-DD.csv) into the in-memory
+//   g_omegaLedger. Idempotent: OmegaTradeLedger::record()'s dedup key
+//   (symbol|entryTs|engine|exitReason) blocks rows already in memory and now
+//   RETURNS false for them, so this is safe to call repeatedly. AccumEnginePnl
+//   fires ONLY for genuinely-new rows (record()==true) so engine attribution
+//   can't double-count.
+//   Two callers:
+//     - boot (verbose=true): the one-shot startup reload (was inline here).
+//     - the 30s maintenance thread (verbose=false): LEDGER SELF-HEAL. The boot
+//       reload is only a snapshot of what was on disk at boot; a close landing
+//       in the boot gap -- or on an engine whose position isn't restored from
+//       open_positions.dat, so its live re-close PHANTOM-DROPs -- shows in the
+//       CSV (/api/history) but not the in-memory header count, splitting the
+//       table from the header. This re-read closes that gap within 30s.
+//   Returns the count of NEWLY-added trades (0 = already in sync / no file).
+static int omega_sync_ledger_from_daily_csv(bool verbose)
+{
+    const auto t_now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+    struct tm ti_now{}; gmtime_s(&ti_now, &t_now);
+    char today_date[16];
+    snprintf(today_date, sizeof(today_date), "%04d-%02d-%02d",
+             ti_now.tm_year+1900, ti_now.tm_mon+1, ti_now.tm_mday);
+    const std::string reload_path =
+        log_root_dir() + "/trades/omega_trade_closes_" + today_date + ".csv";
+
+    std::ifstream reload_f(reload_path);
+    if (!reload_f.is_open()) {
+        if (verbose)
+            std::cout << "[OMEGA] Startup reload: no today CSV yet ("
+                      << reload_path << ") -- clean start\n";
+        return 0;
+    }
+
+    int added = 0, scanned = 0;
+    std::string line;
+    std::getline(reload_f, line); // skip header
+    while (std::getline(reload_f, line)) {
+        if (line.empty()) continue;
+        // Columns: trade_id(0), trade_ref(1), entry_ts_unix(2), entry_ts_utc(3),
+        // entry_wd(4), exit_ts_unix(5), exit_ts_utc(6), exit_wd(7), symbol(8),
+        // engine(9), side(10), entry_px(11), exit_px(12), tp(13), sl(14),
+        // size(15), gross_pnl(16), net_pnl(17), slip_e(18), slip_x(19),
+        // comm(20), ..., mfe(24), mae(25), hold_sec(26), spread(27), lat(28),
+        // regime(29), exit_reason(30), l2_imbalance(31), l2_live(32)
+        std::vector<std::string> tok;
+        tok.reserve(32);
+        std::string cell;
+        bool in_q = false;
+        for (char c : line) {
+            if (c == '"') { in_q = !in_q; continue; }
+            if (c == ',' && !in_q) { tok.push_back(cell); cell.clear(); continue; }
+            cell += c;
+        }
+        tok.push_back(cell);
+        if (tok.size() < 20) continue;
+
+        omega::TradeRecord tr;
+        tr.id         = std::stoi(tok[0].empty() ? "0" : tok[0]);
+        tr.entryTs    = std::stoll(tok[2].empty() ? "0" : tok[2]);
+        tr.exitTs     = std::stoll(tok[5].empty() ? "0" : tok[5]);
+        tr.symbol     = tok[8];
+        tr.engine     = tok[9];
+        tr.side       = tok[10];
+        tr.entryPrice = std::stod(tok[11].empty() ? "0" : tok[11]);
+        tr.exitPrice  = std::stod(tok[12].empty() ? "0" : tok[12]);
+        tr.tp         = std::stod(tok[13].empty() ? "0" : tok[13]);
+        tr.sl         = std::stod(tok[14].empty() ? "0" : tok[14]);
+        tr.size       = std::stod(tok[15].empty() ? "0" : tok[15]);
+        tr.pnl        = std::stod(tok[16].empty() ? "0" : tok[16]);
+        tr.net_pnl    = std::stod(tok[17].empty() ? "0" : tok[17]);
+        tr.slippage_entry = std::stod(tok[18].empty() ? "0" : tok[18]);
+        tr.slippage_exit  = std::stod(tok[19].empty() ? "0" : tok[19]);
+        tr.commission     = tok.size() > 20 ? std::stod(tok[20].empty() ? "0" : tok[20]) : 0.0;
+        tr.mfe            = tok.size() > 24 ? std::stod(tok[24].empty() ? "0" : tok[24]) : 0.0;
+        tr.mae            = tok.size() > 25 ? std::stod(tok[25].empty() ? "0" : tok[25]) : 0.0;
+        tr.spreadAtEntry  = tok.size() > 27 ? std::stod(tok[27].empty() ? "0" : tok[27]) : 0.0;
+        tr.regime         = tok.size() > 29 ? tok[29] : "";
+        tr.exitReason     = tok.size() > 30 ? tok[30] : "";
+        tr.l2_imbalance   = tok.size() > 31 ? std::stod(tok[31].empty() ? "0.5" : tok[31]) : 0.5;
+        tr.l2_live        = tok.size() > 32 ? (tok[32] == "1") : false;
+
+        if (tr.symbol.empty() || tr.entryTs == 0) continue;
+        ++scanned;
+
+        if (g_omegaLedger.record(tr)) {          // NEW row only (dedup-aware)
+            g_telemetry.AccumEnginePnl(tr.engine.c_str(), tr.net_pnl);
+            ++added;
+        }
+    }
+    reload_f.close();
+
+    if (verbose) {
+        if (scanned > 0)
+            std::cout << "[OMEGA] Startup reload: " << added
+                      << " trades from " << reload_path
+                      << " -> daily_pnl=$" << std::fixed << std::setprecision(2)
+                      << g_omegaLedger.dailyPnl() << "\n";
+        else
+            std::cout << "[OMEGA] Startup reload: " << reload_path
+                      << " found but empty (first run of day)\n";
+    }
+    return added;
+}
+
 int main(int argc, char* argv[])
 {
     g_singleton_mutex = CreateMutexA(NULL, TRUE, "Global\\Omega_Breakout_System");
@@ -1312,6 +1419,27 @@ int main(int argc, char* argv[])
             // ── CRYPTO LEDGER INBOUND (S-2026-06-24): route IBKRCrypto shadow-book closes
             //   into the Omega ledger (P&L total + GUI by engine tag). Opt-in. ──────────
             if (std::getenv("OMEGA_CRYPTO_INBOUND")) omega::ingest_crypto_inbound(g_omegaLedger);
+            // ── LEDGER SELF-HEAL (S-2026-07-16) ─────────────────────────────────────
+            //   Keep the in-memory ledger in lockstep with the authoritative daily
+            //   CSV. The boot reload is a one-shot snapshot of what was on disk at
+            //   boot; a close landing in the boot gap -- or on an engine whose
+            //   position isn't restored from open_positions.dat, so its live
+            //   re-close PHANTOM-DROPs -- ends up in /api/history (CSV) but not the
+            //   in-memory header count, splitting the trade table from the header.
+            //   record()'s dedup key makes the re-read idempotent (only missing
+            //   rows added; no double-count of engine PnL). No-op once in sync.
+            //   Gated on the same flag as the boot reload so a deliberate clean
+            //   slate (reload_trades_on_startup=false) is honoured here too.
+            //   NOTE: the boot reload above (~L900) parses the same CSV layout
+            //   inline; keep the two column maps in sync if the CSV format changes.
+            if (g_cfg.reload_trades_on_startup) {
+                const int healed = omega_sync_ledger_from_daily_csv(/*verbose=*/false);
+                if (healed > 0) {
+                    std::cout << "[LEDGER-SELFHEAL] +" << healed
+                              << " trade(s) re-synced from daily CSV (boot-gap closed)\n";
+                    std::cout.flush();
+                }
+            }
             // ── BIGCAP-IBKR LIVENESS WATCHDOG (2026-06-20) ──────────────────────────
             //   The 06-19 silent-death guard. The in-process IBKR engine can connect
             //   yet receive ZERO scanner/bar data during RTH and trade nothing, with no

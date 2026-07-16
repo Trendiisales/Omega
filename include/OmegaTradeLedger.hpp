@@ -182,7 +182,12 @@ inline void apply_realistic_costs(TradeRecord& tr,
 class OmegaTradeLedger
 {
 public:
-    void record(const TradeRecord& tr)
+    // Returns true if the trade was newly inserted, false if the dedup guard
+    // blocked it as a replay. Callers that re-sync from the CSV journal (boot
+    // reload + the periodic ledger self-heal in omega_main) use the return
+    // value to gate side effects (engine-PnL attribution) so a re-read of an
+    // already-recorded row cannot double-count. Void-context callers ignore it.
+    bool record(const TradeRecord& tr)
     {
         std::lock_guard<std::mutex> lk(m_mtx);
 
@@ -209,7 +214,7 @@ public:
                        tr.symbol.c_str(), tr.engine.c_str(),
                        (long long)tr.entryTs, tr.exitReason.c_str(), tr.net_pnl);
                 fflush(stdout);
-                return;
+                return false;
             }
             m_seen_keys.insert(key);
         }
@@ -234,6 +239,7 @@ public:
         m_gross_daily_pnl += tr.pnl;   // gross before costs -- for display transparency
         if (m_daily_pnl - m_peak_pnl < -m_max_dd) m_max_dd = m_peak_pnl - m_daily_pnl;
         if (m_daily_pnl > m_peak_pnl) m_peak_pnl = m_daily_pnl;
+        return true;
     }
 
     std::vector<TradeRecord> snapshot() const
