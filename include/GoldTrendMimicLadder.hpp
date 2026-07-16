@@ -76,6 +76,16 @@ public:
         // trade is genuinely in the black. Backtest: +2-3% win-rate, zero faded-breakout reds, at
         // ~8-10% lower net (skips fades that would have recovered + gives up the first be of a move).
         double be_entry_pct = 0.0;   // >0 = wait for +be% before entering; 0 = enter at trigger
+        // NO-PRE-BE-LOSS (operator hard rule feedback-no-prebe-loss-ever, S-2026-07-17): a BE-ENTRY
+        // leg (be_entry_pct>0) opens ONLY once the move has cleared +be_entry_pct off the trigger, so
+        // the round-trip cost is covered BY CONSTRUCTION (wire be_entry_pct >= rt_cost_bp/100). With
+        // this flag on, its pre-arm floor is BE FROM OPEN: any reversal to ret<=0 exits at 0 (BE_FLOOR)
+        // and NEVER books the -lc_pct LOSS_CUT -- so a leg can never book a negative clip before BE is
+        // covered, INCLUDING a straight-adverse leg that never showed MFE (which the pre_arm_be_pct
+        // ratchet alone did NOT protect). WINDOW_CAP is likewise BE-floored. Requires be_entry_pct>0
+        // (a leg opened at the trigger has no cost buffer to floor against). Default OFF -> every book
+        // with be_entry_pct==0 or the flag unset is byte-identical to the validated legacy behaviour.
+        bool   no_prebe_loss = false;
         int    pend_bars   = 6;      // cancel a PENDING leg if BE not made within this many bars
         int    cap_bars    = 12;     // INDEPENDENT window: flush an ENTERED leg after this many bars
         double rt_cost_bp  = 15.0;   // real round-trip cost (bp of entry) debited per clip
@@ -187,8 +197,13 @@ public:
             const double gb = cfg_.legs[(L.li >= 0 && L.li < (int)cfg_.legs.size()) ? L.li : 0].gb;
             bool closed = false;
             if (!L.armed) {
+                // NO-PRE-BE-LOSS (feedback-no-prebe-loss-ever): a BE-ENTRY leg is BE-floored from open --
+                // reversal to/through the entry exits at 0, never the -lc cut, incl. a straight-adverse leg.
+                if (cfg_.no_prebe_loss && cfg_.be_entry_pct > 0.0) {
+                    if (ret <= 0.0) { book_clip_(L, 0.0, ts_sec, "BE_FLOOR"); closed = true; changed = true; }
+                    else if (L.peak >= cfg_.arm_pct) L.armed = true;
                 // pre-arm BE-ratchet (see Config::pre_arm_be_pct): reversal to BE once shown MFE.
-                if (cfg_.pre_arm_be_pct > 0.0 && L.peak >= cfg_.pre_arm_be_pct) {
+                } else if (cfg_.pre_arm_be_pct > 0.0 && L.peak >= cfg_.pre_arm_be_pct) {
                     if (ret <= 0.0) { book_clip_(L, 0.0, ts_sec, "BE_FLOOR"); closed = true; changed = true; }
                 } else if (ret <= -cfg_.lc_pct) { book_clip_(L, ret, ts_sec, "LOSS_CUT"); closed = true; changed = true; }
                 else if (L.peak >= cfg_.arm_pct) L.armed = true;
@@ -240,9 +255,14 @@ public:
                 if (ret > L.peak)   L.peak   = ret;
                 if (ret < L.trough) L.trough = ret;
                 if (!L.armed) {
+                    // NO-PRE-BE-LOSS (feedback-no-prebe-loss-ever): a BE-ENTRY leg (opened at the
+                    // cost-covered level) is BE-floored FROM OPEN -- any reversal to ret<=0 exits at
+                    // 0 (BE_FLOOR), never the -lc cut, incl. a straight-adverse leg that showed no MFE.
+                    if (cfg_.no_prebe_loss && cfg_.be_entry_pct > 0.0) {
+                        if (ret <= 0.0) { book_clip_(L, 0.0, ts_sec, "BE_FLOOR"); closed = true; break; }
                     // pre-arm BE-ratchet: once shown pre_arm_be_pct MFE, a reversal exits at BE
                     // (never rides a pre-arm winner back to the -lc cut). 0 = disabled.
-                    if (cfg_.pre_arm_be_pct > 0.0 && L.peak >= cfg_.pre_arm_be_pct) {
+                    } else if (cfg_.pre_arm_be_pct > 0.0 && L.peak >= cfg_.pre_arm_be_pct) {
                         if (ret <= 0.0) { book_clip_(L, 0.0, ts_sec, "BE_FLOOR"); closed = true; break; }
                     } else if (ret <= -cfg_.lc_pct) { book_clip_(L, -cfg_.lc_pct, ts_sec, "LOSS_CUT"); closed = true; break; }
                     if (L.peak >= cfg_.arm_pct) L.armed = true;
@@ -252,7 +272,10 @@ public:
                 }
             }
             if (!closed && L.bars >= cfg_.cap_bars) {   // INDEPENDENT window flush at the close
-                const double ret = L.dir * (c / L.entry - 1.0) * 100.0;
+                double ret = L.dir * (c / L.entry - 1.0) * 100.0;
+                // NO-PRE-BE-LOSS: a BE-ENTRY leg reaching the cap can never book below BE
+                // (belt-and-braces; the pre-arm BE floor already exits any sub-BE leg first).
+                if (cfg_.no_prebe_loss && cfg_.be_entry_pct > 0.0 && ret < 0.0) ret = 0.0;
                 book_clip_(L, ret, ts_sec, "WINDOW_CAP"); closed = true;
             }
             if (!closed) still.push_back(std::move(L));

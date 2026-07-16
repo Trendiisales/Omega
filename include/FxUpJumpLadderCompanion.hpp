@@ -125,6 +125,25 @@ public:
         // pending leg if BE is not made within pend_bars. 0 = legacy enter-at-trigger.
         double be_entry_pct  = 0.0;       // >0 = wait for +be% before opening
         int    pend_bars     = 4;         // cancel a pending leg if BE not made within this many bars
+        // BE-FLOOR-ON-OPEN (operator hard rule feedback-no-prebe-loss-ever, S-2026-07-17). When
+        // true, EVERY booked clip is floored at break-even so this SHADOW companion can NEVER
+        // realize net<0 before cost is covered — the operator's GBPUSD "not allowed to be
+        // negative" fix. BE = the price at which the clip's net pct (rt_cost_bp AND the leg's
+        // Layer-3 weekend-carry haircut both folded in) == 0; a long clip's fill is floored UP
+        // to BE, a short clip's DOWN (std::max(entry,level) shape borrowed from the retired
+        // BeFloor family, WITHOUT touching those files). This is a single-chokepoint floor in
+        // book_clip_(), so it covers ALL three exits at once — the pre-arm LOSS_CUT (a straight
+        // reversal now books ~BE=0 instead of −5·thr), the post-arm TRAIL_STOP, and the
+        // WINDOW_EXIT flush. Crucially the arm/trail/LC/flush STATE MACHINE is UNCHANGED: same
+        // close triggers, same timing, same clip COUNT — only the booked amount is clamped, so
+        // booked_pct == max(unfloored_pct, 0) per clip. That STRICTLY dominates the unfloored
+        // book (net, both WF halves and worst-clip can only improve), so the validated edge is
+        // preserved while nNeg==0 is guaranteed by construction. It does NOT hard-stop at BE
+        // pre-arm (which would churn/kill winners — the documented crypto-sibling failure mode);
+        // legs still ride to their real triggers, only the P&L is floored. Pair with BE-ENTRY
+        // (be_entry_pct >= true RT) so a leg opens only after price has cleared cost and can then
+        // never book a loss. Default OFF = byte-identical baseline (zero blast radius).
+        bool   be_floor_on_open = false;
         // S-2026-07-08c DIRECTION flag: false = long UP-JUMP (original mechanics);
         // true = short DOWN-JUMP sign-mirror (USDCAD; fx_bothways_sweep.py dir=-1).
         bool   short_downjump = false;
@@ -422,11 +441,25 @@ private:
     // Book one clip at `fill` (stop level for trail/LC — resting-stop convention, in-calibration
     // with the research; observed close for window flush). pct is net of rt_cost_bp.
     void book_clip_(const Leg& L, double fill, int64_t ts_sec, bool fwd, const char* reason) noexcept {
+        // BE-FLOOR-ON-OPEN (feedback-no-prebe-loss-ever): clamp the exit fill to break-even so
+        // this clip can never realize net<0. BE = the price where the FULL net pct below (rt
+        // cost + the (1-f) Layer-3 weekend haircut) == 0: long floored UP to BE, short DOWN.
+        // Every exit (LOSS_CUT / TRAIL_STOP / WINDOW_EXIT) routes through here, so one clamp
+        // floors them all; triggers + timing + clip count are untouched -> booked pct becomes
+        // max(unfloored, 0), which strictly dominates the unfloored book (edge preserved,
+        // nNeg==0 by construction). Clamping the FILL (not just the pct) keeps the recorded
+        // exit price, ledger fill and Closed record consistent with the floored pct.
+        if (cfg_.be_floor_on_open && L.entry > 0.0) {
+            const double be = L.entry * (1.0 + d_ * (cfg_.rt_cost_bp / 1.0e4
+                              + (1.0 - cfg_.weekend_carry_frac) * L.wknd_gap_adj / 100.0));
+            fill = (d_ > 0.0) ? std::max(fill, be) : std::min(fill, be);
+        }
         double pct = (L.entry > 0)
                      ? d_ * (fill / L.entry - 1.0) * 100.0 - cfg_.rt_cost_bp / 100.0 : 0.0;
         // LAYER 3 (weekend carry-fraction): forgo the (1-f) share of the weekend gap move(s)
         // this leg carried -> size-scaled carry across the closed gap (apply_layer3() math).
         if (cfg_.weekend_carry_frac < 1.0) pct -= (1.0 - cfg_.weekend_carry_frac) * L.wknd_gap_adj;
+        if (cfg_.be_floor_on_open && pct < 0.0) pct = 0.0;   // fp-safety: never a hair negative
         if (!fwd) return;
         if (!L.token.empty() && close_fn_) close_fn_(cfg_.live_sym, d_ > 0, cfg_.lot, fill, L.token);
         if (ledger_fn_) ledger_fn_(leg_engine_(L.ti), cfg_.live_sym, d_ > 0, L.entry, fill, cfg_.lot, L.entry_ts, ts_sec, reason);

@@ -7,13 +7,17 @@
 // consumes it via include/OmegaBeCascadeBook.hpp (namespace omega wrapper). Provenance
 // + per-symbol validation table: outputs/ (S-2026-07-16 becascade wire).
 //
-// ADVERSE-PROTECTION: backtested verdict — FLOORED CASCADE, cold-loss-cut + BE-floor.
-//   Config used by every Omega cell: mimic_floor=true (post-arm BE floor: a leg can
-//   NEVER book negative after arming) + loss_cut_bp=150 (an UNARMED leg that goes
-//   -150bp adverse is cut = worst clip floored at ~-155bp, verified across all 47
-//   cells) + stagger_mode=1 BE_CASCADE (next leg releases only once every open leg is
-//   BE => at most one un-BE'd leg at a time). SHADOW/PAPER: emits its own ClipRecord
-//   ledger, never places an order, never calls the parent (companion-independent).
+// ADVERSE-PROTECTION: backtested verdict — FLOORED CASCADE, NEVER-PRE-BE-LOSS (BE-ENTRY).
+//   Config used by every Omega cell (S-2026-07-17, feedback-no-prebe-loss-ever): mimic_floor=true
+//   (post-arm BE floor: a leg can NEVER book negative after arming) + confirm_bp=3xRT BE-ENTRY
+//   (a leg stays FLAT, books nothing, until fav>=confirm >= the BE cost) + confirm_anchor_epx=true
+//   (le stays = epx so hwm=cur >= le*(1+RT) => the leg is floored ON OPEN at break-even) +
+//   loss_cut_bp=0 (no pre-arm cut — a leg never opens below BE). => worst clip is net>=0 (nNeg=0),
+//   verified across all 23 ACTIVE cells (backtest/omega_becascade_prebe_bt.cpp). This REPLACES the
+//   prior confirm_bp=0 + loss_cut_bp=150 config whose PREBE_CUT could book a ~-155bp clip before BE.
+//   + stagger_mode=1 BE_CASCADE (next leg releases only once every open leg is BE => at most one
+//   un-BE'd leg at a time). SHADOW/PAPER: emits its own ClipRecord ledger, never places an order,
+//   never calls the parent (companion-independent).
 // ═════════════════════════════════════════════════════════════════════════════
 // UpJumpLadderCompanion — TIERED-2 + SELF-FUNDING LADDER clip book (S-2026-07-05b).
 //
@@ -88,6 +92,12 @@ public:
         double  confirm_bp    = 25.0;  // OPTION-B confirmed-entry: a leg stays FLAT (books nothing,
                                        // pays no cost) until fav>=confirm_bp; a never-confirmed leg
                                        // never opens (fixes the BTC -141.39bp never-positive flush).
+        bool    confirm_anchor_epx = false;  // S-2026-07-17 NEVER-PRE-BE-LOSS (feedback-no-prebe-loss-ever):
+                                       // when confirm_bp>0, DON'T reset le to the confirm price on open —
+                                       // keep le=epx (the window/jump entry). Then a leg that opens at
+                                       // epx*(1+confirm) with confirm>=RT is ALREADY floored on open
+                                       // (hwm=cur>=le*(1+RT)) so its worst clip = BE (net>=0). Removes the
+                                       // pre-arm window entirely => no PREBE_CUT loss. Requires confirm_bp>RT.
         int64_t tf_secs       = 3600;  // H1
         double  round_trip_bp = 20.0;  // 0.20% RT Binance spot taker
         // ── BE-FLOOR mode (S-2026-07-05 resume, operator restated spec) ──────────
@@ -837,7 +847,7 @@ private:
         if (!lg.open) {
             if (lg.confirm > 0.0 && fav * 100.0 < lg.confirm) return false;   // OPTION-B: not yet confirmed -> stay flat, book nothing
             lg.open = true; lg.open_ts = bar * cfg_.tf_secs * 1000; lg.open_bar = bar;
-            if (lg.confirm > 0.0 || lg.seeded_flat) lg.le = cur;               // le = confirm price / first live mark (rehydrate-FLAT: never backdated)
+            if ((lg.confirm > 0.0 && !cfg_.confirm_anchor_epx) || lg.seeded_flat) lg.le = cur;  // le = confirm price / first live mark (rehydrate-FLAT: never backdated). confirm_anchor_epx keeps le=epx so the leg is floored-on-open at window-entry BE (no pre-arm loss).
             lg.mfe = fav; lg.ext_bar = bar;
             if (cfg_.mimic_floor) { lg.hwm = lg.le; lg.floored = false; lg.stop_px = -1.0; }     // floor gauged from the fill (le)
         }

@@ -1,0 +1,38 @@
+# scripts/prebe_loss_allowlist.txt
+# ---------------------------------------------------------------------
+# Allowlist for scripts/prebe_loss_audit.sh — the PRE-BE LOSS gate.
+#
+# Format: one header BASENAME per line (no .hpp), followed by a documented
+# reason. Blank lines and lines starting with # are ignored. First
+# whitespace-token = the basename matched against include/<basename>.hpp.
+#
+# A basename belongs here ONLY if it books a clip that CAN settle net<0 before
+# break-even is covered (a risk booking site) AND has no BE-floor-on-open marker
+# yet. Legitimate categories:
+#   * BACKFILL-OWED — a currently-vulnerable ACTIVE engine, fix landing this
+#     session. It stays here until a confirm_anchor_epx / be_floor_on_open marker
+#     lands; then the gate recognises it compliant WITHOUT this entry and WARNS
+#     the entry as stale (remove it). THE LIST SHOULD SHRINK TO EMPTY as the
+#     session's floor fixes land.
+#   * RETIRED / DORMANT — a header kept for reference that must NOT be re-enabled
+#     until it gains a floor (note the retirement).
+#   * OUT-OF-CLASS — a directional real-position engine mis-caught by the class
+#     derivation (a real position is not a companion clip; the no-prebe-loss rule
+#     is about ADDITIVE companion books, not the ride-to-flip real trade).
+#
+# Adding an ACTIVE engine here to dodge the gate — instead of flooring it — is a
+# visible red flag in review. Do not do it. Floor the cell.
+# ---------------------------------------------------------------------
+
+# --- BACKFILL-OWED: currently-vulnerable ACTIVE companions/ladders/mimics.
+#     Grandfathered S-2026-07-17 so the gate goes green while the debt is
+#     visible; the BE-floor-on-open fixes are landing THIS session (other agents).
+#     Each carries an ADVERSE-PROTECTION verdict (passes adverse audit) but STILL
+#     books a pre-BE-negative clip via the listed reasons — exactly the hole this
+#     gate exposes. Remove each once its floor marker lands.
+
+# BeCascadeCompanionEngine + FxUpJumpLadderCompanion RETIRED from this allowlist
+# S-2026-07-17c: their BE-floor-on-open fixes LANDED (confirm_anchor_epx / be_floor_on_open
+# markers present) so the gate now recognises them compliant WITHOUT an entry. Do not re-add.
+GoldTrendMimicLadder        # backfill-owed S-2026-07-17: book_clip_ pre-arm LOSS_CUT (-lc_pct) / TRAIL_STOP / WINDOW_CAP book negative ret; no_prebe_loss BE_FLOOR fix landed S-17c for COMPLIANCE (nNeg=0) but 2 cells (XauTf2h/MgcFastDon) edge-regressed + recon shadow cells need per-cell real-entry re-val -> kept grandfathered until edge certified. Audit marker not the static-recognised set (per-cell engine_init enablement).
+StockDayMoverLadderCompanion # backfill-owed S-2026-07-17: book_clip_ LOSS_CUT / WINDOW_EXIT can book below entry pre-arm. Floor-on-open fix landing this session.

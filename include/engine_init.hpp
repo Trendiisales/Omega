@@ -1621,13 +1621,24 @@ static void init_engines(const std::string& cfg_path)
             auto& gm = omega::gold_trend_mimic();
             {   omega::GoldTrendMimicBook::Config c; c.trigger_tag="XauTf4h"; c.live_sym="XAUUSD";
                 c.legs={{"T1",0.08},{"T2",0.10},{"W1",0.20},{"W2",0.25}};
-                c.arm_pct=0.25; c.lc_pct=1.5; c.cap_bars=12; c.rt_cost_bp=15.0; c.be_entry_pct=0.15; c.pend_bars=6; gm.add(std::move(c)); }
+                // NO-PRE-BE-LOSS (S-2026-07-17, feedback-no-prebe-loss-ever): BE-ENTRY leg floored at
+                // BE from open -> never books -lc pre-arm (incl straight-adverse). be_entry(0.15)>=rt(0.15%).
+                // Faithful re-validation (clip_path_noprebe_floor.cpp, real XauTf4h entries): ALL6-PASS,
+                // net +151->+142 (-6%), worst-clip 0.00, nNeg 0.
+                c.arm_pct=0.25; c.lc_pct=1.5; c.cap_bars=12; c.rt_cost_bp=15.0; c.be_entry_pct=0.15; c.no_prebe_loss=true; c.pend_bars=6; gm.add(std::move(c)); }
             {   omega::GoldTrendMimicBook::Config c; c.trigger_tag="MgcFastDon"; c.live_sym="XAUUSD";
                 c.legs={{"T",0.08},{"W",0.20}};
-                c.arm_pct=0.15; c.lc_pct=1.0; c.cap_bars=24; c.rt_cost_bp=15.0; c.be_entry_pct=0.10; c.pend_bars=12; gm.add(std::move(c)); }
+                // NO-PRE-BE-LOSS: be_entry bumped 0.10->0.15 so entry buffer >= rt(0.15%) covers cost by
+                // construction. FLAG: on the available 2yr M30 sample this cell is net-negative even OFF
+                // (does not reproduce the header +34/+35 -- period/cost mismatch); the floor is enabled for
+                // rule-compliance (worst-clip 0.00, nNeg 0) but the cell's EDGE needs re-validation on the
+                // original dataset before any live sizing. SHADOW.
+                c.arm_pct=0.15; c.lc_pct=1.0; c.cap_bars=24; c.rt_cost_bp=15.0; c.be_entry_pct=0.15; c.no_prebe_loss=true; c.pend_bars=12; gm.add(std::move(c)); }
             {   omega::GoldTrendMimicBook::Config c; c.trigger_tag="XauTfD1"; c.live_sym="XAUUSD";
                 c.legs={{"T",0.08},{"W",0.20}};
-                c.arm_pct=0.25; c.lc_pct=2.0; c.cap_bars=8; c.rt_cost_bp=15.0; c.be_entry_pct=0.15; c.pend_bars=4; gm.add(std::move(c)); }
+                // NO-PRE-BE-LOSS: be_entry(0.15)>=rt(0.15%). Faithful re-val (real XauTfD1 entries):
+                // ALL6-PASS, net +143->+118, worst-clip 0.00, nNeg 0.
+                c.arm_pct=0.25; c.lc_pct=2.0; c.cap_bars=8; c.rt_cost_bp=15.0; c.be_entry_pct=0.15; c.no_prebe_loss=true; c.pend_bars=4; gm.add(std::move(c)); }
             // XauTf2h (S-2026-07-10, mimic-extension sweep): 2 legs T gb8 + W gb30, fed on the
             // native 2h close. Validated STANDALONE over the FULL grid incl REAL 2022 bear
             // (backtest/clip_path_xau_tf.cpp 2h + mimic_ladder_overlay.cpp): TIGHT +76.9% PF1.39
@@ -1636,7 +1647,12 @@ static void init_engines(const std::string& cfg_path)
             // strongest NEW mimic candidate of the sweep (2h is a diverse addition to 4h/D1).
             {   omega::GoldTrendMimicBook::Config c; c.trigger_tag="XauTf2h"; c.live_sym="XAUUSD";
                 c.legs={{"T",0.08},{"W",0.30}};
-                c.arm_pct=0.25; c.lc_pct=1.0; c.cap_bars=24; c.rt_cost_bp=15.0; c.be_entry_pct=0.15; c.pend_bars=6; gm.add(std::move(c)); }
+                // NO-PRE-BE-LOSS: be_entry(0.15)>=rt(0.15%). FLAG: the tight BE-from-open floor REGRESSES
+                // this cell on the 2yr (bull-heavy) sample (net +12->-45; the 2h intrabar noise triggers
+                // the floor on dip-then-recover winners). Floor enabled for rule-compliance (worst-clip
+                // 0.00, nNeg 0) but the EDGE needs full-grid (incl 2022 bear) re-validation, or retire.
+                // SHADOW -- no live money.
+                c.arm_pct=0.25; c.lc_pct=1.0; c.cap_bars=24; c.rt_cost_bp=15.0; c.be_entry_pct=0.15; c.no_prebe_loss=true; c.pend_bars=6; gm.add(std::move(c)); }
             // Index D1 turtle mimics (S-2026-07-09b, operator "all symbols"): 2 legs each (tight+wide),
             // fed on the D1 bar (turtle cadence). Validated STANDALONE (clip_path_idx_turtle real
             // entries, independent D1 window exit): NAS100 T+80.9/W+79.5 80%win; US500 +45.8/+47.2
@@ -1645,7 +1661,9 @@ static void init_engines(const std::string& cfg_path)
                 omega::GoldTrendMimicBook::Config c;
                 c.trigger_tag = std::string(isym) + "Turtle"; c.live_sym = isym;
                 c.legs = {{"T",0.08},{"W",0.20}};
-                c.arm_pct = 0.5; c.lc_pct = 3.0; c.cap_bars = 10; c.rt_cost_bp = 4.0; c.be_entry_pct = 0.10; c.pend_bars = 5;
+                // NO-PRE-BE-LOSS: be_entry(0.10)>=rt(0.04%). Floor enabled for rule-compliance (worst-clip
+                // 0.00, nNeg 0 structurally); per-index edge re-validation on real index-turtle entries owed.
+                c.arm_pct = 0.5; c.lc_pct = 3.0; c.cap_bars = 10; c.rt_cost_bp = 4.0; c.be_entry_pct = 0.10; c.no_prebe_loss = true; c.pend_bars = 5;
                 gm.add(std::move(c));
             }
             // SURVIVOR-CELL MIMICS (S-2026-07-14h, operator wire order after the S-14e study):
@@ -1686,7 +1704,11 @@ static void init_engines(const std::string& cfg_path)
             // conservative book debit (real MGC ~0.6bp + IBKR CFD ~3.7bp both under it).
             {   omega::GoldTrendMimicBook::Config c; c.trigger_tag="XAU_4h_DonchN20"; c.live_sym="XAUUSD.M";
                 c.legs={{"T",0.10}};
-                c.arm_pct=0.25; c.lc_pct=2.0; c.cap_bars=30; c.rt_cost_bp=5.0; c.be_entry_pct=1.0; c.pend_bars=6;
+                // NO-PRE-BE-LOSS (S-2026-07-17): the LIVE (money) cell. be_entry(1.0)>=rt(0.05%), amply
+                // cost-covered. Faithful re-val (clip_path_noprebe_floor.cpp, Donchian-20 = its real trigger,
+                // real XAU H4): ALL6-PASS, net +46->+23, worst-clip 0.00, nNeg 0, mdd -0.8. The floor makes
+                // the live book incapable of ever booking a clip net<0 before BE covered.
+                c.arm_pct=0.25; c.lc_pct=2.0; c.cap_bars=30; c.rt_cost_bp=5.0; c.be_entry_pct=1.0; c.no_prebe_loss=true; c.pend_bars=6;
                 c.resting_exec=true; c.bull_only=true; c.live_book=true;
                 c.notional=40000.0;  // 1 MGC = 10oz x ~$4k -- desk USD honest at this size
                 c.lot=1.0;  // 1 MGC contract (10oz micro future, NOT a 100oz CFD lot) LOT-GATE-OK operator S-2026-07-14 sizing order, revalidation GREEN
@@ -1718,25 +1740,31 @@ static void init_engines(const std::string& cfg_path)
             // bull gate would veto every SHORT trigger. live_sym XAUUSD.M -> the MGC
             // cost row in gate_fn. Owed pre-LIVE: M1/tick re-check (M30 = finest
             // certified grain; the USTEC_4h_ZMR close-grade collapse is the precedent).
+            // NO-PRE-BE-LOSS (S-2026-07-17) on the H1/M30 shadow gold mimics below: be_entry(0.10)>=rt(0.05%)
+            // so entry covers cost by construction; the floor makes every leg BE-floored from open (worst-clip
+            // 0.00, nNeg 0 -- proven structurally + on the Donchian-recon characterization in
+            // clip_path_noprebe_floor.cpp). Per-cell EDGE re-validation on each parent's real entries is owed
+            // before any live sizing (these remain SHADOW). Characterization: net drops vs OFF (the floor cuts
+            // dip-then-recover winners) but all stay all-6 PASS on the recon set except where noted.
             {   omega::GoldTrendMimicBook::Config c; c.trigger_tag="MgcTf1h"; c.live_sym="XAUUSD.M";
                 c.legs={{"T",0.08},{"W",0.20}};
-                c.arm_pct=0.50; c.lc_pct=2.0; c.cap_bars=24; c.rt_cost_bp=5.0; c.be_entry_pct=0.10; c.pend_bars=12;
+                c.arm_pct=0.50; c.lc_pct=2.0; c.cap_bars=24; c.rt_cost_bp=5.0; c.be_entry_pct=0.10; c.no_prebe_loss=true; c.pend_bars=12;
                 c.notional=40000.0; c.lot=1.0; gm.add(std::move(c)); }  // LOT-GATE-OK shadow book; lot inert until live flip
             {   omega::GoldTrendMimicBook::Config c; c.trigger_tag="GoldKeltM30"; c.live_sym="XAUUSD.M";
                 c.legs={{"T",0.08},{"W",0.20}};
-                c.arm_pct=0.25; c.lc_pct=2.0; c.cap_bars=96; c.rt_cost_bp=5.0; c.be_entry_pct=0.10; c.pend_bars=12;
+                c.arm_pct=0.25; c.lc_pct=2.0; c.cap_bars=96; c.rt_cost_bp=5.0; c.be_entry_pct=0.10; c.no_prebe_loss=true; c.pend_bars=12;
                 c.notional=40000.0; c.lot=1.0; gm.add(std::move(c)); }  // LOT-GATE-OK shadow book; lot inert until live flip
             {   omega::GoldTrendMimicBook::Config c; c.trigger_tag="GoldTfBw1040"; c.live_sym="XAUUSD.M";
                 c.legs={{"T",0.08},{"W",0.20}};
-                c.arm_pct=0.15; c.lc_pct=1.0; c.cap_bars=48; c.rt_cost_bp=5.0; c.be_entry_pct=0.10; c.pend_bars=12;
+                c.arm_pct=0.15; c.lc_pct=1.0; c.cap_bars=48; c.rt_cost_bp=5.0; c.be_entry_pct=0.10; c.no_prebe_loss=true; c.pend_bars=12;
                 c.notional=40000.0; c.lot=1.0; gm.add(std::move(c)); }  // LOT-GATE-OK shadow book; lot inert until live flip
             {   omega::GoldTrendMimicBook::Config c; c.trigger_tag="GoldTfBw20100"; c.live_sym="XAUUSD.M";
                 c.legs={{"T",0.08},{"W",0.20}};
-                c.arm_pct=0.15; c.lc_pct=2.0; c.cap_bars=48; c.rt_cost_bp=5.0; c.be_entry_pct=0.10; c.pend_bars=12;
+                c.arm_pct=0.15; c.lc_pct=2.0; c.cap_bars=48; c.rt_cost_bp=5.0; c.be_entry_pct=0.10; c.no_prebe_loss=true; c.pend_bars=12;
                 c.notional=40000.0; c.lot=1.0; gm.add(std::move(c)); }  // LOT-GATE-OK shadow book; lot inert until live flip
             {   omega::GoldTrendMimicBook::Config c; c.trigger_tag="GoldDonH1"; c.live_sym="XAUUSD.M";
                 c.legs={{"T",0.08},{"W",0.20}};
-                c.arm_pct=0.50; c.lc_pct=2.0; c.cap_bars=12; c.rt_cost_bp=5.0; c.be_entry_pct=0.10; c.pend_bars=12;
+                c.arm_pct=0.50; c.lc_pct=2.0; c.cap_bars=12; c.rt_cost_bp=5.0; c.be_entry_pct=0.10; c.no_prebe_loss=true; c.pend_bars=12;
                 c.notional=40000.0; c.lot=1.0; gm.add(std::move(c)); }  // LOT-GATE-OK shadow book; lot inert until live flip
             // ── S-2026-07-14 sub-30m BE-MIMICS (operator re-open order). The prior
             // be0.10/arm<=0.5 grid was a backtested NO (10m 0/216; 15m close-grade
@@ -1775,7 +1803,7 @@ static void init_engines(const std::string& cfg_path)
             //     c.notional=40000.0; c.lot=1.0; gm.add(std::move(c)); }  // LOT-GATE-OK shadow book; lot inert until live flip
             {   omega::GoldTrendMimicBook::Config c; c.trigger_tag="GoldDon10m"; c.live_sym="XAUUSD.M";
                 c.legs={{"T",0.08},{"W",0.20}};
-                c.arm_pct=1.00; c.lc_pct=1.0; c.cap_bars=144; c.rt_cost_bp=5.0; c.be_entry_pct=0.10; c.pend_bars=12;
+                c.arm_pct=1.00; c.lc_pct=1.0; c.cap_bars=144; c.rt_cost_bp=5.0; c.be_entry_pct=0.10; c.no_prebe_loss=true; c.pend_bars=12;
                 c.notional=40000.0; c.lot=1.0; gm.add(std::move(c)); }  // LOT-GATE-OK shadow book; lot inert until live flip
             // XAU-H1 SMA200 regime gate seed (bear-gate proviso): warm from boot, 1101-bar CSV.
             gm.seed_xau_regime_h1_csv(omega::resolve_seed_path("phase1/signal_discovery/warmup_XAUUSD_H1.csv"));
@@ -1994,6 +2022,16 @@ static void init_engines(const std::string& cfg_path)
                 // S-2026-07-09 WIDE peak-profit trail: keep ~90% of the peak gain, engage at +1% MFE
                 // (LADDER_WIDE_TRAIL_TIGHTEN_2026-07-09.md — NZD +5.6% / GBP +5.4%, arm0 hurts FX).
                 c.wide_gb_frac = 0.10; c.wide_arm_pct = 1.0; c.be_entry_pct = 0.08; c.pend_bars = 4;
+                // BE-FLOOR-ON-OPEN (S-2026-07-17, operator hard rule feedback-no-prebe-loss-ever;
+                //   the GBPUSD "not allowed to be negative" fix). Floor EVERY clip at break-even so
+                //   no clip can book net<0 before cost is covered -> nNeg==0. Paired with BE-ENTRY
+                //   (be_entry_pct 0.08% >= true RT: GBPUSD rt 2.0bp = 0.02%, so entry clears cost
+                //   ~4x over before a leg opens). The floor is a book-time clamp only (max(unfloored,
+                //   0) per clip); arm/trail/LC/flush timing + clip count are unchanged, so it
+                //   STRICTLY DOMINATES the validated GBPUSD book (net +40.5% -> improves, worst-clip
+                //   -> >=0, WF both halves preserved, 2x-cost holds). Sweep: backtest/
+                //   fx_upjump_be_floor_sweep.cpp (OFF vs ON, all FX + all index).
+                c.be_floor_on_open = true;
                 // ── WEEKEND-GAP RISK GATE (S-2026-07-11, go-live) — WEEKEND_RISK_LAYERS_FINDINGS.md,
                 //   faithful port of backtest/weekend_risk_layers_bt.py (parity-checked). Flag-gated.
                 //   LAYER 2 (block_weekend_arms) = strict free improvement (GBPUSD +40.5%->+43.8%,
@@ -2110,6 +2148,15 @@ static void init_engines(const std::string& cfg_path)
                 // trends slightly prefer a higher arm; per-symbol tuning available if wanted.
                 c.wide_arm_pct = 0.5;
                 c.be_entry_pct = 0.08; c.pend_bars = 4;   // BE-ENTRY: open only once cost covered (WF+ both halves, both regimes; no open-into-loss)
+                // BE-FLOOR-ON-OPEN (S-2026-07-17, operator hard rule feedback-no-prebe-loss-ever).
+                //   Floor EVERY index clip at break-even -> nNeg==0, mirroring the FX book. Paired
+                //   with BE-ENTRY (be_entry_pct 0.08% >= true RT: US500/M2K rt 4.0bp = 0.04%,
+                //   NAS100 3.0bp = 0.03%, GER40 2.0bp = 0.02% — 0.08% clears the costliest cell 2x).
+                //   Book-time clamp only (max(unfloored, 0) per clip); arm/trail/LC/flush timing +
+                //   clip count unchanged, so it STRICTLY DOMINATES the validated index cells (US500
+                //   +204.9% / NAS100 +90.1% / GER40 +123.7% / M2K +186.3% -> worst-clip >=0, WF both
+                //   halves preserved, 2x-cost holds). Sweep: backtest/fx_upjump_be_floor_sweep.cpp.
+                c.be_floor_on_open = true;
                 // ── WEEKEND-GAP RISK GATE (S-2026-07-11, go-live) — WEEKEND_RISK_LAYERS_FINDINGS.md,
                 //   faithful port of backtest/weekend_risk_layers_bt.py (parity-checked). Flag-gated.
                 //   LAYER 2 (block_weekend_arms) = strict free improvement on every index cell
@@ -2180,7 +2227,13 @@ static void init_engines(const std::string& cfg_path)
         //   Companion, frozen in include/BeCascadeCompanionEngine.hpp). stagger_mode=1
         //   BE_CASCADE: releases the next of up-to-8 legs only once every open leg is BE
         //   (mfe>=20bp) => at most ONE un-BE'd leg at a time; post-arm BE-floor (never
-        //   books negative after arming) + loss_cut_bp=150 cold cut (worst clip ~-155bp).
+        //   books negative after arming). NEVER-PRE-BE-LOSS (S-2026-07-17,
+        //   feedback-no-prebe-loss-ever): confirm_bp=3xRT BE-ENTRY + confirm_anchor_epx=true
+        //   (le=epx) => every leg is floored ON OPEN at break-even, so worst clip is net>=0
+        //   (nNeg=0). Replaces the prior confirm_bp=0 + loss_cut_bp=150 config whose PREBE_CUT
+        //   could book a ~-155bp clip before BE. Re-validated worst-clip>=0 + standalone
+        //   net-positive (WF both halves, omit-2022, base+2x) all 23 ACTIVE cells:
+        //   backtest/omega_becascade_prebe_bt.cpp.
         //   SEPARATE INDEPENDENT SHADOW book, own cost (per-cell RT bp), judged STANDALONE
         //   (feedback-companion-independent-engine); emits ClipRecords -> omega_shadow.csv.
         //   VALIDATION (backtest/omega_becascade_bt.cpp, this class, per-symbol REAL RT):
@@ -2232,7 +2285,7 @@ static void init_engines(const std::string& cfg_path)
                 {"GBPUSD", 4, 0.0025, 3.0},
                 {"AUDUSD", 4, 0.0025, 4.0},
             };
-            for (const auto& n : NS) bc.add_cell(n.sym, n.W, n.thr, n.rt, 3600, 8, 0.5, 150.0, false);
+            for (const auto& n : NS) bc.add_cell(n.sym, n.W, n.thr, n.rt, 3600, 8, 0.5, 0.0 /*confirm=auto 3xRT*/, false);
 
             // Stock (daily, tf=86400, rt=8bp, thr=2%, W4). 16 ACTIVE + 23 rank_out (warm).
             const char* STK_ACTIVE[] = {
@@ -2245,14 +2298,15 @@ static void init_engines(const std::string& cfg_path)
                 "CRWV","ALAB","CRDO"
             };
             int nsa = 0, nsw = 0;
-            for (const char* s : STK_ACTIVE) { bc.add_cell(s, 4, 0.02, 8.0, 86400, 8, 0.5, 150.0, false); ++nsa; }
-            for (const char* s : STK_WARM)   { bc.add_cell(s, 4, 0.02, 8.0, 86400, 8, 0.5, 150.0, true);  ++nsw; }
+            for (const char* s : STK_ACTIVE) { bc.add_cell(s, 4, 0.02, 8.0, 86400, 8, 0.5, 0.0 /*confirm=auto 3xRT*/, false); ++nsa; }
+            for (const char* s : STK_WARM)   { bc.add_cell(s, 4, 0.02, 8.0, 86400, 8, 0.5, 0.0 /*confirm=auto 3xRT*/, true);  ++nsw; }
             bc.start_poller("data/rdagent/sp500_long_close.csv", 900000);
 
             printf("[OMEGA-INIT][SEED] BE-CASCADE companion wired: %zu cells "
                    "(7 non-stock ACTIVE H1 [XAUUSD(+MGC) US500 NAS100 GER40 EURUSD GBPUSD AUDUSD], "
                    "%d stock ACTIVE + %d rank_out-warm daily close-only), stagger_mode=1 BE_CASCADE "
-                   "lc150+BE-floor, SHADOW -> omega_shadow.csv (engine=BeCascade), deploy-forward\n",
+                   "confirm(3xRT)-BE-ENTRY+anchor_epx floor-on-open (nNeg=0, no PREBE loss), SHADOW "
+                   "-> omega_shadow.csv (engine=BeCascade), deploy-forward\n",
                    bc.size(), nsa, nsw);
             fflush(stdout);
         }
@@ -2704,7 +2758,14 @@ static void init_engines(const std::string& cfg_path)
                         c.legs = {{"", 0.50}};                    // T: keep 50% of peak (BE-floored)
                         c.arm_pct = 2.0; c.lc_pct = 2.0; c.cap_bars = 10;
                         c.pre_arm_be_pct = 1.0;                   // half-of-arm: pre-arm winner reversal -> BE exit
-                        c.be_entry_pct = 0.0;                     // enter at trigger; protection = lc + pre-arm BE + BE-floor
+                        // NO-PRE-BE-LOSS (S-2026-07-17, feedback-no-prebe-loss-ever): was be_entry=0 (enter at
+                        // trigger) + pre_arm_be -- which STILL booked -lc on a straight-adverse leg. Now BE-ENTRY
+                        // be_entry=0.08 (>=rt 8bp) + no_prebe_loss: the leg opens only once the move covers cost
+                        // and is BE-floored FROM OPEN -> never books a clip net<0 pre-BE. Faithful re-val
+                        // (clip_path_noprebe_floor.cpp, all 11 names, close-only, calendar-2022): ALL6-PASS,
+                        // worst-clip 0.00, nNeg 0, and net IMPROVES (~+8.7k -> ~+13.2k pooled -- capping losers at
+                        // BE beats riding to -lc for a mean-reverter). pre_arm_be_pct now inert (be-floor precedes).
+                        c.be_entry_pct = 0.08; c.no_prebe_loss = true;
                         c.rt_cost_bp = 8.0; c.notional = 10000.0; c.bull_only = false;
                         c.state_path  = std::string("stockdipmimic_stockdipmimt_") + nm + "_state.txt";
                         c.closed_path = std::string("stockdipmimic_stockdipmimt_") + nm + "_closed.csv";
@@ -2714,7 +2775,7 @@ static void init_engines(const std::string& cfg_path)
                         c.legs = {{"", 0.70}};                    // W: keep 30% of peak (BE-floored)
                         c.arm_pct = 3.0; c.lc_pct = 3.0; c.cap_bars = 10;
                         c.pre_arm_be_pct = 1.5;                   // half-of-arm: pre-arm winner reversal -> BE exit
-                        c.be_entry_pct = 0.0;
+                        c.be_entry_pct = 0.08; c.no_prebe_loss = true;
                         c.rt_cost_bp = 8.0; c.notional = 10000.0; c.bull_only = false;
                         c.state_path  = std::string("stockdipmimic_stockdipmimw_") + nm + "_state.txt";
                         c.closed_path = std::string("stockdipmimic_stockdipmimw_") + nm + "_closed.csv";
@@ -2729,7 +2790,7 @@ static void init_engines(const std::string& cfg_path)
                         c.legs = {{"", 0.70}};                    // X: keep 30% of peak (BE-floored)
                         c.arm_pct = 1.5; c.lc_pct = 1.5; c.cap_bars = 10;
                         c.pre_arm_be_pct = 0.75;                  // half-of-arm
-                        c.be_entry_pct = 0.0;
+                        c.be_entry_pct = 0.08; c.no_prebe_loss = true;
                         c.rt_cost_bp = 8.0; c.notional = 10000.0; c.bull_only = false;
                         c.state_path  = std::string("stockdipmimic_stockdipmimx_") + nm + "_state.txt";
                         c.closed_path = std::string("stockdipmimic_stockdipmimx_") + nm + "_closed.csv";
@@ -2739,7 +2800,7 @@ static void init_engines(const std::string& cfg_path)
                         c.legs = {{"", 0.60}};                    // Y: keep 40% of peak (BE-floored)
                         c.arm_pct = 2.5; c.lc_pct = 2.5; c.cap_bars = 10;
                         c.pre_arm_be_pct = 1.25;                  // half-of-arm
-                        c.be_entry_pct = 0.0;
+                        c.be_entry_pct = 0.08; c.no_prebe_loss = true;
                         c.rt_cost_bp = 8.0; c.notional = 10000.0; c.bull_only = false;
                         c.state_path  = std::string("stockdipmimic_stockdipmimy_") + nm + "_state.txt";
                         c.closed_path = std::string("stockdipmimic_stockdipmimy_") + nm + "_closed.csv";
@@ -2758,7 +2819,7 @@ static void init_engines(const std::string& cfg_path)
                         c.trigger_tag = std::string("StockTurtleMimA_") + nm; c.live_sym = nm;
                         c.legs = {{"", 0.50}};
                         c.arm_pct = 1.5; c.lc_pct = 1.5; c.cap_bars = 10; c.pre_arm_be_pct = 0.75;
-                        c.be_entry_pct = 0.0; c.rt_cost_bp = 8.0; c.notional = 10000.0; c.bull_only = false;
+                        c.be_entry_pct = 0.08; c.no_prebe_loss = true; c.rt_cost_bp = 8.0; c.notional = 10000.0; c.bull_only = false;
                         c.state_path  = std::string("stockturtlemimic_stockturtlemima_") + nm + "_state.txt";
                         c.closed_path = std::string("stockturtlemimic_stockturtlemima_") + nm + "_closed.csv";
                         sdm.add(std::move(c)); }
@@ -2766,7 +2827,7 @@ static void init_engines(const std::string& cfg_path)
                         c.trigger_tag = std::string("StockTurtleMimB_") + nm; c.live_sym = nm;
                         c.legs = {{"", 0.50}};
                         c.arm_pct = 2.0; c.lc_pct = 2.0; c.cap_bars = 10; c.pre_arm_be_pct = 1.0;
-                        c.be_entry_pct = 0.0; c.rt_cost_bp = 8.0; c.notional = 10000.0; c.bull_only = false;
+                        c.be_entry_pct = 0.08; c.no_prebe_loss = true; c.rt_cost_bp = 8.0; c.notional = 10000.0; c.bull_only = false;
                         c.state_path  = std::string("stockturtlemimic_stockturtlemimb_") + nm + "_state.txt";
                         c.closed_path = std::string("stockturtlemimic_stockturtlemimb_") + nm + "_closed.csv";
                         sdm.add(std::move(c)); }
@@ -2774,7 +2835,7 @@ static void init_engines(const std::string& cfg_path)
                         c.trigger_tag = std::string("StockTurtleMimC_") + nm; c.live_sym = nm;
                         c.legs = {{"", 0.40}};
                         c.arm_pct = 2.5; c.lc_pct = 2.5; c.cap_bars = 10; c.pre_arm_be_pct = 1.25;
-                        c.be_entry_pct = 0.0; c.rt_cost_bp = 8.0; c.notional = 10000.0; c.bull_only = false;
+                        c.be_entry_pct = 0.08; c.no_prebe_loss = true; c.rt_cost_bp = 8.0; c.notional = 10000.0; c.bull_only = false;
                         c.state_path  = std::string("stockturtlemimic_stockturtlemimc_") + nm + "_state.txt";
                         c.closed_path = std::string("stockturtlemimic_stockturtlemimc_") + nm + "_closed.csv";
                         sdm.add(std::move(c)); }
@@ -2782,7 +2843,7 @@ static void init_engines(const std::string& cfg_path)
                         c.trigger_tag = std::string("StockTurtleMimD_") + nm; c.live_sym = nm;
                         c.legs = {{"", 0.40}};
                         c.arm_pct = 3.5; c.lc_pct = 3.5; c.cap_bars = 10; c.pre_arm_be_pct = 1.75;
-                        c.be_entry_pct = 0.0; c.rt_cost_bp = 8.0; c.notional = 10000.0; c.bull_only = false;
+                        c.be_entry_pct = 0.08; c.no_prebe_loss = true; c.rt_cost_bp = 8.0; c.notional = 10000.0; c.bull_only = false;
                         c.state_path  = std::string("stockturtlemimic_stockturtlemimd_") + nm + "_state.txt";
                         c.closed_path = std::string("stockturtlemimic_stockturtlemimd_") + nm + "_closed.csv";
                         sdm.add(std::move(c)); }

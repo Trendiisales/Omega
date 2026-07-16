@@ -45,15 +45,27 @@ public:
     void set_clip_fn(ClipFn f) { clip_fn_ = std::move(f); }
 
     // Build one cell. W=det window (bars), thr=up-jump fraction, rt=RT cost bp,
-    // tf_secs=3600 H1 / 86400 daily, legs=cap (8), g=uniform giveback (0.5), lc=loss_cut_bp (150).
-    // rank_out=true => detector stays warm (windows tracked) but the cell REFUSES to
-    // arm new legs (books nothing). Used for stock names that pass on OHLC backtest but
-    // fail/0-trade on the live close-only feed — kept warm for a future re-rank, mirroring
-    // omega::stockmover_ladder_book()'s ranked-out handling.
+    // tf_secs=3600 H1 / 86400 daily, legs=cap (8), g=uniform giveback (0.5),
+    // confirm_bp=BE-ENTRY threshold in bp (0 => auto 3x rt). rank_out=true => detector
+    // stays warm (windows tracked) but the cell REFUSES to arm new legs (books nothing).
+    // Used for stock names that pass on OHLC backtest but fail/0-trade on the live
+    // close-only feed — kept warm for a future re-rank, mirroring omega::stockmover_
+    // ladder_book()'s ranked-out handling.
+    //
+    // NEVER-PRE-BE-LOSS (S-2026-07-17, feedback-no-prebe-loss-ever): every cell is a
+    // BE-ENTRY floored mimic. A leg stays FLAT (books nothing, no cost) until fav>=confirm_bp
+    // (>= rt = the BE cost); it then opens with confirm_anchor_epx=true, i.e. le stays = epx
+    // (the window entry) so hwm=cur >= le*(1+rt) => the leg is floored ON OPEN at BE and its
+    // worst clip is net>=0. loss_cut_bp=0: there is NO pre-arm cut because a leg never opens
+    // below BE. This REPLACES the prior confirm_bp=0 + loss_cut_bp=150 config, whose PREBE_CUT
+    // path could book a ~-155bp clip before break-even (the forbidden immediate-entry+pre-BE-loss
+    // pattern). Validated worst-clip>=0 (nNeg=0) + standalone net-positive (WF both halves,
+    // omit-2022, base+2x cost) across all 23 ACTIVE cells: backtest/omega_becascade_prebe_bt.cpp.
     void add_cell(const std::string& live_sym, int W, double thr, double rt,
-                  int tf_secs, int legs = 8, double g = 0.5, double lc = 150.0,
+                  int tf_secs, int legs = 8, double g = 0.5, double confirm_bp = 0.0,
                   bool rank_out = false) {
         chimera::UpJumpLadderCompanion::Config c;
+        const double conf = (confirm_bp > 0.0) ? confirm_bp : rt * 3.0;   // BE-ENTRY threshold (>rt); 3x rt = crypto-validated margin
         c.parent_tag   = "SELF";               // self-triggered (no external parent leg)
         c.tag          = "OMEGA-BC-" + live_sym;
         c.symbol       = live_sym;
@@ -66,8 +78,9 @@ public:
         c.stagger_mode = 1;                    // BE_CASCADE: release next leg only once every open leg is BE
         c.stagger_be_bp= 20.0;
         c.reclip_pct   = 0.0;                  // no self-funding ladder beyond the staggered set
-        c.loss_cut_bp  = lc;                   // cold-loss cut for an unarmed leg
-        c.confirm_bp   = 0.0;
+        c.loss_cut_bp  = 0.0;                  // NEVER-PRE-BE-LOSS: no pre-arm cut (leg never opens below BE)
+        c.confirm_bp   = conf;                 // BE-ENTRY: leg opens only once fav>=conf (>=rt)
+        c.confirm_anchor_epx = true;           // le=epx -> floored ON OPEN at BE => worst clip net>=0
         c.be_floor     = false;                // mimic_floor path (not the be_floor trail mode)
         c.mimic_giveback = g;
         c.tight = {0.2, 0, 0.0, 0, 0.0};       // Tier{arm,stall,gb,trail_bp,confirm}

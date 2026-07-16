@@ -291,4 +291,23 @@ python3 "$(dirname "$0")/roster_parity_audit.py" --repo "$(dirname "$0")/.." || 
   exit 1
 }
 
+# PRE-BE LOSS GATE (added S-2026-07-17, operator mandate "why is there not a check",
+# enforcing feedback-no-prebe-loss-ever). The adverse-protection audit above only
+# checks a verdict TAG is PRESENT; it does NOT inspect the booking path, so every
+# vulnerable companion (FxUpJumpLadderCompanion LOSS_CUT/sub-BE TRAIL; GoldTrendMimicLadder
+# pre-arm LOSS_CUT/WINDOW_CAP; BeCascadeCompanionEngine PREBE_CUT/PREBE_STOP/REVERSAL_CUT)
+# carried a tag, PASSED that audit, yet booked clips net<0 BEFORE break-even was covered.
+# This gate flags any companion/mimic/ladder booking site that can settle pre-BE-negative
+# and is NOT BE-floor-on-open protected (confirm_anchor_epx / be_floor_on_open / entry-clamp
+# marker) or grandfathered in scripts/prebe_loss_allowlist.txt. Currently-vulnerable engines
+# are grandfathered (backfill-owed, floor fixes landing this session); a NEW unprotected
+# booking site FAILS. Complements (does not duplicate) the adverse audit -- see
+# scripts/PREBE_LOSS_GATE.md.
+echo ""
+echo "[mac-canary-engines] pre-BE loss gate (no companion clip books net<0 before break-even)..."
+bash "$(dirname "$0")/prebe_loss_audit.sh" || {
+  echo "[mac-canary-engines] FAIL: a companion can book a pre-BE-negative clip -- see prebe_loss_audit.sh output above."
+  exit 1
+}
+
 exit 0
