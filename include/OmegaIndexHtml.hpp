@@ -512,7 +512,10 @@ var CTKS=[['BTC','BTCUSDT'],['ETH','ETHUSDT'],['SOL','SOLUSDT'],['BNB','BNBUSDT'
  ['HBAR','HBARUSDT'],['INJ','INJUSDT'],['ONDO','ONDOUSDT'],['SEI','SEIUSDT'],
  /* PHASE3 2026-07-13: REGIME_SWITCH core-basket coins (NEAR/ADA already tiled) —
     DOT/THETA/SUSHI now TRADED on josgp1, display-truth [SYMBOL-COV] demands tiles. */
- ['DOT','DOTUSDT'],['THETA','THETAUSDT'],['SUSHI','SUSHIUSDT']];
+ ['DOT','DOTUSDT'],['THETA','THETAUSDT'],['SUSHI','SUSHIUSDT'],
+ /* S-2026-07-17: roster grew to 26 coins; ATOM/LTC TRADED on josgp1 with no tile
+    (display-truth [SYMBOL-COV] RED). Add both -> full traded set tiled. */
+ ['ATOM','ATOMUSDT'],['LTC','LTCUSDT']];
 /* last-close SEED — baked from the Tick daily files at desk build time (Fri 2026-07-03 closes).
    Floor UNDER the localStorage last-tick cache so a COLD browser over a weekend shows a dimmed
    last-close instead of '—' (operator 2026-07-04: 57cb0ed0 was localStorage-only and failed on a
@@ -565,12 +568,12 @@ function cxWsUp(){if(_cwsRest){clearInterval(_cwsRest);_cwsRest=null;}}
   s.onclose=function(){_cwsOk=false;cxFallback();setTimeout(cws,3000);};
   s.onerror=function(){_cwsOk=false;};
  }catch(e){_cwsOk=false;cxFallback();}})();
-cxRestPoll(); /* instant first paint while the socket connects */
+)OMEGAD2"
+R"OMEGAD3(cxRestPoll(); /* instant first paint while the socket connects */
 
 /* ── position registry fallback (read-API :7781, CORS-open) ── */
 var REGPOS=[];
-)OMEGAD2"
-R"OMEGAD3(function pollReg(){fetch('http://'+location.hostname+':7781/api/v1/omega/positions')
+function pollReg(){fetch('http://'+location.hostname+':7781/api/v1/omega/positions')
  .then(function(r){return r.json();})
  .then(function(j){REGPOS=Array.isArray(j)?j:[];if(lastJ)render(lastJ);})
  .catch(function(){});}
@@ -746,10 +749,10 @@ function render(J){lastJ=J;
  var bids=J.gold_bids||[],asks=J.gold_asks||[];
  var mx=1;bids.concat(asks).forEach(function(l){if(l.s>mx)mx=l.s;});
  var dh='<div style="display:grid;grid-template-columns:1fr 70px 1fr;gap:1px;font-size:11px">';
- for(var i=Math.min(4,asks.length-1);i>=0;i--){var l=asks[i];
-  dh+='<span></span><span style="text-align:right;color:var(--redB);padding:0 4px">'+fmt2(l.p)+'</span>'
 )OMEGAD3"
-R"OMEGAD4(   +'<span style="position:relative"><i style="position:absolute;left:0;top:2px;bottom:2px;width:'+(l.s/mx*100)+'%;background:rgba(226,72,77,.25);border-radius:1px"></i><i style="position:relative;color:var(--redB);padding-left:4px;font-style:normal">'+fmt2(l.s,1)+'</i></span>';}
+R"OMEGAD4( for(var i=Math.min(4,asks.length-1);i>=0;i--){var l=asks[i];
+  dh+='<span></span><span style="text-align:right;color:var(--redB);padding:0 4px">'+fmt2(l.p)+'</span>'
+   +'<span style="position:relative"><i style="position:absolute;left:0;top:2px;bottom:2px;width:'+(l.s/mx*100)+'%;background:rgba(226,72,77,.25);border-radius:1px"></i><i style="position:relative;color:var(--redB);padding-left:4px;font-style:normal">'+fmt2(l.s,1)+'</i></span>';}
  var spd=(asks[0]&&bids[0])?(asks[0].p-bids[0].p):0;
  dh+='<span></span><span style="text-align:right;color:var(--t2);border-top:1px solid var(--bd2);border-bottom:1px solid var(--bd2);padding:1px 4px">'+fmt2(spd)+'</span><span style="border-top:1px solid var(--bd2);border-bottom:1px solid var(--bd2)"></span>';
  for(var i=0;i<Math.min(5,bids.length);i++){var l=bids[i];
@@ -916,10 +919,10 @@ function pollTrades(){
          generic 'stock' bucket -- a StockDip closed dip-buy (DELL +704) read as the STOCK BASKET's
          still-open DELL (+331), the same-ticker double-DELL box confusion. stockdip vs stockturtle so
          trade history attributes the right book (the basket keeps no closed-trade log -> its DELL only
-         ever lives in the STOCK BASKET panel, never here). */
-      var stkLbl=t.book==='stock'?(/turtle/i.test(t.engine||'')?'stockturtle':'stockdip'):'';
 )OMEGAD4"
-R"OMEGAD5(      var tag=t.book==='crypto'?'<span style="color:var(--w)">crypto</span> ':(t.book==='chimera'?'<span style="color:#c084fc">chimera</span> ':(t.book==='stock'?'<span style="color:#5cc8ff">'+stkLbl+'</span> ':'')); /* chimera = josgp1 SHADOW closed trades; stock = StockDip/Turtle book */
+R"OMEGAD5(         ever lives in the STOCK BASKET panel, never here). */
+      var stkLbl=t.book==='stock'?(/turtle/i.test(t.engine||'')?'stockturtle':'stockdip'):'';
+      var tag=t.book==='crypto'?'<span style="color:var(--w)">crypto</span> ':(t.book==='chimera'?'<span style="color:#c084fc">chimera</span> ':(t.book==='stock'?'<span style="color:#5cc8ff">'+stkLbl+'</span> ':'')); /* chimera = josgp1 SHADOW closed trades; stock = StockDip/Turtle book */
       /* S-2026-07-15s (operator "mimics referenced via an indent"): mimic rows get a leading indent
          + hook glyph so they read as the mimic OF the engine, nested under it, not a peer trade. */
       var ind=isMim?'<span class="d" style="padding-left:16px">&#8627; </span>':'';
@@ -1100,9 +1103,9 @@ function renderCompanionOpenTrades(pfx, open, trades, pxPrec){
   open.forEach(function(o){var u=safe(o.upnl_usd);
    h+='<tr><td class="l">'+esc(o.flavor)+'</td><td class="l">'+esc(o.dir)+'</td><td class="l">'+esc(o.tier)+'</td>'
      +'<td class="num">'+fmt2(safe(o.entry),pxPrec)+'</td><td class="num">'+fmt2(safe(o.cur),pxPrec)+'</td>'
-     +'<td class="num">'+fmt2(safe(o.wm),pxPrec)+'</td>'
 )OMEGAD5"
-R"OMEGAD6(     +'<td class="num" style="color:'+(u>0?'var(--grn)':(u<0?'var(--red)':'var(--t2)'))+'">'+fmt$(u)+'</td></tr>';});
+R"OMEGAD6(     +'<td class="num">'+fmt2(safe(o.wm),pxPrec)+'</td>'
+     +'<td class="num" style="color:'+(u>0?'var(--grn)':(u<0?'var(--red)':'var(--t2)'))+'">'+fmt$(u)+'</td></tr>';});
   ot.innerHTML=h; ow.style.display='';
  } else { ot.innerHTML=''; ow.style.display='none'; }
  var tw=el(pfx+'tradeswrap'), tt=el(pfx+'trades');

@@ -185,7 +185,14 @@ try:
         for ln in f:
             p = ln.strip().split(",")
             if len(p) >= 9 and p[0] != "id":
-                rows.append([int(p[2]), p[3], p[4]])
+                # [exit_ts, sym, strat, net_usd] — net carried so the recon can model the
+                # DESK-TRADE GUARD (drops every net<0 row before the push to omega-new), else
+                # every routine negative companion clip false-REDs the desk for 24h.
+                try:
+                    net = float(p[8])
+                except (ValueError, IndexError):
+                    net = 0.0
+                rows.append([int(p[2]), p[3], p[4], net])
 except Exception:
     pass
 out["inbound"] = rows[-500:]
@@ -494,8 +501,16 @@ def main() -> int:
         if isinstance(served_ct, dict) and "__err__" in served_ct:
             rec("FAIL", "TRADE-RECON", "%s: /api/crypto_trades unreachable: %s" % (label, served_ct["__err__"]))
             return
-        a = sum(1 for (ts, _, _) in producer_rows if day_ago <= ts <= now_s - grace_s)
-        a_fresh = sum(1 for (ts, _, _) in producer_rows if ts > now_s - grace_s)
+        # The DESK-TRADE GUARD (tools/gui/filter_chimera_inbound.py) drops EVERY net<0 row in
+        # the 120s relay BEFORE the push to omega-new (operator hard rule: no negative crypto
+        # trades on the desk). So the desk is EXPECTED to carry only the producer's net>=0
+        # closes; comparing raw producer count vs desk count false-REDs every routine negative
+        # companion clip for 24h. Model the guard: net>=0 must all arrive (a_pos vs b); net<0
+        # are guard-dropped by design and surfaced here (not hidden) so a real loss stays visible.
+        win = [(ts, s, st, net) for (ts, s, st, net) in producer_rows if day_ago <= ts <= now_s - grace_s]
+        a_pos = sum(1 for (_, _, _, net) in win if net >= 0)
+        a_neg_rows = [(s, st, net) for (_, s, st, net) in win if net < 0]
+        a_fresh = sum(1 for (ts, _, _, _) in producer_rows if ts > now_s - grace_s)
         if vps_text is None:
             rec("FAIL", "TRADE-RECON", "%s: omega-new inbound csv UNREADABLE — relay leg unverifiable" % label)
             return
@@ -503,18 +518,28 @@ def main() -> int:
         b = sum(1 for (ts, _, _) in b_rows if ts >= day_ago)
         c = ep_24h.get(endpoint_book, 0)
         b_cap = min(b, ENDPOINT_CAP_PER_SRC * n_srcs)
-        if a > b:
-            rec("FAIL", "TRADE-RECON", "%s: %d closes exist at producer (24h, past %dmin grace) but only %d "
-                "reached omega-new — TRADES INVISIBLE TO DESK" % (label, a, grace_s // 60, b))
+        # Surface guard-dropped negatives explicitly (auditable) — the desk correctly shows none,
+        # but a real negative close (e.g. a companion loss-cut) must not vanish from this report.
+        if a_neg_rows:
+            worst = sorted(a_neg_rows, key=lambda r: r[2])[:4]
+            rec("INFO", "TRADE-RECON", "%s: %d net<0 producer close(s) guard-dropped from desk (correct — "
+                "no negative crypto on desk); worst: %s" % (
+                    label, len(a_neg_rows),
+                    ", ".join("%s/%s $%.2f" % (s, st, net) for (s, st, net) in worst)))
+        if a_pos > b:
+            rec("FAIL", "TRADE-RECON", "%s: %d net>=0 closes exist at producer (24h, past %dmin grace) but only %d "
+                "reached omega-new — TRADES INVISIBLE TO DESK" % (label, a_pos, grace_s // 60, b))
         elif b_cap > c:
             rec("FAIL", "TRADE-RECON", "%s: %d rows landed on omega-new (24h) but endpoint serves %d — "
                 "desk render starved" % (label, b_cap, c))
         else:
             extra = " (+%d in relay grace)" % a_fresh if a_fresh else ""
-            rec("PASS", "TRADE-RECON", "%s: producer=%d -> omega-new=%d -> endpoint=%d (24h)%s" %
-                (label, a, b, c, extra))
+            negx = " [%d net<0 guard-dropped]" % len(a_neg_rows) if a_neg_rows else ""
+            rec("PASS", "TRADE-RECON", "%s: producer(net>=0)=%d -> omega-new=%d -> endpoint=%d (24h)%s%s" %
+                (label, a_pos, b, c, extra, negx))
 
-    chim_rows = [(int(r_[0]), r_[1], r_[2]) for r_ in chim.get("inbound", [])] if "__err__" not in chim else []
+    chim_rows = [(int(r_[0]), r_[1], r_[2], float(r_[3]) if len(r_) > 3 else 0.0)
+                 for r_ in chim.get("inbound", [])] if "__err__" not in chim else []
     if "__err__" in chim:
         rec("FAIL", "TRADE-RECON", "chimera: box unreachable — producer close-count unverifiable")
     else:
@@ -524,7 +549,7 @@ def main() -> int:
         # window start = max(24h ago, newest csv reset backup) — computed by the probe so
         # a desk P&L zero doesn't leave pre-reset journal lines with no csv rows to match.
         w0 = max(day_ago, int(chim.get("export_window_start", 0)))
-        chim_24h = sum(1 for (ts, _, _) in chim_rows if ts >= w0)
+        chim_24h = sum(1 for (ts, _, _, _) in chim_rows if ts >= w0)
         if de >= 0 and de != chim_24h:
             rec("WARN", "TRADE-RECON", "chimera: journal [DESK_EXPORT]=%d vs inbound csv rows=%d in 24h "
                 "(export hook / csv divergence)" % (de, chim_24h))
