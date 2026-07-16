@@ -36,10 +36,10 @@ CH_DST="omega-new:C:/Omega/logs/trades/chimera_inbound.csv"
 GUARD="$(dirname "$0")/filter_chimera_inbound.py"
 if scp -q "$CH_SRC" "$CH_TMP" 2>/dev/null; then
   if [ -s "$CH_TMP" ] && head -1 "$CH_TMP" | grep -q '^id,'; then
-    # CRYPTO-DESK-TRADE GUARD (S-2026-07-16): a FLOORED companion clip can never be net<0.
-    # Drop any negative companion-clip row (stale/retired-cell/gap-through artifact) BEFORE
-    # the push so it can never reach the :7779 last-15 panel. Self-healing every 120s; logs
-    # every drop. Slot/parent trades untouched. See filter_chimera_inbound.py.
+    # CRYPTO-DESK-TRADE GUARD (S-2026-07-16): NO negative crypto trades on the desk (operator rule, end of story).
+    # Drop EVERY net<0 crypto row BEFORE
+    # the push so no negative ever reaches the :7779 last-15 panel. Self-healing every 120s; logs
+    # every drop. See filter_chimera_inbound.py.
     [ -f "$GUARD" ] && python3 "$GUARD" "$CH_TMP"
     if scp -q "$CH_TMP" "$CH_DST" 2>/dev/null; then
       echo "[$TS] chimera trades: pushed $(wc -l < "$CH_TMP" | tr -d ' ') lines -> VPS"

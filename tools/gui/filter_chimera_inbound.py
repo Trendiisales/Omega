@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
 # CRYPTO-DESK-TRADE GUARD (S-2026-07-16) — structural, self-healing.
 #
-# A FLOORED companion clip can never close net<0 (operator mandate
-# feedback-mimic-be-floor-mandatory: "can't close neg after arming"; and
-# feedback-no-immediate-entry-upjump-mimic-only: a mimic books nothing until BE is
-# covered). Therefore any NEGATIVE companion-clip row in the desk feed is one of:
+# OPERATOR RULE (hard, end of story): there are NO negative crypto trades on the desk.
+# Crypto is long-only spot + every companion is floored (feedback-mimic-be-floor-mandatory:
+# "can't close neg after arming"; feedback-no-immediate-entry-upjump-mimic-only: a mimic
+# books nothing until BE is covered). So this guard drops EVERY net<0 row in the desk feed
+# regardless of engine/reason. A negative row is one of:
 #   - a stale row from a RETIRED cell (e.g. INJ-UJ55W24-SWEET, no longer in the roster),
 #   - a gap-through / bad-tick artifact on a jump_floor cell,
 #   - a genuine floor violation (bug to fix at the engine).
-# In every case it must NOT reach the :7779 last-15 panel. This filter runs inside the
-# 120s relay (refresh_crypto_companion.sh) on the file pulled from josgp1 BEFORE the push
-# to omega-new, so the class is self-healing: even if josgp1 re-books such a row, the desk
-# never shows it. Slot/parent engine trades (TP/SL/flip reasons) are UNTOUCHED — they may
-# legitimately be negative and still display. Every drop is LOGGED (not silent) so the
-# shadow record stays auditable and a real floor violation surfaces in the relay log.
+# In every case it must NOT reach the :7779 last-15 panel. This filter runs inside the 120s
+# relay (refresh_crypto_companion.sh) on the file pulled from josgp1 BEFORE the push to
+# omega-new, so the class is self-healing: even if josgp1 re-books a negative, the desk never
+# shows it. Every drop is LOGGED (not silent) so the shadow record stays auditable and a real
+# floor violation surfaces in the relay log.
 #
 # Why here and not only at the source: prior resets cleared the omega COPY but the josgp1
 # append-only SOURCE kept its rows and the relay re-pushed them within 2 min ("came back
@@ -60,7 +60,10 @@ def main() -> int:
         except ValueError:
             kept.append(ln)
             continue
-        if f[i_reason] in CLIP_REASONS and net < 0:
+        # OPERATOR RULE (S-2026-07-16, hard): there are NO negative crypto trades on the desk,
+        # end of story. Drop EVERY net<0 row regardless of engine/reason (crypto is long-only
+        # spot + floored). CLIP_REASONS retained only to tag WHY in the log.
+        if net < 0:
             dropped.append((f[i_strat], f[i_reason], net))
             continue
         kept.append(ln)
@@ -69,8 +72,9 @@ def main() -> int:
         with open(path, "w") as out:
             out.write("\n".join(kept) + "\n")
         for strat, reason, net in dropped:
-            print(f"[DESK-TRADE-GUARD] DROPPED negative companion clip: {strat} {reason} "
-                  f"net=${net:.2f} (floored companion cannot be net<0 -> stale/artifact, not shown)")
+            kind = "companion clip" if reason in CLIP_REASONS else "trade"
+            print(f"[DESK-TRADE-GUARD] DROPPED negative crypto {kind}: {strat} {reason} "
+                  f"net=${net:.2f} (operator rule: no negative crypto trades on the desk)")
     return 0
 
 
