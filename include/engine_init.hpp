@@ -18,6 +18,7 @@
 #include "UsoilBeFloorCompanion.hpp"// USOILPos/USOILNeg WTI CRUDE BE-floor companion (native C++, /api/usoil_companion)
 #include "FxBeFloorCompanion.hpp"   // per-pair FX BE-floor companion (EUR/GBP/JPY/AUD/NZD) -> /api/fx_companion
 #include "FxUpJumpLadderCompanion.hpp" // per-pair FX jump LADDER companion (long EUR/GBP/NZD/AUD + short USDCAD) -> /api/fxladder_companion
+#include "OmegaBeCascadeBook.hpp"      // S-2026-07-16: BE-CASCADE companion book (47 cells, SHADOW) -> omega_shadow.csv
                                        //   + index_upjump_ladder_book() (US500/NAS100/GER40) -> /api/idxladder_companion
 #include "IndexRiskGate.hpp"           // omega::index_risk_off() (GER40 ladder bull-gate)
 #include "IndexBeFloorCompanion.hpp"// per-symbol index BE-floor companion (US500/NAS100/DJ30/GER40) -> /api/index_companion
@@ -2171,6 +2172,88 @@ static void init_engines(const std::string& cfg_path)
             il.finalize_all();
             printf("[OMEGA-INIT][SEED] INDEX upjump LADDER wired: US500(W24/2.0) NAS100(W24/1.5) GER40(W12/1.5 BULL-GATED) M2K(W24/1.0 BULL-GATED, feed via bridge --symbols M2K), ALL IBKR-futures seed+live (S-2026-07-09 complete migration), %zu H1 warmup bars seeded, %zu forward bars restored, LC5thr+trail+window-flush, SHADOW, deploy-forward\n",
                    ilseeded, ilrestored);
+            fflush(stdout);
+        }
+
+        // ── BE-CASCADE companion book (S-2026-07-16, operator wire) ──────────────────
+        //   Omega port of the crypto-validated BE-CASCADE mimic (chimera::UpJumpLadder-
+        //   Companion, frozen in include/BeCascadeCompanionEngine.hpp). stagger_mode=1
+        //   BE_CASCADE: releases the next of up-to-8 legs only once every open leg is BE
+        //   (mfe>=20bp) => at most ONE un-BE'd leg at a time; post-arm BE-floor (never
+        //   books negative after arming) + loss_cut_bp=150 cold cut (worst clip ~-155bp).
+        //   SEPARATE INDEPENDENT SHADOW book, own cost (per-cell RT bp), judged STANDALONE
+        //   (feedback-companion-independent-engine); emits ClipRecords -> omega_shadow.csv.
+        //   VALIDATION (backtest/omega_becascade_bt.cpp, this class, per-symbol REAL RT):
+        //     Non-stock H1 (fixed instruments, no survivorship): XAUUSD/US500/NAS100/GER40
+        //       PASS on standard research H1; EURUSD/GBPUSD/AUDUSD PASS on the CERTIFIED
+        //       IBKR 3Y H1 feed (EURUSD_IBKR_H1/GBPUSD_IBKR_H1/AUDUSD_IBKR_H1, PF~5-6,
+        //       2x-cost+) — the becascade survives where the reclip FX ladder was edgeless.
+        //     MGC folds into the XAUUSD gold cell (same underlying; NOT double-wired off one
+        //       gold H1 move — would double-count. One gold cell, fed by tick_gold H1 close).
+        //     Stocks (daily, close-only LIVE feed sp500_long_close.csv): re-validated on the
+        //       REAL close-only feed (NOT the OHLC backtest which was survivorship-inflated:
+        //       39/39 OHLC-pass collapsed to 16/39 on the live feed). 16 ACTIVE passers;
+        //       the 23 that fail/0-trade close-only are wired rank_out (warm detector, book
+        //       nothing, re-rank later) — mirrors stockmover_ladder_book()'s ranked-out set
+        //       (which independently ranks OUT the same TSLA/COIN/PLTR/MSTR/META/UBER... names).
+        //   Non-stock cells fed inline from tick_fx / tick_indices / tick_gold H1; stock cells
+        //   fed by the internal 15-min poller over sp500_long_close.csv (close-only, h=l=c).
+        {
+            auto& bc = omega::be_cascade_book();
+            const double NOTIONAL = 10000.0;   // $ per clip (companion convention; revisit-lot-sizes)
+            bc.set_clip_fn([NOTIONAL](const std::string& sym, double net_bp_real,
+                                      double entry_px, double exit_px, double mfe_pct,
+                                      int64_t entry_ts_ms, int64_t exit_ts_ms,
+                                      const std::string& reason) {
+                omega::TradeRecord tr;
+                tr.symbol     = sym;
+                tr.side       = "LONG";              // long-only up-jump mimic
+                tr.engine     = "BeCascade";
+                tr.entryPrice = entry_px;
+                tr.exitPrice  = exit_px;
+                tr.net_pnl    = net_bp_real / 10000.0 * NOTIONAL;   // bp -> $ on nominal notional
+                tr.pnl        = tr.net_pnl;          // shadow: RT already in net_bp_real
+                tr.mfe        = mfe_pct;
+                tr.entryTs    = entry_ts_ms / 1000;
+                tr.exitTs     = exit_ts_ms  / 1000;
+                tr.exitReason = reason;
+                tr.regime     = "SHADOW";
+                write_shadow_csv(tr);
+            });
+
+            // Non-stock (H1, tf=3600). {live_sym, W, thr, rt_bp}. All ACTIVE.
+            struct NSCfg { const char* sym; int W; double thr; double rt; };
+            static const NSCfg NS[] = {
+                {"XAUUSD", 4, 0.005,  5.0},   // fed by tick_gold H1 (MGC folds in here)
+                {"US500",  4, 0.006,  3.0},   // fed by tick_indices H1
+                {"NAS100", 4, 0.006,  3.0},
+                {"GER40",  4, 0.006,  4.0},
+                {"EURUSD", 4, 0.0025, 3.0},   // fed by tick_fx H1 (validated on IBKR feed)
+                {"GBPUSD", 4, 0.0025, 3.0},
+                {"AUDUSD", 4, 0.0025, 4.0},
+            };
+            for (const auto& n : NS) bc.add_cell(n.sym, n.W, n.thr, n.rt, 3600, 8, 0.5, 150.0, false);
+
+            // Stock (daily, tf=86400, rt=8bp, thr=2%, W4). 16 ACTIVE + 23 rank_out (warm).
+            const char* STK_ACTIVE[] = {
+                "NVDA","AMD","AVGO","MU","NFLX","NOW","DELL","ORCL","QCOM","INTC",
+                "AMZN","GOOGL","MSFT","AAPL","CRM","ADBE"
+            };
+            const char* STK_WARM[] = {   // fail/0-trade on live close-only feed -> rank_out
+                "MRVL","ARM","TSLA","META","CRWD","COIN","MSTR","ABNB","SNOW","SMCI",
+                "PLTR","SHOP","PANW","UBER","IONQ","RGTI","QBTS","ASTS","RKLB","NBIS",
+                "CRWV","ALAB","CRDO"
+            };
+            int nsa = 0, nsw = 0;
+            for (const char* s : STK_ACTIVE) { bc.add_cell(s, 4, 0.02, 8.0, 86400, 8, 0.5, 150.0, false); ++nsa; }
+            for (const char* s : STK_WARM)   { bc.add_cell(s, 4, 0.02, 8.0, 86400, 8, 0.5, 150.0, true);  ++nsw; }
+            bc.start_poller("data/rdagent/sp500_long_close.csv", 900000);
+
+            printf("[OMEGA-INIT][SEED] BE-CASCADE companion wired: %zu cells "
+                   "(7 non-stock ACTIVE H1 [XAUUSD(+MGC) US500 NAS100 GER40 EURUSD GBPUSD AUDUSD], "
+                   "%d stock ACTIVE + %d rank_out-warm daily close-only), stagger_mode=1 BE_CASCADE "
+                   "lc150+BE-floor, SHADOW -> omega_shadow.csv (engine=BeCascade), deploy-forward\n",
+                   bc.size(), nsa, nsw);
             fflush(stdout);
         }
 

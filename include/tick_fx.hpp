@@ -30,6 +30,7 @@
 #include "FxBeFloorCompanion.hpp"   // omega::fx_befloor_book() (per-pair BE-floor companion)
 // (JumpRiderEngine.hpp include REMOVED — engine culled/tombstoned S-2026-07-10)
 #include "FxUpJumpLadderCompanion.hpp" // omega::fx_upjump_ladder_book() (upjump LADDER, needs H1 h/l/c)
+#include "OmegaBeCascadeBook.hpp"      // omega::be_cascade_book() (BE-CASCADE companion, S-2026-07-16)
 
 // ── FX chart + companion bar builder (S-2026-07-06) ─────────────────────────
 //   FX has no trading engine (2026-06-29 removal stands), but it is subscribed for
@@ -54,6 +55,8 @@ static inline void fx_feed_bars(FxBarAgg& a, SymBarState& bars, const char* pair
                 // (JumpRider FX feed REMOVED — engine culled/tombstoned S-2026-07-10)
                 omega::fx_upjump_ladder_book().on_h1_bar(pair, start / 1000,
                                                          acc.high, acc.low, acc.close, acc.open); // h/l intrabar; open for Layer-3 weekend gap
+                // S-2026-07-16: BE-CASCADE companion (EURUSD/GBPUSD/AUDUSD cells; others absent = no-op)
+                omega::be_cascade_book().on_bar(pair, start / 1000, acc.high, acc.low, acc.close);
             }
             acc = {b/60000LL, mid, mid, mid, mid, 0}; start = b;
         } else { if (mid > acc.high) acc.high = mid; if (mid < acc.low) acc.low = mid; acc.close = mid; }

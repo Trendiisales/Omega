@@ -100,3 +100,13 @@ FxUpJumpLadderCompanion
 # GoldTrendMimicLadder: independent shadow mimic ladder on gold trend entries;
 #   DRAWDOWN-CANCEL verdict in header (~L56). [NEW-EXPOSURE S-2026-07-14]
 GoldTrendMimicLadder
+# BeCascadeCompanionEngine: vendored crypto-validated BE-CASCADE mimic engine
+#   (chimera::UpJumpLadderCompanion, frozen). Independent SHADOW clip book — never
+#   places/moves/closes a real order (emits ClipRecords only). Cost model lives
+#   INSIDE the book (per-cell round_trip_bp debited on every clip's net_bp_real at
+#   fire time = the entry-cost gate for a paper clip), so it references no
+#   OmegaCostGuard/ExecutionCostGuard. ADVERSE-PROTECTION verdict in the header
+#   banner (floored cascade lc150 + post-arm BE-floor). [NEW-EXPOSURE S-2026-07-16]
+BeCascadeCompanionEngine
+# (OmegaBeCascadeBook.hpp — the omega wrapper/book — opens nothing itself, so it does
+#  NOT trip the ungated opener regex; no allowlist entry needed.)

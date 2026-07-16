@@ -31,6 +31,7 @@
 #include "IndexBeFloorCompanion.hpp"   // omega::index_befloor_book() (per-symbol index BE-floor companion)
 // (JumpRiderEngine.hpp include REMOVED — engine culled/tombstoned S-2026-07-10)
 #include "FxUpJumpLadderCompanion.hpp" // omega::index_upjump_ladder_book() (upjump LADDER, needs H1 h/l)
+#include "OmegaBeCascadeBook.hpp"      // omega::be_cascade_book() (BE-CASCADE companion, S-2026-07-16)
 
 // ── index BE-floor companion H1 feed (S-2026-07-06) ─────────────────────────
 //   Indices are traded live, and separately the index BE-floor companion needs each
@@ -53,6 +54,8 @@ static inline void index_feed_h1(IdxH1Agg& a, const char* tag, double bid, doubl
         // (JumpRider index feed REMOVED — engine culled/tombstoned S-2026-07-10)
         omega::index_upjump_ladder_book().on_h1_bar(tag, a.start / 1000,
                                                     a.high, a.low, a.close, a.open); // h/l intrabar; open for Layer-3 weekend gap
+        // S-2026-07-16: BE-CASCADE companion (US500/NAS100/GER40 cells; others absent = no-op)
+        omega::be_cascade_book().on_bar(tag, a.start / 1000, a.high, a.low, a.close);
         a.start = b; a.open = mid; a.close = mid; a.high = mid; a.low = mid;
     } else { a.close = mid; if (mid > a.high) a.high = mid; if (mid < a.low) a.low = mid; }
     // S-2026-07-07 real-fill fix: every tick also drives the BE-floor companion INTRABAR

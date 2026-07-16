@@ -8,6 +8,7 @@
 #include "gold_coordinator.hpp"
 #include "PortfolioGuard.hpp"  // S48: portfolio-level kill-switch + sizing helpers
 #include "GoldTrendMimicLadder.hpp"  // S-2026-07-14: XAU-H1 regime gate feed at H1 close
+#include "OmegaBeCascadeBook.hpp"    // S-2026-07-16: omega::be_cascade_book() (BE-CASCADE gold cell)
 #include "GoldExecSpreadBasis.hpp"   // S-2026-07-14: XAUUSD cost-gate spread basis (exec = IBKR futures book, not the BlackBull feed quote)
 
 // -- XAUUSD -------------------------------------------------
@@ -862,6 +863,10 @@ static void on_tick_gold(
             // GoldTrendMimic XAU-H1 SMA200 regime gate (S-2026-07-14): feeds the bull_only
             // mimic books (XAU_4h_DonchN20 bear-gate proviso). Seeded at boot; cheap.
             omega::gold_trend_mimic().xau_regime_h1_close(s_cur_h1.close);
+            // S-2026-07-16: BE-CASCADE companion gold cell (XAUUSD; MGC folds in here — one
+            // gold underlying, not double-wired). s_bar_h1_ms = the closing H1 bar's ms.
+            omega::be_cascade_book().on_bar("XAUUSD", s_bar_h1_ms / 1000,
+                                            s_cur_h1.high, s_cur_h1.low, s_cur_h1.close);
             // H1 bar close dispatch: management always runs; entry only when slot is clear
             if (g_h1_swing_gold.has_open_position()) {
                 g_h1_swing_gold.on_h1_bar(
