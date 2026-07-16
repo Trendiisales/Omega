@@ -1,20 +1,20 @@
 # ============================================================================
-# omega_watchdog.ps1 — SELF-HEALING restart watchdog for the Omega service.
+# omega_watchdog.ps1 -- SELF-HEALING restart watchdog for the Omega service.
 #
 # WHY (S-2026-07-16n, operator: "ensure the vps auto reconnects, we have it
 # crashing and no restart, fix this"):
 #   The Omega service runs under NSSM with AppExit=Restart, so NSSM restarts the
-#   child Omega.exe when it *exits*. But NSSM only watches PROCESS LIVENESS — it
+#   child Omega.exe when it *exits*. But NSSM only watches PROCESS LIVENESS -- it
 #   cannot see a process that is ALIVE but HUNG/FROZEN or DISCONNECTED (broker/feed
 #   thread dead while the process keeps running). The whole existing health stack
 #   (omega_health.py / healthcheck.ps1 / omega_health_alarm.ps1) only OBSERVES +
-#   ALARMS — nothing ever RESTARTS. So a hang or a dropped connection was flagged
+#   ALARMS -- nothing ever RESTARTS. So a hang or a dropped connection was flagged
 #   RED and then sat there. This watchdog closes that gap: it restarts the service
 #   on sustained engine-down / engine-frozen, which reconnects the broker on boot.
 #
-# WHAT it restarts on (direct, independent checks — NOT dependent on any other
+# WHAT it restarts on (direct, independent checks -- NOT dependent on any other
 # monitor's output, because a watchdog that depends on another daemon inherits that
-# daemon's silent-death failure mode — the exact 2026-07-07 class the operator is
+# daemon's silent-death failure mode -- the exact 2026-07-07 class the operator is
 # furious about):
 #   * Omega service not Running (outside a deploy window)         -> restart
 #   * service Running but Omega.exe child absent                  -> restart
@@ -32,7 +32,7 @@
 #   * SUSTAINED: a soft hang needs 2 consecutive bad runs (~2 min) before acting, so
 #     a transient IO blip does not trigger a restart. Hard-down (stopped / child gone)
 #     acts on the first run (unambiguous, and the deploy window is already guarded).
-#   * THROTTLED: at most MaxRestarts in ThrottleSec. If exceeded it does NOT restart —
+#   * THROTTLED: at most MaxRestarts in ThrottleSec. If exceeded it does NOT restart --
 #     it writes a LOUD escalation (HEALTH_RED.flag + watchdog_alerts.log) so a genuine
 #     crash-loop from bad config is surfaced to the operator, not hammered. The restart
 #     window is rolling, so once old restarts age out auto-healing resumes (no permanent
@@ -101,7 +101,7 @@ if ($buildProc) { Log ('SKIP: build/deploy process running ({0})' -f (($buildPro
 
 # ---------- GUARD: service transitional -> let it settle ----------
 $svc = Get-Service Omega -EA SilentlyContinue
-if ($null -eq $svc) { Alert 'FATAL: Omega service NOT REGISTERED — watchdog cannot restart a missing service (manual: install nssm service).'; exit 1 }
+if ($null -eq $svc) { Alert 'FATAL: Omega service NOT REGISTERED -- watchdog cannot restart a missing service (manual: install nssm service).'; exit 1 }
 if ($svc.Status -match 'Pending') { Log ('SKIP: service transitional (Status={0})' -f $svc.Status); Save-State; exit 0 }
 
 # ---------- HEALTH: direct, independent checks ----------
@@ -116,7 +116,7 @@ if ($svc.Status -ne 'Running') {
         $down = $true; $hard = $false; $reason = 'latest.log MISSING'
     } else {
         $age = [int]($nowU - $lf.LastWriteTime.ToUniversalTime()).TotalSeconds
-        if ($age -gt $StaleSec) { $down = $true; $hard = $false; $reason = "latest.log heartbeat stale ${age}s (>$StaleSec — engine frozen/hung)" }
+        if ($age -gt $StaleSec) { $down = $true; $hard = $false; $reason = "latest.log heartbeat stale ${age}s (>$StaleSec -- engine frozen/hung)" }
     }
 }
 if ($ForceUnhealthy) { $down = $true; $reason = 'FORCED (dry-run self-test): ' + $reason }
@@ -132,7 +132,7 @@ $state.consec_bad = [int]$state.consec_bad + 1
 # soft hang must persist 2 runs; hard-down acts immediately (deploy window already ruled out)
 $need = if ($hard) { 1 } else { 2 }
 if ($state.consec_bad -lt $need) {
-    Log ("UNHEALTHY ($reason) consec=$($state.consec_bad)/$need — waiting to confirm")
+    Log ("UNHEALTHY ($reason) consec=$($state.consec_bad)/$need -- waiting to confirm")
     Save-State; exit 0
 }
 
@@ -141,7 +141,7 @@ $recent = @($state.restarts | Where-Object { ($epoch - $_) -lt $ThrottleSec })
 if ($recent.Count -ge $MaxRestarts) {
     $oldest = ($recent | Measure-Object -Minimum).Minimum
     $mins   = [int](($ThrottleSec - ($epoch - $oldest)) / 60)
-    Alert ("ESCALATE: $($recent.Count) restarts in last $([int]($ThrottleSec/60))min did NOT heal ($reason). NOT restarting — MANUAL INTERVENTION NEEDED. Auto-heal resumes in ~${mins}min.")
+    Alert ("ESCALATE: $($recent.Count) restarts in last $([int]($ThrottleSec/60))min did NOT heal ($reason). NOT restarting -- MANUAL INTERVENTION NEEDED. Auto-heal resumes in ~${mins}min.")
     try { Set-Content -Path $RedFlag -Value ("watchdog-escalate {0:o} $reason" -f $nowU) -Encoding utf8 } catch {}
     $state.restarts = $recent; Save-State; exit 2
 }
