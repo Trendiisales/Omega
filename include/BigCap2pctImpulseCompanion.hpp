@@ -111,6 +111,15 @@ public:
         // S-2026-07-13s BE-MIMIC legs (see header block). 0 = no mimic legs (legacy).
         double mimic_be_pct   = 0.0;      // % above parent entry a mimic must see on a CLOSE to open
         int    mimic_pend     = 5;        // closes to make BE before a pending leg cancels
+        // S-2026-07-16k MIMIC-ONLY (operator: "remove the upjump engines in bigcap and replace with
+        // 2x mimic engines"; feedback-no-immediate-entry-upjump-mimic-only). When true the book opens
+        // NO immediate parent impulse position — ONLY the 2 PENDING BE-mimic legs (M/W8) fire per
+        // window, so it NEVER trades into a loss on the impulse close (fresh-entry forbidden). The
+        // mimic legs already carry the full protection stack: BE-entry gate (never open underwater),
+        // pre-arm DRAWDOWN-CANCEL (-catastrophe%), post-arm giveback trail that floors ABOVE BE.
+        // VALIDATED STANDALONE bigcap_ride_harder_bt.py 2LEG be0.5/pend5: +4022% PF1.95 worst -21.9%
+        // all-6 + 2x PASS (the parent was purely additive; removing it leaves this validated book).
+        bool   mimic_only     = false;    // true = NO immediate parent position, mimic legs only
         int    mimic_cap      = 5;        // max mimic legs spawned per window (incl the 2 base)
         double mimic_reclip   = 0.05;     // re-enter when fav > peak*(1+reclip)
         std::string deploy_path;          // per-name deploy-forward anchor
@@ -530,12 +539,43 @@ private:
         mlegs_.clear(); mspawned_ = 0;
     }
 
+    // Any mimic leg still alive (open or pending)? Used as the window latch in MIMIC-ONLY mode,
+    // where there is no parent in_pos_ to gate re-arming.
+    bool mimics_active_() const noexcept {
+        for (const auto& L : mlegs_) if (!L.dead) return true;
+        return false;
+    }
+
     // Incremental state machine on the NEWEST daily close.
     void live_step_(int64_t ts_sec) noexcept {
         const int N = (int)c_.size();
         if (N < 2) return;
         const bool   fwd = ts_sec > deploy_ts_;
         const double cur = c_[N - 1];
+
+        // S-2026-07-16k MIMIC-ONLY: no immediate parent position — ONLY the BE-mimic legs trade.
+        // The mimic legs are self-contained (BE-entry gate, pre-arm drawdown-cancel, gb trail,
+        // self-funding respawn), so they never read the parent. A fresh signal spawns mimics only
+        // when no window is currently active (mimics_active_ replaces the in_pos_ latch); the window
+        // ends naturally when every mimic leg has clipped/died.
+        if (cfg_.mimic_only) {
+            if (entry_pend_) {                       // pending arm carried from the seed close
+                entry_pend_ = false;
+                if (!mimics_active_()) {
+                    spawn_mimics_(cur, ts_sec);
+                    step_mimics_(cur, ts_sec, fwd);  // pend clock starts ON the arm close (BT parity)
+                }
+                save_live_state_();
+                return;
+            }
+            if (mimics_active_()) step_mimics_(cur, ts_sec, fwd);   // manage the live window
+            if (!mimics_active_() && signal_at_(N - 1)) {           // fresh +thr signal, no open window
+                spawn_mimics_(cur, ts_sec);
+                step_mimics_(cur, ts_sec, fwd);
+            }
+            save_live_state_();
+            return;
+        }
 
         // 1) pending entry carried from the last seed close: enter at THIS close.
         if (entry_pend_) {

@@ -148,6 +148,16 @@ public:
         // the same way. 0 = legacy all-immediate legs (backtest/parity default).
         double be_entry_pct  = 0.0;       // % above trigger a mimic leg must see on a CLOSE to open
         int    pend_closes   = 3;         // cancel a pending mimic leg after this many closes without BE
+        // S-2026-07-16k MIMIC-ONLY (operator: "remove the upjump engines in bigcap and replace
+        // with 2x mimic engines"; feedback-no-immediate-entry-upjump-mimic-only). When true (and
+        // be_entry_pct > 0) the window opens NO immediate PARENT leg at all — ONLY the 4 PENDING
+        // BE-mimic legs (T/MIRROR/Wm/W8), so the book NEVER trades into a loss on the jump close
+        // (fresh-entry forbidden). The mimic legs already carry the full protection stack: BE-entry
+        // gate (never open underwater), pre-arm LOSS_CUT/DRAWDOWN-CANCEL (loss_cut_pct), post-arm
+        // giveback trail that floors ABOVE BE. VALIDATED STANDALONE bigcap_parent4mimic_bt.py
+        // 4x-MIMIC be0.5/pend3: +9,603% PF1.64 worst -24.1% all-6 + 2x + ex-best PASS (the parent
+        // was purely additive; removing it leaves this validated mimic book untouched).
+        bool   mimic_only    = false;     // true = NO immediate parent leg, mimic legs only
         // S-2026-07-13 RIDE-HARDER (operator: "trade it hard and for as long as we can until
         // it reverses"): optional PARENT-ONLY trail override. p_arm > 0 replaces the parent
         // leg's w_arm/w_gb cell (mimic Wm + ladder respawns UNAFFECTED — they keep w_arm/w_gb).
@@ -597,19 +607,27 @@ private:
         win_entry_ = entry_px; win_ets_ = ts_sec;
         legs_.clear();
         if (cfg_.be_entry_pct > 0.0) {
-            spawned_ = 5;
-            {   // PARENT (immediate, LadW). p_arm>0 = ride-harder trail override (parent ONLY;
-                // 1e9 never arms -> rides to the -thr flush, loss_cut_pct still guards pre-arm).
-                Leg P = make_leg_(1, entry_px, ts_sec, fwd);
-                if (cfg_.p_arm > 0.0) { P.arm = cfg_.p_arm; P.gb = cfg_.p_gb; }
-                legs_.push_back(std::move(P));
+            // S-2026-07-16k MIMIC-ONLY: skip the immediate PARENT leg entirely — only the 4 PENDING
+            // BE-mimic legs (never open into a loss on the jump close). mimic_only=false keeps the
+            // legacy PARENT + 4 mimic structure (backtest parity / prior behaviour).
+            if (!cfg_.mimic_only) {
+                spawned_ = 5;
+                {   // PARENT (immediate, LadW). p_arm>0 = ride-harder trail override (parent ONLY;
+                    // 1e9 never arms -> rides to the -thr flush, loss_cut_pct still guards pre-arm).
+                    Leg P = make_leg_(1, entry_px, ts_sec, fwd);
+                    if (cfg_.p_arm > 0.0) { P.arm = cfg_.p_arm; P.gb = cfg_.p_gb; }
+                    legs_.push_back(std::move(P));
+                }
+            } else {
+                spawned_ = 4;   // no parent leg; 4 mimic legs only
             }
             legs_.push_back(make_pending_leg_(0, cfg_.t_arm,  cfg_.t_stall, 0.0,       entry_px, ts_sec)); // T
             legs_.push_back(make_pending_leg_(2, cfg_.m_arm,  0,            cfg_.m_gb, entry_px, ts_sec)); // MIRROR
             legs_.push_back(make_pending_leg_(2, cfg_.w_arm,  0,            cfg_.w_gb, entry_px, ts_sec)); // Wm
             legs_.push_back(make_pending_leg_(2, cfg_.w8_arm, 0,            cfg_.w8_gb, entry_px, ts_sec)); // W8
-            std::printf("[AULAD][MIMIC-PEND] %s parent OPEN + 4 mimic legs PENDING (be %.2f%%, %d closes)\n",
-                        cfg_.sym.c_str(), cfg_.be_entry_pct, cfg_.pend_closes);
+            std::printf("[AULAD][MIMIC-PEND] %s %s + 4 mimic legs PENDING (be %.2f%%, %d closes)\n",
+                        cfg_.sym.c_str(), cfg_.mimic_only ? "MIMIC-ONLY (no parent)" : "parent OPEN",
+                        cfg_.be_entry_pct, cfg_.pend_closes);
             std::fflush(stdout);
             return;
         }

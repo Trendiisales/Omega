@@ -2259,6 +2259,14 @@ static void init_engines(const std::string& cfg_path)
                 // whole 12-cell be/pend sweep passes (plateau). Interior cell wired, not the
                 // corner-best (be0.3/pend5 +11,228%) — robustness over last drop of net.
                 c.be_entry_pct = 0.5; c.pend_closes = 3;   // w8 cell = struct default a8/gb50
+                // S-2026-07-16k MIMIC-ONLY (operator: "remove the upjump engines in bigcap and
+                // replace with 2x mimic engines immediately"; feedback-no-immediate-entry-upjump-
+                // mimic-only). Drop the immediate PARENT up-jump leg — ONLY the 4 BE-mimic legs
+                // (T/MIRROR/Wm/W8) trade, each BE-gated + LOSS_CUT 15 pre-arm + giveback-floor
+                // post-arm. VALIDATED STANDALONE bigcap_parent4mimic_bt.py 4x-MIMIC be0.5/pend3:
+                // +9,603% PF1.64 worst -24.1% all-6 + 2x + ex-best PASS. p_arm/p_gb below are now
+                // inert (no parent leg to override); left set for a clean revert.
+                c.mimic_only = true;
                 // S-2026-07-13s RIDE-TO-REVERSAL parent (operator: "trade it hard and for as
                 // long as we can until it reverses"). KNOWING OVERRIDE of the S-2026-07-09
                 // gb10 protection choice above: back then the parent WAS the whole book; now
@@ -2357,7 +2365,7 @@ static void init_engines(const std::string& cfg_path)
             // fresh names to write (bridge-down/thin day -> skip, last-good CSV untouched).
             sl.enable_daily_close_writer(true, 10);
             sl.start_poller(wide_csv, 900000);   // 15-min poll of the wide daily-close CSV
-            printf("[OMEGA-INIT][SEED] BIGCAP upjump LADDER companion wired: 45 names, %zu seed rows, %zu forward bars restored, %zu unconfirmed legs flushed, LIVE-CONFIRM GATE ON (session+fresh<60s+rising), TIGHT a0.5/s2 + WIDE a1/g10 + MIRROR a2/g75 + ladder cap6 reclip5%%, LOSS_CUT 15, rt 8bp, LONG-only, SHADOW, deploy-forward, daily-CSV-polled\n",
+            printf("[OMEGA-INIT][SEED] BIGCAP MIMIC-ONLY LADDER companion wired (S-2026-07-16k: NO immediate parent up-jump leg): 45 names, %zu seed rows, %zu forward bars restored, %zu unconfirmed legs flushed, LIVE-CONFIRM GATE ON (session+fresh<60s+rising), 4 BE-mimic legs T a0.5/s2 + MIRROR a2/g75 + Wm a1/g10 + W8 a8/g50 (be0.5%%/pend3, LOSS_CUT 15 pre-arm + giveback-floor post-arm), ladder cap9 reclip5%%, rt 8bp, LONG-only, SHADOW, deploy-forward, daily-CSV-polled\n",
                    lseeded, lrestored, lflushed);
             printf("[OMEGA-INIT][SEED] BIGCAP in-binary DAILY-CLOSE WRITER active: target=%s, fires once/day at 20:00 UTC (US cash close, weekday) appending a WIDE-format row from live IBKR L1 mids (min 10 fresh names), idempotent -- REPLACES yfinance OmegaStockMoverFeed\n",
                    wide_csv.c_str());
@@ -2419,6 +2427,13 @@ static void init_engines(const std::string& cfg_path)
                 // (45 names, RT 20bp): be0.5/pend5 +4022% PF1.95 worst -21.9% all-6 + 2x
                 // PASS; all 4 be/pend cells pass (plateau); ex-best(NVDA) +3619%/1.87 PASS.
                 c.mimic_be_pct = 0.5; c.mimic_pend = 5;
+                // S-2026-07-16k MIMIC-ONLY (operator: "remove the upjump engines in bigcap and
+                // replace with 2x mimic engines"; feedback-no-immediate-entry-upjump-mimic-only).
+                // Drop the immediate parent impulse LONG — ONLY the 2 BE-mimic legs (M/W8) trade,
+                // each BE-gated + DRAWDOWN-CANCEL -15% pre-arm + giveback-floor post-arm. VALIDATED
+                // STANDALONE bigcap_ride_harder_bt.py 2LEG be0.5/pend5: +4022% PF1.95 worst -21.9%
+                // all-6 + 2x PASS. The loose 3-layer parent exit (gb90/60d/-15%) is now inert.
+                c.mimic_only = true;
                 bi.add(std::move(c));
             }
             const std::string bc2_csv = "data/rdagent/sp500_long_close.csv";
@@ -2457,7 +2472,7 @@ static void init_engines(const std::string& cfg_path)
             size_t bi_restored = bi.seed_dumps_all();              // replay persisted forward daily bars
             bi.finalize_all();
             bi.start_poller(bc2_csv, 900000);   // own 15-min poll of the wide daily-close CSV
-            printf("[OMEGA-INIT][SEED] BIGCAP 2%%-impulse LOOSE-RIDE book wired: %d names, %zu seed rows, %zu forward bars restored, thr2%%/new-20d-high/gb90/60d-cap/-15%%-catastrophe, rt 20bp, LONG-only, UNGATED, SHADOW, deploy-forward, daily-CSV-polled\n",
+            printf("[OMEGA-INIT][SEED] BIGCAP 2%%-impulse MIMIC-ONLY book wired (S-2026-07-16k: NO immediate parent impulse LONG): %d names, %zu seed rows, %zu forward bars restored, thr2%%, 2 BE-mimic legs M a2/g75 + W8 a8/g50 (be0.5%%/pend5, DRAWDOWN-CANCEL -15%% pre-arm + giveback-floor post-arm), rt 20bp, LONG-only, UNGATED, SHADOW, deploy-forward, daily-CSV-polled\n",
                    (int)(sizeof(BC2_UNIV)/sizeof(BC2_UNIV[0])), bi_seeded, bi_restored);
             fflush(stdout);
         }
