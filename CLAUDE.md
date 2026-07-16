@@ -430,6 +430,36 @@ LOSS_CUT + BE_RATCHET fields (added in the part-H follow-up,
 Engines that share this profile (mean-reversion + fixed timeout) are
 candidates for the same pattern.
 
+## BE-Floor-On-Open Foundation Mandate (added 2026-07-17c, operator hard rule)
+
+Every NEW companion / mimic / ladder / clip engine MUST be built
+**floored-on-open** from day one — it is the FOUNDATION architecture, not
+an add-on. Operator mandate (2026-07-17c): the floored-on-open pattern
+IMPROVED net on nearly every cell across all 5 engines swept AND makes the
+hard no-pre-BE-loss rule (`feedback-no-prebe-loss-ever`) true by
+construction (nNeg=0), so it becomes the default for every subsequent
+companion engine's logic.
+
+The canonical recipe (proven S-2026-07-17c, Omega fd51311a + crypto c771068):
+- **BE-ENTRY** — leg stays FLAT, books/pays nothing until fav >= confirm; opens AT that level.
+- **confirm >= 2× round-trip cost** (NOT just >=RT — at exactly RT the 2×-cost
+  robustness stress reopens a pre-arm window: crypto TRX −511bp. 60bp is the safe uniform value).
+- **ANCHOR** `le = epx` on open (`confirm_anchor_epx` in UpJumpLadderCompanion/BeCascade;
+  `be_floor_on_open` book-clamp in FxUpJumpLadderCompanion) — do NOT reset le to the
+  confirm/current price ⇒ hwm=cur>=le*(1+RT) at open ⇒ floored at BE ⇒ worst clip net>=0.
+- **RECLIP** must be `reclip_pct=0` OR anchored-reclip (route re-entry through the same
+  confirm+anchor path, keep le=reclip_px). A raw `le=cur` reclip reopens a pre-arm window
+  and leaks real pre-BE losses (ADA −527bp, TRX −1773bp).
+- **fp-clamp** the g>=1.0 floored stop to >=BE (IEEE-754 yields ~−1e-7bp).
+
+**Enforced as a build gate:** `scripts/prebe_loss_audit.sh` (+ `scripts/prebe_loss_allowlist.txt`
++ `scripts/PREBE_LOSS_GATE.md`), wired into `scripts/mac_canary_engines.sh` — any pre-BE booking
+site without a floor marker or allowlist entry fails the canary. Crypto side: the boot
+`[MIMIC-FLOOR-GATE] N/N floored 0 VIOLATION` line must show 0 violations. Grandfathered
+backfill-owed (2026-07-17c): GoldTrendMimicLadder (compliance fix landed, edge not certified on
+all cells), StockDayMoverLadderCompanion. See vault `BeFloorOnOpenFoundation.md` (both vaults) +
+memory `feedback-befloor-on-open-foundation`.
+
 ## Engine Adverse-Protection Mandate (added 2026-06-19)
 
 Every NEW position-opening engine MUST ship with a **backtested in-flight
