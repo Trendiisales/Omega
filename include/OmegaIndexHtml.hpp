@@ -969,7 +969,7 @@ function pollRdagent(){
        (/api/rdagent_book positions[], avg-cost from the fills ledger) by symbol —
        displayed value comes from the SAME file the paper fills wrote (content-parity). */
     var posBy={};(book.positions||[]).forEach(function(p){if(p&&p.sym)posBy[p.sym]=p;});
-    var hdr='<tr><th>#</th><th class="l">name</th><th>action</th><th>price</th><th>conf</th><th>5d</th><th>20d</th><th>pos P&amp;L</th></tr>';
+    var hdr='<tr><th>#</th><th class="l">name</th><th>action</th><th>price</th><th title="rank position in the 23-name universe, NOT a signal/confidence score -- BUY needs day-move>=3% AND new 20d-high, see panel subtitle">rank%</th><th>5d</th><th>20d</th><th>pos P&amp;L</th></tr>';
     /* S-2026-07-15e (operator): the flat 23-row ranking read as "we trade ALL of these,
        including the red ones". Only action==='BUY' rows are ever bought (execute_basket
        filters on it); everything else is model-ranking CONTEXT. Partition: held/BUY rows
@@ -1097,9 +1097,9 @@ function drawCC(){var live=window._cc||{};var tags=Object.keys(live);
  /* crypto companion book is a SEPARATE INDEPENDENT ADDITIVE engine — its all-time realized bank
     must FOLD into the Omega totals (operator S-2026-07-05d: "why is this not in the Omega total").
     _cctot = Σ ccWbp (WEIGHTED bank_bp_real_w, BE-floor clamped) over ALL live books — S-17q one
-    $ convention: the fold now matches LAST-15/ledger desk-$ (was raw unweighted → 260-vs-65).
 )OMEGAD5"
-R"OMEGAD6(    Store the all-time weighted bp here; drawLedger/drawEquity read it. Re-trigger both. */
+R"OMEGAD6(    $ convention: the fold now matches LAST-15/ledger desk-$ (was raw unweighted → 260-vs-65).
+    Store the all-time weighted bp here; drawLedger/drawEquity read it. Re-trigger both. */
  window._cctot=totbank;
  if(typeof drawLedger==='function')drawLedger();
  if(typeof drawEquity==='function')drawEquity();
@@ -1270,9 +1270,9 @@ function drawUsoil(){var j=window._usoil||null;
    max(0,.) research clamp — registry §5.) STANDALONE additive — NEVER compared vs riding WIDE. */
 /* drawFx removed S-2026-07-08c: RETIRED FX BE-floor panel deleted */
 function pollFx(){fetch('/api/fx_companion').then(function(r){return r.json();}).then(function(j){
- if(j&&(j.pairs||[]).length)window._fx=j;
 )OMEGAD6"
-R"OMEGAD7( window._fxtot=(((window._fx||{}).pairs)||[]).reduce(function(s,p){return s+safe(p.usd);},0);/* S-2026-07-10: ALL-TIME folds REALIZED forward clips ONLY. Open-leg unrealized MTM removed from the header total -- on shadow ladder books it bounced red/green each mark and read as a phantom "continuous drop" in ALL-TIME (operator: "artifacts showing up / fix the pnl"). Per-panel DESK below still shows live uPnL for monitoring. Supersedes the 2026-07-06 MTM-in-header choice. */
+R"OMEGAD7( if(j&&(j.pairs||[]).length)window._fx=j;
+ window._fxtot=(((window._fx||{}).pairs)||[]).reduce(function(s,p){return s+safe(p.usd);},0);/* S-2026-07-10: ALL-TIME folds REALIZED forward clips ONLY. Open-leg unrealized MTM removed from the header total -- on shadow ladder books it bounced red/green each mark and read as a phantom "continuous drop" in ALL-TIME (operator: "artifacts showing up / fix the pnl"). Per-panel DESK below still shows live uPnL for monitoring. Supersedes the 2026-07-06 MTM-in-header choice. */
  drawFx();
  if(typeof updDayPnl==='function')updDayPnl();if(typeof drawLedger==='function')drawLedger();
  }).catch(function(){drawFx();});}

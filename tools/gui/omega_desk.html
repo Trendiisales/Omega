@@ -958,7 +958,7 @@ function pollRdagent(){
        (/api/rdagent_book positions[], avg-cost from the fills ledger) by symbol —
        displayed value comes from the SAME file the paper fills wrote (content-parity). */
     var posBy={};(book.positions||[]).forEach(function(p){if(p&&p.sym)posBy[p.sym]=p;});
-    var hdr='<tr><th>#</th><th class="l">name</th><th>action</th><th>price</th><th>conf</th><th>5d</th><th>20d</th><th>pos P&amp;L</th></tr>';
+    var hdr='<tr><th>#</th><th class="l">name</th><th>action</th><th>price</th><th title="rank position in the 23-name universe, NOT a signal/confidence score -- BUY needs day-move>=3% AND new 20d-high, see panel subtitle">rank%</th><th>5d</th><th>20d</th><th>pos P&amp;L</th></tr>';
     /* S-2026-07-15e (operator): the flat 23-row ranking read as "we trade ALL of these,
        including the red ones". Only action==='BUY' rows are ever bought (execute_basket
        filters on it); everything else is model-ranking CONTEXT. Partition: held/BUY rows
