@@ -52,4 +52,6 @@ HOLD:PumpScalpManager.hpp         manager shell: persist_restore delegates to th
 #     wire/re-enable. Removing the blocker without fixing = this gate fires.
 HOLD:GoldRegimeDailyEngine.hpp    LATENT: TIME_STOP uses m_bars_seen - entry_bar_seq (L346) and persist_restore does m_pos=LivePos{} leaving entry_bar_seq=0 -- BUT persist_save/restore are NOT wired (no wire_* / register_restorer anywhere), so no restore can run. MUST add entry_bar_seq=m_bars_seen re-anchor (c1903e88 pattern) before wiring persistence.
 HOLD:GoldScalpPyramidEngine.hpp   LATENT: same shape (bars_held = m_bars_seen - entry_bar_seq, L1009) AND the warmup feed ++m_bars_seen (L509) -- but NOT wired into PositionPersistence and engine disabled (S45 scalp purge). MUST add entry_bar_seq re-anchor before any wire/re-enable.
-HOLD:XauusdFvgEngine.hpp          LATENT (closest to live): wire_cross'd ("XauusdFvg") + warmup_from_csv advances m_bars_seen before restore + persist_restore leaves entry_bar_seq=0 -> a restored position would TIME_STOP instantly (elapsed=m_bars_seen-0>=60). Unreachable today ONLY because g_disable_xauusd_fvg=true (globals.hpp) keeps the engine signal-dead so no snapshot is ever written. MUST add m_pos.entry_bar_seq=m_bars_seen re-anchor in persist_restore before flipping g_disable_xauusd_fvg.
+# (S-2026-07-17m) XauusdFvgEngine.hpp HOLD entry REMOVED: persist_restore now
+#   re-anchors entry_bar_seq=m_bars_seen + reconstructs entry_bar_idx (c1903e88
+#   pattern) -- the audit detects the re-anchor natively, no allowlist needed.

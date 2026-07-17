@@ -274,6 +274,12 @@ public:
         m_pos.active = true; m_pos.is_long = (ps.side == "LONG");
         m_pos.entry = ps.entry; m_pos.sl = ps.sl; m_pos.tp = ps.tp; m_pos.size = ps.size;
         m_pos.entry_ts = ps.entry_ts;
+        // Re-anchor the sequential hold clock (c1903e88 pattern). warmup_from_csv
+        // advances m_bars_seen before restore runs; leaving entry_bar_seq=0 makes
+        // elapsed = m_bars_seen - 0 >= TIME_STOP_BARS -> instant TIME_STOP on the
+        // first bar close after restart. Restart the hold window instead.
+        m_pos.entry_bar_seq = static_cast<int64_t>(m_bars_seen);
+        m_pos.entry_bar_idx = m_pos.entry_ts / BAR_SECS;
         return true;
     }
 
