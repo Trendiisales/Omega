@@ -397,11 +397,16 @@ def check_profit_lock_coverage():
     # any uncovered-leg row stamped in the last 24h = RED. Also verifies the gate is
     # actually ARMED (boot line in the service stdout log) — a silent gate is the H5
     # failure mode itself. ONE ssh call (RAM reaper).
+    # NO PowerShell pipes in this string: ssh argv joins with spaces and the remote
+    # cmd.exe interprets a bare `|` as ITS pipeline ("'Select-Object' is not
+    # recognized", rc=255) — the S-2026-07-17v fix; checks [1]/[7]/[8] pass because
+    # their ps strings are pipe-free. Keep it pipe-free.
     ps = (r"if(Test-Path 'C:\Omega\logs\profit_lock_uncovered.log'){"
           r"Write-Output '===UNCOV';Get-Content 'C:\Omega\logs\profit_lock_uncovered.log' -Tail 50};"
           r"Write-Output '===BOOT';"
-          r"Select-String -Path 'C:\Omega\logs\omega_service_stdout.log' -Pattern 'PROFIT-LOCK-GATE' "
-          r"-SimpleMatch | Select-Object -Last 3 | ForEach-Object {$_.Line}")
+          r"$m=@(Select-String -Path 'C:\Omega\logs\omega_service_stdout.log' "
+          r"-Pattern 'PROFIT-LOCK-GATE' -SimpleMatch);"
+          r"foreach($x in $m[-3..-1]){if($x){Write-Output $x.Line}}")
     try:
         r = subprocess.run(["ssh","omega-new","powershell","-NoProfile","-Command",ps],
                            capture_output=True, text=True, timeout=60)
