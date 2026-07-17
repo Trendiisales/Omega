@@ -1477,7 +1477,7 @@ function classOf(eng,sym){var s=(eng||'')+'|'+(sym||'');
  if(/btc|eth|sol|ada|doge|near|bnb|aave|xrp|trx|crypto/i.test(s))return 'crypto';
  if(/xau|gold|mgc|xag|silver|usoil|london/i.test(s))return 'gold';/* usoil+xag land in GOLD per operator class map */
  if(/eur|gbp|nzd|aud|usdcad|usdjpy|idealpro|_fx|fx_/i.test(s))return 'fx';
- if(BIGCAP_STK.test((sym||'').trim())||/nas|ndx|nq|spx|us500|sp5|dj30|dow|ger40|dax|m2k|russell|turtle|dip/i.test(s))return 'stock';
+ if(BIGCAP_STK.test((sym||'').trim())||/nas|ndx|nq|spx|us500|sp5|dj30|dow|ger40|dax|m2k|russell|turtle|dip|index/i.test(s))return 'stock';/* 'index' catches bare index-engine tags (IndexBearShort etc.) -- the stall-clip split calls classOf(engine,'') with no symbol, and an unmatched tag leaked its clip bank into the unclassified remainder (S-2026-07-17m, ±$235 IndexBearShort) */
  return 'other';}
 function updDayPnl(){var cut=Math.floor(Date.now()/86400000)*86400;var n=0,p=0,tot=0;
  ROWS.forEach(function(r){tot+=r.pnl;if(r.ts>=cut){n++;p+=r.pnl;}});
@@ -1541,7 +1541,7 @@ function gcMatch(k){var per=window._gcPer||{};var kb=(k||'').replace(/Engine$/,'
  for(var ck in per){var cb=ck.replace(/Engine$/,'');
   if(kb===cb||kb.indexOf(cb)===0||cb.indexOf(kb)===0)return {key:ck,e:per[ck]};}
  return null;}
-function ledgerCompRow(k,seen){var m=gcMatch(k);if(!m)return '';
+function ledgerCompRow(k,seen,sym){var m=gcMatch(k);if(!m)return '';
  /* one family companion book (per_engine keyed by FAMILY) can match MULTIPLE ledger variant
     rows (XauTrendFollow4h_Donchian… + _Keltner… both strip to XauTrendFollow4h). Render the
     book ONCE — under the first (highest-pnl) matching variant — else phantom double-count. */
@@ -1552,7 +1552,9 @@ function ledgerCompRow(k,seen){var m=gcMatch(k);if(!m)return '';
  var armed=!!(od&&od.eligible);
  var st=od?(armed?'<span class="g">ARMED</span>'+(od.mfe_pct!=null?' '+fmt2(od.mfe_pct,2)+'% peak':''):'<span class="d">tracking</span>'):'';
  var bc=bank>0?'var(--grn)':(bank<0?'var(--red)':'var(--t2)');
- return '<tr><td></td><td class="l d" colspan="3" style="border-left:2px solid var(--grn)">&#8627; companion (stall-clip · paper · additive) · '
+ /* operator 2026-07-17m: label the book by ITS SYMBOL -- "<SYM> comp" -- so the mimic's bank
+    reads as that symbol's companion money, not an anonymous sub-row. */
+ return '<tr><td></td><td class="l d" colspan="3" style="border-left:2px solid var(--grn)">&#8627; <span style="color:var(--t1)">'+esc((sym||'').trim()||m.key)+' comp</span> (stall-clip · paper · additive) · '
   +closed+' banked'+(openn?' · '+openn+' open':'')+(st?' · '+st:'')+'</td>'
   +'<td class="num" style="color:'+bc+'">'+fmt$(bank)+'</td><td colspan="2"></td></tr>';}
 /* ── engine ledger: ALL-TIME running totals per engine (window-independent) ── */
@@ -1585,10 +1587,11 @@ function drawLedger(){var t=el('ledger');var cc=bpUsd(safe(window._cctot));/* cr
    +'<td class="num '+c+'">'+fmt$(e.pnl)+'</td>'
    +'<td style="width:90px"><span class="bar" style="display:block"><i style="width:'+w+'%;background:'+(e.pnl>=0?'var(--grn)':'var(--red)')+'"></i></span></td>'
    +'<td class="num '+(e.pnl>=0?'g':'r')+'">'+fmt$(e.pnl/e.n)+'/t</td></tr>'
-   +ledgerCompRow(k,seenComp);}).join('');
+   +ledgerCompRow(k,seenComp,e.sym);}).join('');
  t.innerHTML='<tr><th class="l">engine</th><th class="l">sym</th><th>n</th><th>WR</th><th>net</th><th></th><th>avg</th></tr>'+rows+compClipRows();
  var net=0;ks.forEach(function(k){net+=by[k].pnl;});
- var tot=net+omc+cc+fxc+gbc+ixc+xgc+uoc+smc+flc+ilc;   /* fold ALL independent companion books (OMEGA stall-clip + crypto ladder + FX + gold + index + xag + usoil + stockmover/fx/index-ladder) into the all-time Omega total -- matches the header ALL-TIME */
+)OMEGAD8"
+R"OMEGAD9( var tot=net+omc+cc+fxc+gbc+ixc+xgc+uoc+smc+flc+ilc;   /* fold ALL independent companion books (OMEGA stall-clip + crypto ladder + FX + gold + index + xag + usoil + stockmover/fx/index-ladder) into the all-time Omega total -- matches the header ALL-TIME */
  el('ledgern').textContent=ks.length+' engines · net '+fmt$(net)
    +(omc?' · companion '+fmt$(omc):'')
    +(cc?' · crypto '+fmt$(cc):'')
@@ -1600,8 +1603,7 @@ function drawLedger(){var t=el('ledger');var cc=bpUsd(safe(window._cctot));/* cr
    +(smc?' · stk '+fmt$(smc):'')
    +(flc?' · fxlad '+fmt$(flc):'')
    +(ilc?' · ixlad '+fmt$(ilc):'')
-)OMEGAD8"
-R"OMEGAD9(   +((omc||cc||fxc||gbc||ixc||xgc||uoc||smc||flc||ilc)?' · Σ '+fmt$(tot):'');}
+   +((omc||cc||fxc||gbc||ixc||xgc||uoc||smc||flc||ilc)?' · Σ '+fmt$(tot):'');}
 
 function drawEquity(){var cv=el("eqc");if(!cv)return;/* SHADOW EQUITY panel removed 2026-07-06 (operator: useless) */var H=110,ctx=prep(cv,H);
  var W=cv.clientWidth;ctx.clearRect(0,0,W,H);
@@ -1758,7 +1760,8 @@ function prBtns(){
  Array.prototype.forEach.call(el('prsyms').children,function(b){b.onclick=function(){PRSYM=b.getAttribute('data-s');localStorage.setItem('omega_prsym',PRSYM);prBtns();drawPR();};});
  Array.prototype.forEach.call(el('prtfs').children,function(b){b.onclick=function(){PRTF=b.getAttribute('data-t');localStorage.setItem('omega_prtf',PRTF);prBtns();drawPR();};});}
 prBtns();
-var PRMK=[],PRMOUSE=null,PRHOVER=null;
+)OMEGAD9"
+R"OMEGAD10(var PRMK=[],PRMOUSE=null,PRHOVER=null;
 function drawPR(){var cv=el("prc");
  /* S-2026-07-10: DYNAMIC chart height — measure the RIGHT topgrid column (ENGINE LEDGER+HEAT+DOM+OBI,
     whose height varies with DOM depth) and size the chart to fill the LEFT column so there is no gap
@@ -1769,8 +1772,7 @@ function drawPR(){var cv=el("prc");
      var rightH=tg.children[1].offsetHeight;
      var lt=el('ltpan');var ltH=lt?lt.offsetHeight:0;
      var pan=cv.parentElement;var nonCanvas=pan.offsetHeight-cv.offsetHeight;
-)OMEGAD9"
-R"OMEGAD10(     var want=Math.round(rightH-ltH-nonCanvas-8);
+     var want=Math.round(rightH-ltH-nonCanvas-8);
      if(want>160&&want<620)H=want;
    }}catch(e){}
  var ctx=prep(cv,H);
@@ -1969,7 +1971,8 @@ function prTip(m,cx,cy){var tip=el('prtip');
   var hit=null,best=160;
   PRMK.forEach(function(m){var dx=m.x-PRMOUSE.x,dy=m.y-PRMOUSE.y,d2=dx*dx+dy*dy;
    if(d2<best){best=d2;hit=m;}});
-  PRHOVER=hit;prTip(hit,e.clientX,e.clientY);});
+)OMEGAD10"
+R"OMEGAD11(  PRHOVER=hit;prTip(hit,e.clientX,e.clientY);});
  cvp.addEventListener('mouseleave',function(){PRMOUSE=null;PRHOVER=null;prTip(null);drawPR();});})();
 /* ~30fps redraw only while hovering, or while the newest exit (<10 min) pulses;
    paused when the tab is hidden. Static otherwise — zero idle cost. */
@@ -1979,8 +1982,7 @@ function prTip(m,cx,cy){var tip=el('prtip');
  if(PRMOUSE||(window._prNewest&&(Date.now()/1000-window._prNewest)<600))drawPR();})();
 
 function redrawAll(){drawEquity();drawHeat();drawMM();drawTOD();drawPromo();updDayPnl();drawPR();drawHist();drawLedger();}
-)OMEGAD10"
-R"OMEGAD11(function loadCsv(){fetch('/api/shadow_csv').then(function(r){return r.text();}).then(function(t){
+function loadCsv(){fetch('/api/shadow_csv').then(function(r){return r.text();}).then(function(t){
  ROWS=parseShadow(t);el('csvinfo').textContent=ROWS.length+' shadow closes loaded';
  fillSymSel();redrawAll();}).catch(function(){el('csvinfo').textContent='shadow csv unavailable';});}
 loadCsv();setInterval(loadCsv,120000);
