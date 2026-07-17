@@ -145,3 +145,46 @@ if (viol) { /* refuse to arm those cells (or hard-abort boot, per operator) */ }
 This complements the static gate the same way the seed `[SEED]` boot line
 complements the seed-registry static gate: source-level guarantee at commit time,
 behavioural guarantee at boot time.
+
+---
+
+## ⚠️ S-2026-07-17f HONESTY CORRECTION — the gate is a CONFIG property, not an execution guarantee
+
+The adversarial verify (17d disaster-stop sweep) found the crypto
+`UpJumpLadderCompanion::book_mimic_stop_` booked floored exits at the **resting-stop
+LEVEL** (`lg.stop_px`, which is ≥ BE by construction), **NOT** the price that actually
+pierced it. So the live `MIMIC-FLOOR-GATE ... 0 VIOLATION` line + the shadow ledger's
+`floorMin=+0.0 / nNeg=0` were a **MODEL/SHADOW property, not execution truth** —
+PF=999 / nNeg=0 was the mechanically-impossible tell. Under honest worse-of fills a
+floored leg **can** book below BE on a gap-through.
+
+**What this gate actually proves:** that every companion cell is *configured*
+floored-on-open (BE-ENTRY + anchor + floor). That is a real and valuable static/config
+property — it removes the immediate-entry and un-anchored-reclip pre-BE **windows**.
+It does **NOT** prove that no clip ever books negative: a gap through the ≥BE stop
+still books its true sub-BE tail. Fix S-17f (crypto b9e350e): `book_mimic_stop_` now
+books the ACTUAL fill so the ledger shows the real tail instead of clamping it to +0
+(a display-truth fix, `feedback-content-parity-not-just-plumbing`). **Never cite this
+gate — or `MIMIC-FLOOR-GATE` — as a "no clip books negative" execution guarantee.**
+
+---
+
+## OUT-OF-CLASS: real/parent directional positions are NOT companions
+
+Some cells LOOK like they book pre-BE-negative clips but are **out of scope** for the
+no-pre-BE-loss rule because they are **real / parent directional positions carrying a
+backtested structural stop**, not shadow companions mimicking a parent. They *honestly*
+book a real stop loss — that IS the correct behaviour for a directional trade, and the
+rule (`feedback-no-prebe-loss-ever`) governs COMPANIONS, not directional entries.
+
+Documented out-of-class cells (crypto; ruled S-2026-07-17f, operator):
+
+| Cell(s) | Why out-of-class |
+|---|---|
+| **PJ jump_floor** (AAVE / ETH / GRT) | Real up-jump spot parent position; carries the widest per-cell backtested structural stop; books its real stop loss honestly (no clamp). Not a mimic. |
+| **Campaign** (UNI / TRX / LDO) | Real virtual-parent campaign position; keeps its structural `pstop`. A directional book, not an additive companion clip. |
+
+The dominance/no-pre-BE-loss framing does not apply to these — judge them as directional
+strategies (`feedback-companion-independent-engine` is about the *reverse* case:
+companions must be judged standalone, never vs the parent). Canonical: Memory-Chimera
+`UpJump2pctSpotParent` + the campaign entity.

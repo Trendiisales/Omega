@@ -435,10 +435,25 @@ candidates for the same pattern.
 Every NEW companion / mimic / ladder / clip engine MUST be built
 **floored-on-open** from day one — it is the FOUNDATION architecture, not
 an add-on. Operator mandate (2026-07-17c): the floored-on-open pattern
-IMPROVED net on nearly every cell across all 5 engines swept AND makes the
-hard no-pre-BE-loss rule (`feedback-no-prebe-loss-ever`) true by
-construction (nNeg=0), so it becomes the default for every subsequent
-companion engine's logic.
+IMPROVED net on nearly every cell across all 5 engines swept, so it becomes
+the default for every subsequent companion engine's logic.
+
+**HONEST-FRAMING CORRECTION (S-2026-07-17f).** The original 17c claim that
+floored-on-open makes the no-pre-BE-loss rule "true by construction (nNeg=0)"
+was FALSE — it was a MODEL/SHADOW property, not execution truth. The
+adversarial verify found the crypto `book_mimic_stop_` booked floored exits
+at the resting-stop LEVEL (>=BE by construction), not the price that pierced
+it, so the shadow ledger clamped every gap-through tail to +0 (PF=999/nNeg=0
+was the mechanically-impossible tell). Under honest worse-of fills every cell
+books a real pre-BE tail on gaps. The floor is still a REAL edge (the design
+floors on open; it REDUCES but does not ELIMINATE pre-BE loss) — it is NOT
+the dead BeFloor family, the edge survives, all SHADOW. Crypto fix shipped
+S-17f (b9e350e): `book_mimic_stop_` books the ACTUAL fill; the 6 anchored-
+reclip survivors re-certified net-positive after slippage WITH a booked tail
+(nNeg>0), NOT nNeg=0. **`prebe_loss_audit.sh` / `MIMIC-FLOOR-GATE` prove the
+DESIGN is floored-on-open (a config/static property), NOT that no clip ever
+books negative.** Never restate nNeg=0 as an execution guarantee. See
+`feedback-befloor-on-open-foundation` + `feedback-no-prebe-loss-ever`.
 
 The canonical recipe (proven S-2026-07-17c, Omega fd51311a + crypto c771068):
 - **BE-ENTRY** — leg stays FLAT, books/pays nothing until fav >= confirm; opens AT that level.
