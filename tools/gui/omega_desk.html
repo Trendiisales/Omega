@@ -95,6 +95,7 @@ a{color:var(--blu);text-decoration:none}
   </span>
   <span id="compbankwrap" style="display:inline-flex;align-items:baseline;gap:6px" title="companion (stall-clip) realized bank — paper, accounting-only"><span class="lbl">COMP-BANK</span><span id="compbank" class="num" style="font-size:14px;font-weight:600;color:var(--t2)">…</span></span>
   <button id="snd">SND OFF</button>
+  <button id="almbtn" title="alarm log — every audible alert with its cause (click to open)" style="position:relative">🔔<span id="almct" class="num" style="margin-left:3px;color:var(--t2)">0</span></button>
   <button id="killall" title="PANIC: market-close ALL open positions in THIS book (sends live opposing MKT orders)" style="background:#3a0d0d;color:#ff5a5a;border:1px solid #ff5a5a;font-weight:700;letter-spacing:.5px" onclick="killAll(this)">KILL ALL</button>
   <span class="num" id="clk" style="color:var(--w)">--:--:-- UTC</span>
   <span class="lbl"><span class="dot" id="conn" style="background:var(--t3)"></span><span id="connlbl">connecting</span></span>
@@ -394,7 +395,7 @@ async function pollHealth(){
   else if(o==='WARN'){ b.style.color='var(--ambB)'; b.textContent='HEALTH '+wc+'W'; }
   else if(o==='UNKNOWN'){ b.style.color='var(--dim,#888)'; b.textContent='HEALTH ?'; return; }
   else { b.style.color='var(--red)'; b.textContent='HEALTH '+fc+'F'+(wc?(' '+wc+'W'):''); }
-  if(o==='FAIL' && __lastHealth && __lastHealth!=='FAIL'){ __healthBeep(); __healthNotify('OMEGA HEALTH FAIL', fc+' failure(s)'); }
+  if(o==='FAIL' && __lastHealth && __lastHealth!=='FAIL'){ almRing('HEALTH FAIL — '+fc+' failure(s)'+(wc?(' + '+wc+' warn'):''),'fail',__healthBeep); __healthNotify('OMEGA HEALTH FAIL', fc+' failure(s)'); }
   __lastHealth=o;
 }
 setInterval(pollHealth,15000); pollHealth();
@@ -432,6 +433,33 @@ function winBell(){chime([[0,880,0.6],[0.15,1100,0.5],[0.3,1320,0.5]]);}
 function lossBell(){chime([[0,440,0.6],[0.18,330,0.5],[0.36,262,0.5]]);}
 function sigTick(){chime([[0,660,0.25]]);}
 function entryBell(){chime([[0,740,0.5],[0.12,988,0.45]]);}
+/* ── ALARM LOG (S-2026-07-18c, operator: "if it alarms i would like to see the notification
+   pertaining to that alarm"). EVERY audible ring must pass a reason through __almLog so the
+   cause is visible: toast bottom-right (6s) + persisted history (last 50, localStorage
+   'omega_alm_log') behind the 🔔 header button. A bell call WITHOUT a reason is a bug —
+   add the reason at the call site, do not bypass this. */
+var __almLog=[];try{__almLog=JSON.parse(localStorage.getItem('omega_alm_log')||'[]');}catch(e){}
+function __almRender(){var b=el('almct');if(b)b.textContent=String(__almLog.length);
+ var p=el('almpanel');if(!p||p.style.display==='none')return;
+ p.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><b>ALARM LOG</b><span><button onclick="__almClear()" style="font-size:10px">clear</button> <button onclick="el(\'almpanel\').style.display=\'none\'" style="font-size:10px">close</button></span></div>'
+  +(__almLog.length?__almLog.slice().reverse().map(function(a){var d=new Date(a.t);
+    return '<div style="padding:3px 0;border-bottom:1px solid var(--bd)"><span class="num d">'+String(d.getUTCHours()).padStart(2,'0')+':'+String(d.getUTCMinutes()).padStart(2,'0')+':'+String(d.getUTCSeconds()).padStart(2,'0')+'Z</span> <span style="color:'+(a.k==='loss'||a.k==='fail'?'var(--redB)':a.k==='win'?'var(--grnB)':'var(--t2)')+'">'+esc(a.r)+'</span></div>';}).join('')
+   :'<div class="d">no alarms yet this browser</div>');}
+function __almClear(){__almLog=[];localStorage.setItem('omega_alm_log','[]');__almRender();}
+function __almToast(r,k){var t=document.createElement('div');
+ t.style.cssText='position:fixed;right:14px;bottom:14px;z-index:99;background:rgba(14,20,27,.97);border:1px solid '+(k==='loss'||k==='fail'?'var(--redB)':k==='win'?'var(--grnB)':'var(--bd2)')+';border-radius:6px;padding:8px 12px;font-size:12px;max-width:340px;box-shadow:0 8px 24px rgba(0,0,0,.55)';
+ t.textContent='🔔 '+r;document.body.appendChild(t);
+ setTimeout(function(){t.remove();},6000);}
+function almRing(reason,kind,bellFn){ /* single funnel: log + toast ALWAYS (even muted), ring only if SND */
+ __almLog.push({t:Date.now(),r:reason,k:kind});if(__almLog.length>50)__almLog=__almLog.slice(-50);
+ try{localStorage.setItem('omega_alm_log',JSON.stringify(__almLog));}catch(e){}
+ __almToast(reason,kind);__almRender();
+ if(bellFn)bellFn();}
+(function(){var b=el('almbtn');if(!b)return;b.onclick=function(){var p=el('almpanel');
+ if(!p){p=document.createElement('div');p.id='almpanel';
+  p.style.cssText='position:fixed;right:14px;top:54px;z-index:98;width:400px;max-height:60vh;overflow-y:auto;background:rgba(14,20,27,.98);border:1px solid var(--bd2);border-radius:6px;padding:10px 12px;font-size:12px;line-height:1.5;box-shadow:0 8px 24px rgba(0,0,0,.55)';
+  document.body.appendChild(p);}
+ p.style.display=(p.style.display==='none')?'block':'none';__almRender();};__almRender();})();
 /* ── COMPANION fire-watcher (2026-07-06): engine fires ring via live_trades; the 6 companion
    books (gold/index/fx/xag/usoil/stockmover) open in their OWN state JSONs, so their fires rang
    NOTHING (operator: "no sound when companions fire"). Poll all companion window vars, ring
@@ -447,33 +475,24 @@ function __compClosed(j){if(!j)return 0;var n=(j.trades||[]).length;
 var __compBooks=[['gold','_gold'],['idx','_idx'],['fx','_fx'],['xag','_xag'],['usoil','_usoil'],['stk','_sm']];
 function pollFires(){var now=Date.now();
  if(window._seenComp===undefined){window._seenComp={};window._compBase=true;window._compClosed={};}
- var anyOpen=false,banked=false;
+ var openWhy=[],bankWhy=[];
  __compBooks.forEach(function(bk){var j=window[bk[1]];if(!j)return;
   __compOpens(j).forEach(function(o){var k=bk[0]+'|'+(o.flavor||o.name||'')+'|'+(o.tier||'')+'|'+(o.entry_ts||o.entry||'');
-   if(!(k in window._seenComp)||(now-window._seenComp[k])>90000){if(!window._compBase)anyOpen=true;}
+   if(!(k in window._seenComp)||(now-window._seenComp[k])>90000){if(!window._compBase)openWhy.push(bk[0]+' '+(o.flavor||o.name||'leg'));}
    window._seenComp[k]=now;});
   var nc=__compClosed(j),pc=window._compClosed[bk[0]];
-  if(pc!==undefined&&nc>pc&&!window._compBase)banked=true;
+  if(pc!==undefined&&nc>pc&&!window._compBase)bankWhy.push(bk[0]+' +'+(nc-pc)+' clip(s)');
   window._compClosed[bk[0]]=nc;});
  for(var k in window._seenComp){if(now-window._seenComp[k]>600000)delete window._seenComp[k];}
- if(!window._compBase){if(anyOpen)entryBell();else if(banked)winBell();}
+ if(!window._compBase){
+  if(openWhy.length)almRing('companion open: '+openWhy.slice(0,4).join(', ')+(openWhy.length>4?' +'+(openWhy.length-4):''),'open',entryBell);
+  else if(bankWhy.length)almRing('companion clip banked: '+bankWhy.join(', '),'win',winBell);}
  window._compBase=false;}
 setInterval(pollFires,5000);
-/* S-2026-07-08c close-bells (operator: sound on open+close, bell on win): every NEW
-   closed row rings -- win -> winBell (rising), loss -> lossBell (falling). Open sounds
-   already ring via entryBell (engine + companion watchers above). Identity-based with
-   silent first-pass baseline so reloads/restarts never ring history. */
-function pollCloseBells(){var now=Date.now();
- if(window._seenCl===undefined){window._seenCl={};window._clBase=true;}
- var win=false,loss=false;
- var cl=(window._compClosed&&window._compClosed.length)?window._compClosed:[];
- cl.slice(0,12).forEach(function(d){var k=(d.ts||'')+'|'+(d.engine||d.eng||'')+'|'+(d.pnl!==undefined?d.pnl:'');
-  if(!(k in window._seenCl)){window._seenCl[k]=now;
-   if(!window._clBase){if(safe(d.pnl)>=0)win=true;else loss=true;}}});
- for(var k in window._seenCl){if(now-window._seenCl[k]>3600000)delete window._seenCl[k];}
- if(!window._clBase){if(win)winBell();else if(loss)lossBell();}
- window._clBase=false;}
-setInterval(pollCloseBells,5000);
+/* S-2026-07-08c pollCloseBells REMOVED S-2026-07-18c: it read window._compClosed as an ARRAY
+   of closed rows, but pollFires owns that name as a book->count MAP (no .length) -- so cl was
+   always [] and the function never rang once (dead since birth). Close bells actually ring via
+   drawBlot (/api/shadow_trades exitTs watermark) + pollFires banked-clip counter above. */
 /* browsers suspend AudioContext until a user gesture -- with SND persisted ON a
    reloaded page was SILENT until the user happened to click. Resume on first
    gesture so persisted-ON actually rings, and play a startup chime (operator GO
@@ -483,11 +502,11 @@ setInterval(pollCloseBells,5000);
    the site (Chrome > Site settings > Sound > Allow). Blocked contexts reject resume()
    and the first-gesture listeners below remain the fallback. */
 (function(){if(!SND)return;ensureCtx();if(!ACTX)return;
- var boot=function(){if(!window._bootChimed){window._bootChimed=true;chime([[0,660,0.35],[0.14,880,0.3],[0.28,1320,0.3]]);}};
+ var boot=function(){if(!window._bootChimed){window._bootChimed=true;almRing('session-start chime (sound armed — not an alarm)','info',function(){chime([[0,660,0.35],[0.14,880,0.3],[0.28,1320,0.3]]);});}};
  if(ACTX.state==='suspended'){ACTX.resume().then(boot).catch(function(){});} else boot();})();
 ['click','keydown','touchstart'].forEach(function(ev){
  document.addEventListener(ev,function(){if(SND){ensureCtx();
-  if(!window._bootChimed){window._bootChimed=true;chime([[0,660,0.35],[0.14,880,0.3],[0.28,1320,0.3]]);}}},{once:true,capture:true});});
+  if(!window._bootChimed){window._bootChimed=true;almRing('session-start chime (sound armed — not an alarm)','info',function(){chime([[0,660,0.35],[0.14,880,0.3],[0.28,1320,0.3]]);});}}},{once:true,capture:true});});
 
 /* ── session strip ── */
 (function(){var z=[[0,5,'#1d2733'],[5,7,'#143042'],[7,13,'#155446'],[13,13.5,'#0F6E56'],[13.5,15,'#7a5a14'],[15,20,'#155446'],[20,22,'#143042'],[22,24,'#1d2733']];
@@ -701,6 +720,7 @@ function render(J){lastJ=J;
  (function(){var boot=Math.round((Date.now()/1000-up)/60)*60,
   seen=parseInt(localStorage.getItem('omega_boot_seen')||'0',10);
   if(Math.abs(boot-seen)>120){localStorage.setItem('omega_boot_seen',String(boot));
+   almRing('Omega service restarted (boot epoch moved) — sound re-armed','info',null);
    if(!SND){SND=true;localStorage.setItem('omega_snd','1');sndBtn();}}})();
  var st=el('sesstrade');st.textContent=(J.session_name||'?')+(safe(J.session_tradeable)?' · tradeable':' · blocked');
  st.style.color=safe(J.session_tradeable)?'var(--grnB)':'var(--redB)';
@@ -776,12 +796,12 @@ function render(J){lastJ=J;
   var up=safe(J.uptime_sec);
   if(window._lastUp!==undefined&&up<window._lastUp-5)window._trBase=true;
   window._lastUp=up;
-  var fresh=0;
+  var freshWhy=[];
   lts.forEach(function(t){var k=(t.engine||'')+'|'+(t.symbol||'')+'|'+(t.side||'')+'|'+fmt2(t.entry,4);
-   if(!(k in window._seenTr)||(now-window._seenTr[k])>90000){if(!window._trBase)fresh++;}
+   if(!(k in window._seenTr)||(now-window._seenTr[k])>90000){if(!window._trBase)freshWhy.push((t.engine||'?').replace(/Engine$/,'')+' '+(t.symbol||'')+' '+(t.side||''));}
    window._seenTr[k]=now;});
   for(var k in window._seenTr){if(now-window._seenTr[k]>600000)delete window._seenTr[k];}
-  if(fresh>0&&!window._trBase){entryBell();flashPan('ltpan');}
+  if(freshWhy.length&&!window._trBase){almRing('engine position: '+freshWhy.slice(0,4).join(', ')+(freshWhy.length>4?' +'+(freshWhy.length-4):''),'open',entryBell);flashPan('ltpan');}
   window._trBase=false;})();
  if(!lts.length){
   /* tick-driven publisher goes quiet when the market is closed -- positions can
@@ -1794,7 +1814,8 @@ function drawBlot(){fetch('/api/shadow_trades').then(function(r){return r.json()
   var fresh=a.filter(function(t){return safe(t.exitTs)>window._lastClose;});
   var net=fresh.reduce(function(s,t){return s+safe(t.pnl);},0);
   window._lastClose=newest;
-  if(net>=0)winBell();else lossBell();}
+  var why=fresh.slice(0,4).map(function(t){return (t.engine||'?').replace(/Engine$/,'')+' '+(t.symbol||'')+' '+fmt$(safe(t.pnl));}).join(', ')+(fresh.length>4?' +'+(fresh.length-4):'');
+  if(net>=0)almRing('trade closed: '+why,'win',winBell);else almRing('trade closed: '+why,'loss',lossBell);}
 }).catch(function(){});}
 function drawHist(){var h=el('hist');if(!h)return;/* TRADE HISTORY panel removed 2026-07-06 (operator: useless) */if(!ROWS.length){h.innerHTML='<tr><td class="l d">no closes in ledger</td></tr>';el('histn').textContent='';return;}
  var rows=ROWS.slice().reverse().map(function(r){
