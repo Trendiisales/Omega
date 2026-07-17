@@ -1321,6 +1321,9 @@ void OmegaTelemetryServer::run(int port)
         else if (strstr(buf, "GET /api/stockmover_companion")){ ct = "application/json"; body = loadFile("stockmover_companion_state.json"); if (body.empty()) body = "{\"engine\":\"stockmover-befloor-pos-neg\",\"names\":[]}"; }
         else if (strstr(buf, "GET /api/stockladder_companion")){ ct = "application/json"; body = loadFile("stockladder_companion_state.json"); if (body.empty()) body = "{\"engine\":\"stockmover-upjump-ladder\",\"names\":[]}"; }
         else if (strstr(buf, "GET /api/stockdipturtle")){ ct = "application/json"; body = loadFile("stockdipturtle_state.json"); if (body.empty()) body = "{\"engine\":\"stock-dip-turtle\",\"books\":[]}"; }
+        // BigCapHi52 (S-2026-07-17m): SHADOW deploy-forward 52wk-high portfolio paper book
+        // (rdagent-basket class). Engine writes hi52_state.json atomically on every daily row.
+        else if (strstr(buf, "GET /api/hi52")){ ct = "application/json"; body = loadFile("hi52_state.json"); if (body.empty()) body = "{\"engine\":\"BigCapHi52\",\"shadow\":true,\"pnl_usd\":0,\"eq_fwd\":1.0,\"members\":[]}"; }
         else if (strstr(buf, "GET /api/bigcap2pct_companion")){ ct = "application/json"; body = loadFile("bigcap2pct_companion_state.json"); if (body.empty()) body = "{\"engine\":\"bigcap-2pct-impulse\",\"names\":[]}"; }
         // (GET /api/jumprider endpoint REMOVED — JumpRider engine culled/tombstoned S-2026-07-10)
         else if (strstr(buf, "GET /api/fxladder_companion")){ ct = "application/json"; body = loadFile("fxladder_companion_state.json"); if (body.empty()) body = "{\"engine\":\"fx-upjump-ladder\",\"pairs\":[]}"; }

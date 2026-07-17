@@ -61,3 +61,4 @@ chimera_32grid	josgp1	josgp1:include/core/GridEngine.hpp	NONE	NONE	NONE	NONE	OBS
 chimera_p6_p7	josgp1	josgp1:/home/jo/ChimeraCrypto/src/main.cpp install6/P7-DERIV	NONE	NONE	NONE	NONE	OBSERVATION	observation books, no orders
 chimera_python_sleeves	josgp1	josgp1:/home/jo/ChimeraCrypto/sleeves/chimera_sleeves.py	NONE (local shadow_sleeves_ledger.csv + local GUI)	NONE	NONE	NONE	RESEARCH-ONLY	paper sleeve book (currently CASH); revisit if it ever carries a live claim
 chimera_upmove_shadow	josgp1	josgp1:/home/jo/ChimeraCrypto/sleeves/upmove_shadow.py	NONE (local log/positions)	NONE	NONE	NONE	RESEARCH-ONLY	hourly shadow executor, NO ORDERS
+bigcap_hi52_portfolio	omega-new	include/BigCapHi52Engine.hpp	in-binary poller writes hi52_state.json on each daily row	/api/hi52	BIGCAP HI52 pollHi52	window._hi52tot	WIRED	SHADOW deploy-forward 52wk-high weekly-rebal paper $10k (S-2026-07-17m desk wire)

@@ -272,6 +272,17 @@ a{color:var(--blu);text-decoration:none}
   <div style="overflow:auto;max-height:300px;font-size:9.5px"><table id="rdatab" style="width:100%"><tr><td class="l d">loading…</td></tr></table></div>
 </div>
 
+<!-- ═══ BIGCAP HI52 — within-5%-of-52wk-high weekly rotation (S-2026-07-17m desk wire; engine
+     shipped 17l SHADOW deploy-forward, hi52_state.json was servable but had no endpoint/panel —
+     content-parity). Record = hi52_state.json via /api/hi52. ═══ -->
+<div class="pan">
+  <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px">
+    <span class="lbl">BIGCAP HI52 — 52wk-high momentum · weekly rebal · SPY-200DMA gate · shadow paper $10k · deploy-forward</span>
+    <span id="hi52info" class="lbl" style="margin-left:auto">…</span>
+  </div>
+  <div style="overflow:auto;max-height:220px;font-size:9.5px"><table id="hi52tab" style="width:100%"><tr><td class="l d">loading…</td></tr></table></div>
+</div>
+
 
 
 
@@ -1357,6 +1368,24 @@ function pollStockDip(){fetch('/api/stockdipturtle').then(function(r){return r.j
  }).catch(function(){});}
 setInterval(pollStockDip,15000);pollStockDip();
 
+/* ── BIGCAP HI52 portfolio paper book (S-2026-07-17m). Schema: {engine,shadow,pool_usd,pnl_usd,
+   eq_fwd,gate,deploy_ts,ts,members:[{sym,w}]}. rdagent-basket class: fold pnl_usd (portfolio
+   paper P&L, deploy-forward eq_fwd) into ALL-TIME + STOCK, same rule as _rdatot. STANDALONE
+   additive book — never vs anything ([[feedback-companion-independent-engine]]). */
+function drawHi52(){var j=window._hi52||{},t=el('hi52tab');if(!t)return;
+ var mem=j.members||[],pnl=safe(j.pnl_usd),eq=safe(j.eq_fwd)||1,on=!!safe(j.gate);
+ var inf=el('hi52info');if(inf){inf.textContent='eq '+eq.toFixed(4)+' · gate '+(on?'RISK-ON':'RISK-OFF (flat)')+' · P&L '+fmt$(pnl);inf.style.color=pnl>0?'var(--grn)':(pnl<0?'var(--red)':'');}
+ var h='<tr><td class="l lbl">member (within 5% of 52wk high)</td><td class="lbl">weight</td></tr>';
+ if(!mem.length){t.innerHTML=h+'<tr><td class="l d" colspan="2">'+(on?'no members within 5% of 52wk high — flat':'SPY &lt; 200DMA — portfolio flat by gate')+'</td></tr>';return;}
+ t.innerHTML=h+mem.map(function(m){return '<tr><td class="l">'+esc(m.sym||'')+'</td><td class="num">'+(100*safe(m.w)).toFixed(1)+'%</td></tr>';}).join('');}
+function pollHi52(){fetch('/api/hi52').then(function(r){return r.json();}).then(function(j){
+ if(j&&j.engine)window._hi52=j;
+ window._hi52tot=safe((window._hi52||{}).pnl_usd);/* portfolio paper P&L -> ALL-TIME (rdagent-class fold; deploy-forward so 0 at wire) */
+ drawHi52();
+ if(typeof updDayPnl==='function')updDayPnl();if(typeof drawLedger==='function')drawLedger();
+ }).catch(function(){drawHi52();});}
+setInterval(pollHi52,30000);pollHi52();
+
 /* ── FX + INDEX upjump LADDER panels (S-2026-07-07x wire; /api/fxladder_companion +
    /api/idxladder_companion, written in-binary by FxUpJumpLadderCompanion registries).
    FORWARD TRADES ONLY — deploy-forward, $0 until a live clip closes; per-clip rt cost
@@ -1477,7 +1506,8 @@ function updDayPnl(){var cut=Math.floor(Date.now()/86400000)*86400;var n=0,p=0,t
  var bc2All=safe(window._bc2tot);/* S-2026-07-11: BigCap2pct impulse companion REALIZED bank, $ (additive, all-time). Endpoint existed but was orphaned from the fold -> mimic_pnl_completeness_gate now enforces it. */
  var chimAll=safe(window._chimtot);/* S-2026-07-12b: chimera EDGE realized, $ (additive, all-time; engine!~CLIP so no _cctot overlap). Was folded into cls.crypto + eqtot only -- pnl_completeness gate caught the missing updDayPnl term. */
  var sdAll=safe(window._sdtot);/* S-2026-07-15m: StockDip/StockTurtle single-name book REALIZED bank, $ (additive, all-time). Book was persisted+servable but never folded -> real stock winners (MU/DELL) showed $0. Routes to STOCK class below. */
- var pT=p+cToday,totT=tot+cAll+ccAll+fxAll+gbAll+ixAll+xgAll+uoAll+smAll+flAll+ilAll+rdaAll+bc2All+chimAll+sdAll;
+ var h52All=safe(window._hi52tot);/* S-2026-07-17m: BigCapHi52 portfolio paper P&L (deploy-forward, rdagent-class fold). Routes to STOCK class below. */
+ var pT=p+cToday,totT=tot+cAll+ccAll+fxAll+gbAll+ixAll+xgAll+uoAll+smAll+flAll+ilAll+rdaAll+bc2All+chimAll+sdAll+h52All;
  tweenNum('daypnl',pT,fmt$);el('daypnl').style.color=pT>=0?'var(--grn)':'var(--red)';
  el('daypnln').textContent=n+' closes today (UTC)'+(cToday?' · incl '+fmt$(cToday)+' paper':'');
  tweenNum('totpnl',totT,fmt$);el('totpnl').style.color=totT>=0?'var(--grn)':'var(--red)';
@@ -1490,7 +1520,7 @@ function updDayPnl(){var cut=Math.floor(Date.now()/86400000)*86400;var n=0,p=0,t
  /* 2. class-pure forward/paper book globals (each already realized-only per the 07-10 fold rule) */
  cls.crypto+=ccAll;                       /* crypto ladder companion (32-cell grid banks) */
  cls.crypto+=safe(window._chimtot);       /* + chimera EDGE realized (TIA-TSMOM etc.); additive, no CLIP overlap */
- cls.stock +=smAll+rdaAll+bc2All+ilAll+ixAll+sdAll; /* bigcap ladder + rdagent basket + bigcap2pct + index ladder + index befloor($0) + stockdip/turtle single-name book */
+ cls.stock +=smAll+rdaAll+bc2All+ilAll+ixAll+sdAll+h52All; /* bigcap ladder + rdagent basket + bigcap2pct + index ladder + index befloor($0) + stockdip/turtle single-name book + bigcap hi52 portfolio */
  cls.fx    +=flAll+fxAll;                  /* fx ladder + fx befloor($0) */
  cls.gold  +=gbAll+xgAll+uoAll;            /* gold+xag+usoil befloor ($0) */
  /* 3. OMEGA stall-clip (cAll, gold+index only) — split per-engine via window._gcPer.
