@@ -1008,6 +1008,14 @@ setInterval(pollRdagent,5000);pollRdagent();
    pool this is 1:1 (1 bp = $1). Change CRYPTO_POOL_USD if the live pool ever moves. */
 var CRYPTO_POOL_USD=10000;
 function bpUsd(bp){return (safe(bp)||0)*CRYPTO_POOL_USD/10000.0;}
+/* S-2026-07-17q (operator order, third ask — the LDO 260-vs-65 split): ONE $ convention
+   everywhere. A crypto book's desk-$ is its WEIGHTED bank (bank_bp_real_w = Σ net_bp_real
+   × size_mult), the same number its LAST-15-TRADES rows book. RAW bp may still be shown but
+   ONLY labelled with its ×mult, never converted to $ on its own. BE-floor clamp applies to
+   the weighted value (max(0,·) — mult>=0 so clamping weighted == clamping raw then scaling).
+   Fallback: a stale producer frame without bank_bp_real_w degrades to raw×mult, then raw. */
+function ccWbp(s){var w=(s&&s.bank_bp_real_w!==undefined)?safe(s.bank_bp_real_w):safe(s&&s.bank_bp_real)*((s&&s.mult!==undefined)?safe(s.mult):1);return Math.max(0,w);}
+function ccMult(s){return (s&&s.mult!==undefined)?safe(s.mult):1;}
 /* Row model (dynamic): group served legs by coin — coin summary line, then one nested
    `↳` row per BOOK (tag) with its type/state/peak/clips/bank, then open cascade sublegs
    nested one level deeper. Banks Σ over ALL served legs -> _cctot fold (unchanged shape). */
@@ -1042,8 +1050,9 @@ function drawCC(){var live=window._cc||{};var tags=Object.keys(live);
   /* S-2026-07-15n (operator "get rid of the fake crypto"): floor every leg's realized at BE(0).
      A companion-at-BE mimic can NEVER book a loss ([[feedback-mimic-be-floor-mandatory]]); a
      negative bank_bp_real (e.g. the ETH-PJ7W24 -73.61bp leg) is a floor VIOLATION, not a real loss
-     -> clamp to 0 everywhere it's summed/shown. josgp1 root (why the leg booked neg) is owed. */
-  books.forEach(function(s){coinbank+=Math.max(0,safe(s.bank_bp_real));if(s.armed||(s.sublegs&&s.sublegs.length))coinact++;});
+     -> clamp to 0 everywhere it's summed/shown. josgp1 root (why the leg booked neg) is owed.
+     S-2026-07-17q: fold is WEIGHTED (ccWbp) — one $ convention with LAST-15/ledger. */
+  books.forEach(function(s){coinbank+=ccWbp(s);if(s.armed||(s.sublegs&&s.sublegs.length))coinact++;});
   if(coinact)ntrading++;
   var cb=(coinbank!==0)
     ? '<span style="color:'+(coinbank>0?'var(--grn)':'var(--red)')+'">'+fmt2(coinbank,1)+' bp <span class="d">$'+fmt2(bpUsd(coinbank),2)+'</span></span>'
@@ -1053,11 +1062,13 @@ function drawCC(){var live=window._cc||{};var tags=Object.keys(live);
     +'<td class="l">'+(coinact?'<span class="g" style="font-weight:600">'+coinact+' TRADING</span>':'<span class="d">idle</span>')+'</td>'
     +'<td colspan="2"></td><td class="num">'+cb+'</td></tr>';
   books.forEach(function(s){
-   nbooks++;totclips+=safe(s.clips);totbank+=Math.max(0,safe(s.bank_bp_real));if(s.armed)narm++;/* BE-floor: no mimic leg counts negative (see above) */
+   nbooks++;totclips+=safe(s.clips);totbank+=ccWbp(s);if(s.armed)narm++;/* BE-floor: no mimic leg counts negative (see above); WEIGHTED fold (S-17q one-convention) */
    var act=!!(s.armed||(s.sublegs&&s.sublegs.length));
    var pk=s.peak_mfe_pct===undefined?'<span class="d">—</span>':fmt2(s.peak_mfe_pct,2);
-   var bkv=Math.max(0,safe(s.bank_bp_real));/* BE-floor clamp — a floor-violating negative leg shows $0, not a fake loss */
-   var bk='<span style="color:'+(bkv>0?'var(--grn)':(bkv<0?'var(--red)':'var(--t2)'))+'">'+fmt2(bkv,1)+' bp <span class="d">$'+fmt2(bpUsd(bkv),2)+'</span></span>';
+   var bkv=ccWbp(s);/* WEIGHTED desk bank, BE-floor clamped — same $ as this book's LAST-15 rows */
+   var rawbk=Math.max(0,safe(s.bank_bp_real)),bmult=ccMult(s);
+   var bk='<span style="color:'+(bkv>0?'var(--grn)':(bkv<0?'var(--red)':'var(--t2)'))+'">'+fmt2(bkv,1)+' bp <span class="d">$'+fmt2(bpUsd(bkv),2)+'</span></span>'
+     +(bmult!==1?' <span class="d" style="font-size:9px">(raw '+fmt2(rawbk,1)+'bp &times;'+fmt2(bmult,2)+')</span>':'');
    h+='<tr'+(act?'':' style="opacity:.75"')+'><td class="l d" style="border-left:2px solid '+(act?'var(--grn)':'var(--t2)')+';padding-left:10px">&#8627; '+esc(s.tag||'?')+'</td>'
      +'<td class="l d" style="font-size:9px">'+ccKind(s)+'</td>'
      +'<td class="l">'+ccState(s)+'</td><td class="num">'+pk+'</td>'
@@ -1071,11 +1082,12 @@ function drawCC(){var live=window._cc||{};var tags=Object.keys(live);
   });
  });
  el('cctab').innerHTML=h;
- el('ccinfo').innerHTML=nbooks+' live book(s) · '+syms.length+' coin(s) · '+ntrading+' trading · '+narm+' armed · '+totclips+' clips · Σ bank REAL <span style="color:'+(totbank>0?'var(--grn)':(totbank<0?'var(--red)':'var(--t2)'))+'">'+fmt2(totbank,1)+' bp ($'+fmt2(bpUsd(totbank),2)+')</span> <span class="d" style="font-size:9px">(folds into crypto PnL → total)</span>';
+ el('ccinfo').innerHTML=nbooks+' live book(s) · '+syms.length+' coin(s) · '+ntrading+' trading · '+narm+' armed · '+totclips+' clips · Σ bank desk-$ (weighted) <span style="color:'+(totbank>0?'var(--grn)':(totbank<0?'var(--red)':'var(--t2)'))+'">'+fmt2(totbank,1)+' bp ($'+fmt2(bpUsd(totbank),2)+')</span> <span class="d" style="font-size:9px">(folds into crypto PnL → total)</span>';
  /* crypto companion book is a SEPARATE INDEPENDENT ADDITIVE engine — its all-time realized bank
     must FOLD into the Omega totals (operator S-2026-07-05d: "why is this not in the Omega total").
-    _cctot = Σ bank_bp_real over ALL 32 grid cells (same field/shape as pre-grid: sum of legs'
-    bank_bp_real). Store the all-time bp here; drawLedger/drawEquity read it. Re-trigger both. */
+    _cctot = Σ ccWbp (WEIGHTED bank_bp_real_w, BE-floor clamped) over ALL live books — S-17q one
+    $ convention: the fold now matches LAST-15/ledger desk-$ (was raw unweighted → 260-vs-65).
+    Store the all-time weighted bp here; drawLedger/drawEquity read it. Re-trigger both. */
  window._cctot=totbank;
  if(typeof drawLedger==='function')drawLedger();
  if(typeof drawEquity==='function')drawEquity();
@@ -1585,31 +1597,33 @@ function compClipRows(){var cl=window._compClosed||[];if(!cl.length)return '';
    +'<td class="l d" colspan="2" style="font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:170px" title="'+esc((d.eng||'')+' '+(d.side||'')+' @ '+(d.entry||''))+'">'+esc((d.eng||'').replace(/Engine$/,''))+' · '+esc(d.reason||'')+'</td>'
    +'<td class="num '+c+'" style="font-size:10px">'+fmt$(p)+'</td><td colspan="2" class="l d" style="font-size:10px">'+esc(d.book||'')+'</td></tr>';}).join('');
  return '<tr><td class="l d" colspan="7" style="padding-top:6px">companion clips — recent closes (paper, additive; why COMP-BANK moved)</td></tr>'+rows;}
-/* ── crypto companion per-symbol itemization for the ENGINE LEDGER (S-2026-07-17p) ──
+/* ── crypto companion per-symbol itemization for the ENGINE LEDGER (S-2026-07-17p, q) ──
    Operator: every crypto symbol with mimic/companion books appears in the ledger — a
-   SYMBOL row with that symbol's TOTAL, then one ↳ sub-row per book (tag + its own bank).
+   SYMBOL row with that symbol's TOTAL, then one ↳ sub-row per book named mimic1, mimic2, ...
+   (count PER SYMBOL, operator S-17q order; tag kept as a dim label so identity survives).
    DISPLAY-ONLY itemization: the totals already fold ONCE via _cctot (the "crypto" term in
    the footer + ALL-TIME headline) — these rows explain that fold, they do NOT add to it.
-   Per-book $ reuses the drawCC fold math EXACTLY — bpUsd(max(0, bank_bp_real)), BE-floor
-   clamp included — so Σ(sub-rows) == Σ(symbol rows) == the CRYPTO companion total
-   (content-parity: never a second conversion). Books with 0 clips still render (operator
-   wants visibility). Real forward banks only — the state file is forward-only, no
-   backtest/replay rows ([[feedback-no-backtest-in-live-gui]]). Reads window._cc (the
-   sticky pollCC overlay); drawCC re-triggers drawLedger so these stay in lockstep. */
+   Per-book $ reuses the drawCC fold math EXACTLY — bpUsd(ccWbp) = WEIGHTED bank_bp_real_w,
+   BE-floor clamp included — so Σ(sub-rows) == Σ(symbol rows) == the CRYPTO companion total
+   == this book's LAST-15 desk-$ (one convention; the 260-vs-65 split is dead). Books with
+   0 clips still render (operator wants visibility). Real forward banks only — the state
+   file is forward-only, no backtest/replay rows ([[feedback-no-backtest-in-live-gui]]).
+   Reads window._cc (sticky pollCC overlay); drawCC re-triggers drawLedger, stays in lockstep. */
 function cryptoLedgerRows(){var live=window._cc||{};var tags=Object.keys(live);if(!tags.length)return '';
  var bySym={};tags.forEach(function(t){var p=live[t];if(!p)return;
   var sy=p.sym||String(p.tag||t).split('-')[0]||'?';(bySym[sy]=bySym[sy]||[]).push(p);});
  var syms=Object.keys(bySym);if(!syms.length)return '';
- var tot={};syms.forEach(function(sy){var s=0;bySym[sy].forEach(function(p){s+=bpUsd(Math.max(0,safe(p.bank_bp_real)));});tot[sy]=s;});
+ var tot={};syms.forEach(function(sy){var s=0;bySym[sy].forEach(function(p){s+=bpUsd(ccWbp(p));});tot[sy]=s;});
  syms.sort(function(a,b){return Math.abs(tot[b])-Math.abs(tot[a])||a.localeCompare(b);});/* |total| desc */
- var h='<tr><td class="l d" colspan="7" style="padding-top:6px">crypto companion/mimic books — per symbol (paper, additive; itemizes the crypto fold, counted once)</td></tr>';
+ var h='<tr><td class="l d" colspan="7" style="padding-top:6px">crypto companion/mimic books — per symbol (paper, additive; itemizes the crypto fold, counted once; desk-$ weighted)</td></tr>';
  syms.forEach(function(sy){var books=bySym[sy].sort(function(a,b){return String(a.tag).localeCompare(String(b.tag));});
   var tc=tot[sy]>0?'g':'d';
   h+='<tr><td class="l" style="font-weight:600">'+esc(sy)+'</td>'
     +'<td class="l d" style="font-size:9px">'+books.length+' book'+(books.length>1?'s':'')+'</td>'
     +'<td colspan="2"></td><td class="num '+tc+'">'+fmt$(tot[sy])+'</td><td colspan="2"></td></tr>';
-  books.forEach(function(s){var bkv=bpUsd(Math.max(0,safe(s.bank_bp_real)));/* EXACT fold math — see header comment */
-   h+='<tr style="opacity:.85"><td class="l d" colspan="4" style="border-left:2px solid '+(s.retired?'var(--red)':'var(--grn)')+';padding-left:10px;font-size:10px">&#8627; '+esc(s.tag||'?')
+  books.forEach(function(s,bi){var bkv=bpUsd(ccWbp(s));var bm=ccMult(s);/* EXACT fold math — see header comment */
+   h+='<tr style="opacity:.85"><td class="l d" colspan="4" style="border-left:2px solid '+(s.retired?'var(--red)':'var(--grn)')+';padding-left:10px;font-size:10px">&#8627; mimic'+(bi+1)
+     +' <span class="d" style="font-size:9px">'+esc(s.tag||'?')+(bm!==1?' &times;'+fmt2(bm,2):'')+'</span>'
      +(s.retired?' <span style="color:var(--red)">RETIRED</span>':'')
      +(s.clips!==undefined?' · '+s.clips+' clip'+(safe(s.clips)===1?'':'s'):'')+'</td>'
      +'<td class="num '+(bkv>0?'g':'d')+'" style="font-size:10px">'+fmt$(bkv)+'</td><td colspan="2"></td></tr>';
