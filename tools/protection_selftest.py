@@ -435,10 +435,21 @@ def check_profit_lock_coverage():
         record("[9] PROFIT-LOCK-COVERAGE", False,
                "*** live leg(s) with NO giveback cover (24h): " + "; ".join(sorted(set(uncov))[:4]) + " ***")
     elif not armed:
-        # gate line absent: binary predates H5 OR gate never ran (zoo dead => check [1]
-        # would also flag). RED — "built" is not "running" (effect-level doctrine).
-        record("[9] PROFIT-LOCK-COVERAGE", False,
-               "no '[PROFIT-LOCK-GATE] ... armed' boot line in service stdout -- gate NOT RUNNING on the live binary")
+        # gate line absent. The armed line prints on the FIRST DRIVE CYCLE (tick-driven,
+        # StallCompanion.hpp profit_lock_gate_), and a deploy restart rotates the stdout
+        # log — so a weekend/closed-market restart legitimately has NO armed line until
+        # ticks resume (false RED after the 2026-07-18 tile deploy). Same relaxation as
+        # check [1]: on a closed market the sweep cannot run, so arming is not
+        # assessable; the uncovered-leg log above (persisted file) still REDs regardless.
+        # First market tick re-arms it or Monday's run goes RED for real.
+        if _market_closed_weekend(datetime.datetime.now(datetime.timezone.utc)):
+            record("[9] PROFIT-LOCK-COVERAGE", True,
+                   "weekend (market closed) -- drive cycle idle since restart; armed line not assessable, no uncovered leg in log")
+        else:
+            # binary predates H5 OR gate never ran (zoo dead => check [1] would also
+            # flag). RED — "built" is not "running" (effect-level doctrine).
+            record("[9] PROFIT-LOCK-COVERAGE", False,
+                   "no '[PROFIT-LOCK-GATE] ... armed' boot line in service stdout -- gate NOT RUNNING on the live binary")
     else:
         record("[9] PROFIT-LOCK-COVERAGE", True,
                "runtime sweep armed; no uncovered live leg in 24h")
