@@ -262,8 +262,8 @@ inline void register_position_persistence() {
     wire_cross(g_gold_tfbw_1040,  "GoldTfBw1h_ema10_40_t2.0",    "MGC");
     wire_cross(g_gold_tfbw_20100, "GoldTfBw1h_ema20_100_t2.0",   "MGC");
     wire_cross(g_gold_don_h1,     "GoldDonH1_20_10_stop3ATR",    "MGC");
-    // S-2026-07-14: sub-30m BIG GO DON cells (native 15m/10m fine feeds).
-    wire_cross(g_gold_don_15m,    "GoldDon15m_60_35_stop3.5ATR", "MGC");
+    // S-2026-07-14: sub-30m BIG GO DON cells (native fine feeds).
+    // GoldDon15m wire REMOVED S-2026-07-17s (engine culled, see omega_main.hpp).
     wire_cross(g_gold_don_10m,    "GoldDon10m_30_35_stop3ATR",   "MGC");
 
     // ---- batch 6: tail — Breakout FX, NBM, FX turtles/scalp, pyramided (base) ----

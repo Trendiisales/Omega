@@ -461,19 +461,12 @@ int main(int argc, char* argv[])
     //    native IBKR TRADES bars); seeds = data/mgc_15m_hist.csv /
     //    mgc_10m_hist.csv (nightly seed_refresh.py). SHADOW. Same adverse
     //    protection family: hard ATR stop, channel exit, auto-retire -2x BT DD.
-    g_gold_don_15m.enabled = true;  g_gold_don_15m.shadow_mode = true;
-    g_gold_don_15m.lot = 1.0;       // LOT-GATE-OK: lot = CONTRACTS; 1 MGC micro = 10oz = $10/pt (smallest unit)
-    g_gold_don_15m.mech = omega::GoldBothWaysShortTfEngine::Mech::DON;
-    g_gold_don_15m.tf_secs = 900;   g_gold_don_15m.row_secs = 900;
-    g_gold_don_15m.atr_n = 14;
-    g_gold_don_15m.don_in = 60;     g_gold_don_15m.don_out = 35;
-    g_gold_don_15m.stop_atr = 3.5;  g_gold_don_15m.trail_atr = 0.0;
-    g_gold_don_15m.time_stop_bars = 0;
-    g_gold_don_15m.warm_bars = 80;  g_gold_don_15m.retire_net_pts = -760.0; // -2x BT maxDD 379pt
-    g_gold_don_15m.engine_tag = "GoldDon15m_60_35_stop3.5ATR";
-    g_gold_don_15m.mimic_tag  = "GoldDon15m";  // BE-mimic WIRED S-2026-07-14 (operator re-open; arm1.0/lc0.5 1m-truth PASS, see engine_init mimic block)
-    g_gold_don_15m.seed_from_30m_csv("data/mgc_15m_hist.csv");
-    g_engine_heartbeat.register_engine("GoldDon15m", g_gold_don_15m.enabled, 1800, 0, 24);
+    // GoldDon15m CULLED S-2026-07-17s (operator: "goldon15m was deleted, make sure
+    // its gone"). The MIMIC book was culled S-2026-07-16 ("cull the 15 min, kept
+    // losing") but the parent feeder engine kept running with no consumer — dead
+    // compute + a shadow book the operator had already killed. Feeder config, seed,
+    // heartbeat, 15m poll and persistence wire ALL removed this pass (instance
+    // removed from globals.hpp). GoldDon10m below is UNTOUCHED and stays.
 
     g_gold_don_10m.enabled = true;  g_gold_don_10m.shadow_mode = true;
     g_gold_don_10m.lot = 1.0;       // LOT-GATE-OK: lot = CONTRACTS; 1 MGC micro = 10oz = $10/pt (smallest unit)
@@ -491,8 +484,8 @@ int main(int argc, char* argv[])
 
     std::thread([](){
         std::this_thread::sleep_for(std::chrono::seconds(45));
-        static bool don15_boot = false, don10_boot = false;
-        static long don15_poll = 0, don10_poll = 0;
+        static bool don10_boot = false;
+        static long don10_poll = 0;
         while (g_running.load()) {
             std::this_thread::sleep_for(std::chrono::seconds(30));
             if (!g_running.load()) break;
@@ -500,11 +493,8 @@ int main(int argc, char* argv[])
                           [](const omega::TradeRecord& tr){ g_omegaLedger.record(tr); });
             // S-2026-07-14: native fine feeds (engine-internal ts-dedup; boot
             // replay entry-blocked on the first call, see poll_mgc_fine_feed).
-            poll_mgc_fine_feed("data/mgc_15m_live.csv", g_gold_don_15m, don15_boot, don15_poll,
-                               [](const omega::TradeRecord& tr){ g_omegaLedger.record(tr); });
             poll_mgc_fine_feed("data/mgc_10m_live.csv", g_gold_don_10m, don10_boot, don10_poll,
                                [](const omega::TradeRecord& tr){ g_omegaLedger.record(tr); });
-            g_engine_heartbeat.pulse("GoldDon15m");
             g_engine_heartbeat.pulse("GoldDon10m");
         }
     }).detach();

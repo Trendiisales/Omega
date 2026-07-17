@@ -761,7 +761,8 @@ static omega::GoldBothWaysShortTfEngine g_gold_don_h1;      // DON h1 20/10 stop
 // NATIVE 15m/10m MGC bars (tools/mgc_live_bars.py fine feeds). Sweep evidence
 // backtest/gold_subh30_tf_bt.cpp DON15_STOP=1 / DON10_SWEEP=1; PF<1.3 accepted
 // for 10m by operator (actual 1.52). SHADOW.
-static omega::GoldBothWaysShortTfEngine g_gold_don_15m;     // DON 15m 60/35 stop3.5ATR
+// g_gold_don_15m REMOVED S-2026-07-17s (operator cull; mimic book already culled
+// S-16, feeder was dead compute — see omega_main.hpp cull note).
 static omega::GoldBothWaysShortTfEngine g_gold_don_10m;     // DON 10m 30/35 stop3ATR
 
 // S-2026-07-08c: MgcSlowDonchian30m -- gold deep-dive candidate #1 (Study 7,

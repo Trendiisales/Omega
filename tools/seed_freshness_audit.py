@@ -103,7 +103,8 @@ KNOWN_UNREFRESHED = {
     "mgc_30m_live.csv":       "LIVE stream file appended by tools/mgc_live_bars.py (registered VPS "
                               "task); absent on Mac by design; freshness is the producer task's job",
     "mgc_15m_live.csv":       "LIVE stream file appended by tools/mgc_live_bars.py (S-2026-07-14 fine "
-                              "grain for GoldDon15m); absent on Mac by design; producer task owns it",
+                              "grain; GoldDon15m consumer CULLED S-2026-07-17s, file currently "
+                              "consumer-less); absent on Mac by design; producer task owns it",
     "mgc_10m_live.csv":       "LIVE stream file appended by tools/mgc_live_bars.py (S-2026-07-14 fine "
                               "grain for GoldDon10m); absent on Mac by design; producer task owns it",
     "spy_close_hist.csv":     "owned by OmegaMacroRegime nightly VPS task (tools/fetch_macro_regime.py "

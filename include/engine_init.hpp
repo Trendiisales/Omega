@@ -18,7 +18,7 @@
 #include "UsoilBeFloorCompanion.hpp"// USOILPos/USOILNeg WTI CRUDE BE-floor companion (native C++, /api/usoil_companion)
 #include "FxBeFloorCompanion.hpp"   // per-pair FX BE-floor companion (EUR/GBP/JPY/AUD/NZD) -> /api/fx_companion
 #include "FxUpJumpLadderCompanion.hpp" // per-pair FX jump LADDER companion (long EUR/GBP/NZD/AUD + short USDCAD) -> /api/fxladder_companion
-#include "OmegaBeCascadeBook.hpp"      // S-2026-07-16: BE-CASCADE companion book (47 cells, SHADOW) -> omega_shadow.csv
+#include "OmegaBeCascadeBook.hpp"      // S-2026-07-16: BE-CASCADE companion book (46 cells: 7 non-stock + 39 stock, SHADOW) -> omega_shadow.csv
                                        //   + index_upjump_ladder_book() (US500/NAS100/GER40) -> /api/idxladder_companion
 #include "IndexRiskGate.hpp"           // omega::index_risk_off() (GER40 ladder bull-gate)
 #include "IndexBeFloorCompanion.hpp"// per-symbol index BE-floor companion (US500/NAS100/DJ30/GER40) -> /api/index_companion
@@ -1521,8 +1521,9 @@ static void init_engines(const std::string& cfg_path)
         g_rider_d1.enabled = false; g_rider_d1.shadow_mode = false;
         g_rider_d1.N = 2.5; g_rider_d1.lot = 0.01; g_rider_d1.tag = "XauTrendRiderD1";
         g_rider_d1.init(omega::kXauTfD1NumCells);
-        printf("[OMEGA-INIT] TrendRider companions: 4h(cells=%d) + D1(cells=%d) N=2.5 shadow=1\n",
-               omega::kXauTfNumCells, omega::kXauTfD1NumCells);
+        printf("[OMEGA-INIT] TrendRider companions: 4h(cells=%d shadow=%d enabled=%d) + D1(cells=%d shadow=%d enabled=%d) N=2.5\n",
+               omega::kXauTfNumCells, (int)g_rider_4h.shadow_mode, (int)g_rider_4h.enabled,
+               omega::kXauTfD1NumCells, (int)g_rider_d1.shadow_mode, (int)g_rider_d1.enabled);
         fflush(stdout);
 
         // ── Gold WaveTrend momentum-confirm gate (S-2026-06-03) ──────────────
@@ -3971,7 +3972,7 @@ static void init_engines(const std::string& cfg_path)
         // fires. Both orthogonal, ANDed when stacked. Shadow A/B 60+ days
         // before flipping enabled=true.
         g_xau_threebar_30m.shadow_mode        = false;  // S-2026-07-01: LIVE on IBKR 4002 paper (operator all-engines cutover)
-        g_xau_threebar_30m.enabled            = true;   // RESURRECTED-SHADOW 2026-06-18 (cull-audit): the 2026-06-15 "-$371 6mo shadow-book" cull was POLLUTED basis (same batch as wrongly-killed GoldOrb). Faithful re-check (backtest/threebar30m_xau_S35P3_backtest.cpp, production engine M30, 2024-26): PF1.29 n365, ALL YEARS POSITIVE — NOT a net loser. CAVEAT: bull-only window (no 2022 bear) + 2025-concentrated + long-only -> SHADOW-CANDIDATE, bear-test owed before any live size. shadow_mode=true above. See AUDITED_CONFIGS.tsv + CULL_LEDGER.tsv.
+        g_xau_threebar_30m.enabled            = true;   // RESURRECTED-SHADOW 2026-06-18 (cull-audit): the 2026-06-15 "-$371 6mo shadow-book" cull was POLLUTED basis (same batch as wrongly-killed GoldOrb). Faithful re-check (backtest/threebar30m_xau_S35P3_backtest.cpp, production engine M30, 2024-26): PF1.29 n365, ALL YEARS POSITIVE — NOT a net loser. CAVEAT: bull-only window (no 2022 bear) + 2025-concentrated + long-only -> SHADOW-CANDIDATE, bear-test owed before any live size. [STALE-NOTE FIXED S-2026-07-17s: "shadow_mode=true" here was superseded by the S-2026-07-01 all-engines IBKR-4002-paper cutover — shadow_mode=false on the line above is INTENTIONAL; boot shadow=0 is correct, not drift.] See AUDITED_CONFIGS.tsv + CULL_LEDGER.tsv.
         g_xau_threebar_30m.long_only          = true;   // S96: short side no edge
         g_xau_threebar_30m.lot                = 0.01;
         g_xau_threebar_30m.max_spread         = 1.0;

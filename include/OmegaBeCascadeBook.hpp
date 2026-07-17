@@ -2,8 +2,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // OmegaBeCascadeBook — Omega (namespace omega) wrapper over the vendored crypto-
 // validated BE-CASCADE engine (chimera::UpJumpLadderCompanion, frozen in
-// include/BeCascadeCompanionEngine.hpp). ONE book holds every wired cell (8 non-
-// stock + 39 bigcap/rdagent stocks = 47), keyed by live symbol; each is fed from
+// include/BeCascadeCompanionEngine.hpp). ONE book holds every wired cell (7 non-
+// stock + 39 bigcap/rdagent stocks = 46), keyed by live symbol; each is fed from
 // its asset-class dispatch site (tick_fx / tick_indices / tick_gold H1; stock-daily
 // close loop). Config is byte-identical to backtest/omega_becascade_bt.cpp run():
 // mimic_floor + mimic_stagger + stagger_mode=1 BE_CASCADE + stagger_be_bp=20 +
@@ -13,7 +13,8 @@
 // independent-engine). Emits ClipRecords → shadow ledger via the injected clip_fn_.
 //
 // ADVERSE-PROTECTION: inherited from the engine banner — floored cascade, cold-loss
-// cut (lc150) + post-arm BE floor; worst clip ~-155bp across all 47 cells (validated).
+// cut (lc150) + post-arm BE floor; worst clip ~-155bp across all cells (validated on
+// the original 47-cell wire; 46 cells since one non-stock cell was dropped).
 //
 // COST-GATE: the RT cost is BAKED IN (round_trip_bp debited on every clip's net_bp_real
 // at fire time) — this is the entry-cost gate for a shadow clip book. It does NOT route

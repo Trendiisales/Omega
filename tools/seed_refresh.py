@@ -238,7 +238,8 @@ def phase_ibkr(port, seed_dir):
                 try: ok.append(f"mgc_30m_hist({write_mgc_hist('data/mgc_30m_hist.csv', m30_gold)})")
                 except Exception as e: fail.append(f"mgc_30m_hist({e})")
             # S-2026-07-14: boot warm-seeds for the sub-30m DON cells
-            # (GoldDon15m/GoldDon10m, omega_main.hpp). M15 reuses the warmup
+            # (GoldDon10m, omega_main.hpp; GoldDon15m CULLED S-2026-07-17s --
+            # mgc_15m_hist regen kept harmless, no engine consumes it). M15 reuses the warmup
             # pull above; M10 is a dedicated pull -- it is NOT in _GOLD_TFS so
             # no warmup_XAUUSD_M10.csv orphan is recreated (S-2026-07-13 cull).
             if m15_gold:
