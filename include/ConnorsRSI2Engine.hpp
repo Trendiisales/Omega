@@ -85,6 +85,14 @@ public:
     // 4 trades −454, SMA200 sat out the bear). A cold loss-cut on a mean-reverter would cut
     // exactly the dip it is paid to buy (the rejected-protection class). Exit is the SMA(SHORT)
     // bounce + MAXHOLD cap. Verdict = "trend-filter-gated, no cold cut — backtested".
+    // S-2026-07-17: WIDE catastrophic stop (K x ATR20, K=2..6, wick + close-eval, worse-of gap
+    // fills) also tested and REJECTED on BOTH hosts (backtest/connors_widestop_bt.cpp, baselines
+    // reproduce the certified figures exactly). NAS: zero saves in 10.5y — every stop-hit lost
+    // more than riding to the MR exit; worst/maxDD worse in every cell. GER: the stop MANUFACTURED
+    // the new worst trade (2025-04-03 gap-through −2969 vs −1158 ridden) + extra stopped re-entries;
+    // COVID-class saves < damage ~1:2. 2022 identical in every cell = the regime gate, not a price
+    // stop, is the bear protection. No stop of ANY width; tail lever = BOOK_CAP / lot / gate.
+    // Ref: backtest/CONNORS_WIDESTOP_FINDINGS_2026-07-17.md.
     double lot         = 1.0;
     bool   enabled     = true;
     bool   shadow_mode = true;
