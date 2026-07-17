@@ -109,7 +109,15 @@ public:
         o.sl=0.0; o.tp=0.0; o.entry_ts=pos.entry_ms/1000; return true;
     }
     bool persist_restore(const omega::PositionSnapshot& ps) {   // fixed-lot: re-assert config lot
-        pos = Position{}; pos.active=true; pos.entry_px=ps.entry; pos.size=lot;
+        pos = Position{}; pos.active=true; pos.entry_px=ps.entry;
+        // S-2026-07-18f: restore units from the saved size (size = units*lot at save time).
+        // units was left at 0 here, so the scale-in average (entry*units+px)/(units+1)
+        // REPLACED entry_px on the first post-restart scale-in instead of averaging
+        // (live NAS 2026-07-17: entry 29214.75 -> 28769.50, $1,336 of open drawdown
+        // silently erased from the displayed unrealized). Clamp 1..MAX_UNITS.
+        int u = lot > 0.0 ? (int)(ps.size / lot + 0.5) : 1;
+        if (u < 1) u = 1; if (MAX_UNITS >= 1 && u > MAX_UNITS) u = MAX_UNITS;
+        pos.units = u; pos.size = u * lot;
         pos.entry_ms=ps.entry_ts*1000; ++s_book_open; return true;
     }
     bool has_open_position() const { return pos.active; }
