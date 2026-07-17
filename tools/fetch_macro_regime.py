@@ -57,5 +57,23 @@ def main():
     print(f"[fetch_macro_regime] ts={ts} vix_ratio={vix_ratio:.4f} credit_mom={credit_mom:+.4f} dxy_mom={dxy_mom:+.4f}"
           f"  -> risk_off={'YES' if (vix_ratio>=1.05 or credit_mom<0 or dxy_mom>0) else 'no'}")
 
+    # S-2026-07-17k: SPY close history for the BigCapHi52Engine SPY-200DMA gate
+    # (data/spy_close_hist.csv, "ts_sec,close" rows, full rewrite nightly; the
+    # engine FREEZES — holds members, blocks rebals — if this goes stale >6d,
+    # so a failed pull degrades gracefully, never liquidates the book).
+    try:
+        spy = yf.download("SPY", period="400d", interval="1d", progress=False, auto_adjust=False)["Close"].dropna()
+        if hasattr(spy, "squeeze"):
+            spy = spy.squeeze()
+        if len(spy) >= 250:
+            with open(os.path.join(DATA, "spy_close_hist.csv"), "w") as f:
+                for ts_i, px in spy.items():
+                    f.write(f"{int(ts_i.timestamp())},{float(px):.4f}\n")
+            print(f"[fetch_macro_regime] spy_close_hist.csv: {len(spy)} rows, last={float(spy.iloc[-1]):.2f}")
+        else:
+            print(f"[fetch_macro_regime] SPY pull too short ({len(spy)}) — spy_close_hist NOT rewritten", file=sys.stderr)
+    except Exception as e:
+        print(f"[fetch_macro_regime] SPY pull failed ({e}) — spy_close_hist NOT rewritten", file=sys.stderr)
+
 if __name__ == "__main__":
     main()

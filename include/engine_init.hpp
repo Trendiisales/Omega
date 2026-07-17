@@ -26,6 +26,7 @@
 #include "StockDayMoverBeFloorCompanion.hpp"// per-name BIGCAP day-mover BE-floor companion (RETIRED S-2026-07-07e) -> /api/stockmover_companion
 #include "StockDayMoverLadderCompanion.hpp" // per-name BIGCAP day-mover UP-JUMP LADDER companion (39 stocks) -> /api/stockladder_companion
 #include "StockDipTurtleEngine.hpp" // per-name US-stock StockDip (ConnorsRSI2 archetype) + StockTurtle (Donchian 20/10) daily-close books (S-2026-07-08c)
+#include "BigCapHi52Engine.hpp"     // 52wk-high-proximity BIGCAP-45 portfolio book, SPY-200DMA gated, weekly rebal (S-2026-07-17k scan candidate C)
 #include "BigCap2pctImpulseCompanion.hpp"  // per-name BIGCAP +2%-impulse / 20d-breakout LONG-only LOOSE-RIDE book (S-2026-07-09) -> /api/bigcap2pct_companion
 #include "StallCompanion.hpp"       // 25 gold/index giveback-clip books (native C++ port of stall_accountant.py) -> /api/companion
 
@@ -2670,6 +2671,24 @@ static void init_engines(const std::string& cfg_path)
                                         "INTC","AMD","AAPL","TPR","MSFT" };
             const char* TUR_NAMES[] = { "NVDA","AVGO","STX","DD","AMD","AAPL",
                                         "TPR","BMY","SWKS","MSFT","QCOM" };
+            // ── S-2026-07-17k ROSTER EXTENSIONS (operator: "add these 3 viable engines
+            //    on the 2 extend candidates") — the per-name all-6 PASS sets of the
+            //    BIGCAP-45 engine scan (backtest/BIGCAP45_ENGINE_SCAN_FINDINGS_2026-07-17.md,
+            //    house gate n>=30/net>0/PF>=1.3/H1>0/H2>0/ex-best>0 at 16bp RT, 2x-robust):
+            //      TURTLE ext-14: pooled PF 2.59 (2x: 2.50), both halves+, ex-2024 +2304.
+            //      DIP ext-11:    pooled PF 1.67 (2x: 1.51), both halves+, ex-2024 +434.
+            //    Cost basis: ext books debit 16bp RT (the scan's certification cost — the
+            //    ext set includes wider-spread names like ASTS/RKLB; live-11 keep their
+            //    validated 8bp). Retire bars = ~2x worst per-name banked-curve DD on the
+            //    SAME 16bp basis (backtest/ext_retire_thresholds.py): turtle-ext worst
+            //    MU -$11,557 -> -$23,000; dip-ext worst WDC -$4,841 -> -$9,700.
+            //    No duplicates vs each family's own live roster by construction (scan
+            //    excluded live names per archetype; MU/DELL appear in turtle-ext while
+            //    live in DIP — different archetype, separate books, additive).
+            const char* DIP_EXT[] = { "MRVL","PLTR","META","NFLX","SHOP","MSTR",
+                                      "NOW","AMZN","GOOGL","WDC","DD" };
+            const char* TUR_EXT[] = { "MU","MRVL","PLTR","TSLA","META","NFLX","CRWD",
+                                      "PANW","DELL","AMZN","GOOGL","ASTS","RKLB","WDC" };
             int n_dip = 0, n_tur = 0;
             for (const char* nm : DIP_NAMES) {
                 omega::StockDipTurtleSym::Config c;
@@ -2685,6 +2704,20 @@ static void init_engines(const std::string& cfg_path)
                 // AUTO-RETIREMENT: -$8,500 = ~2x the worst BT per-name banked-curve
                 // DD episode (TPR -41.3% of $10k = -$4,130; engine header).
                 c.retire_usd = -8500.0;
+                sdt.add(std::move(c)); ++n_tur;
+            }
+            for (const char* nm : DIP_EXT) {
+                omega::StockDipTurtleSym::Config c;
+                c.sym = nm; c.live_sym = nm; c.family = omega::StockDipTurtleSym::DIP;
+                c.rt_cost_bp = 16.0;        // scan certification cost basis (ext set)
+                c.retire_usd = -9700.0;     // 2x WDC -$4,841 (ext_retire_thresholds.py)
+                sdt.add(std::move(c)); ++n_dip;
+            }
+            for (const char* nm : TUR_EXT) {
+                omega::StockDipTurtleSym::Config c;
+                c.sym = nm; c.live_sym = nm; c.family = omega::StockDipTurtleSym::TURTLE;
+                c.rt_cost_bp = 16.0;        // scan certification cost basis (ext set)
+                c.retire_usd = -23000.0;    // 2x MU -$11,557 (ext_retire_thresholds.py)
                 sdt.add(std::move(c)); ++n_tur;
             }
             // exec wiring BEFORE seeding (cutover-#9: live logic hard-returns when
@@ -2758,7 +2791,17 @@ static void init_engines(const std::string& cfg_path)
             //    AFTER seeding so the boot catch-up replay spawns NO phantom legs.
             {
                 auto& sdm = omega::stockdip_trend_mimic();
-                for (const char* nm : DIP_NAMES) {
+                // S-2026-07-17k: mimic cells cover the EXTENDED rosters too (operator
+                // "i want 4 x mimic each"). All 8 cell families re-certified on the ext
+                // names with the EXACT floored spec (be_entry .08 + no_prebe, close-only,
+                // flat-gated live cadence) on the real header: ALL6-PASS at 8bp AND 16bp
+                // (backtest/clip_path_ext_mimic.cpp). Floor = config property; real fills
+                // can book small tails (honest framing, S-2026-07-17f).
+                std::vector<const char*> DIP_MIM(DIP_NAMES, DIP_NAMES + sizeof(DIP_NAMES)/sizeof(DIP_NAMES[0]));
+                DIP_MIM.insert(DIP_MIM.end(), DIP_EXT, DIP_EXT + sizeof(DIP_EXT)/sizeof(DIP_EXT[0]));
+                std::vector<const char*> TUR_MIM(TUR_NAMES, TUR_NAMES + sizeof(TUR_NAMES)/sizeof(TUR_NAMES[0]));
+                TUR_MIM.insert(TUR_MIM.end(), TUR_EXT, TUR_EXT + sizeof(TUR_EXT)/sizeof(TUR_EXT[0]));
+                for (const char* nm : DIP_MIM) {
                     {   omega::GoldTrendMimicBook::Config c;
                         c.trigger_tag = std::string("StockDipMimT_") + nm; c.live_sym = nm;
                         c.legs = {{"", 0.50}};                    // T: keep 50% of peak (BE-floored)
@@ -2820,7 +2863,7 @@ static void init_engines(const std::string& cfg_path)
                 // Same pre-arm BE-ratchet + post-arm BE-floor protection (half-of-arm pbe), 8bp RT,
                 // $10k, SHADOW. Judged STANDALONE (feedback-companion-independent-engine). QQQ>200DMA
                 // gate = optional mdd-halving risk overlay, deferred (needs a QQQ regime feed).
-                for (const char* nm : TUR_NAMES) {
+                for (const char* nm : TUR_MIM) {
                     {   omega::GoldTrendMimicBook::Config c;
                         c.trigger_tag = std::string("StockTurtleMimA_") + nm; c.live_sym = nm;
                         c.legs = {{"", 0.50}};
@@ -2896,14 +2939,43 @@ static void init_engines(const std::string& cfg_path)
                         omega::stockdip_trend_mimic().on_bar(std::string("StockTurtleMimC_") + sym, close, close, close, ts);
                         omega::stockdip_trend_mimic().on_bar(std::string("StockTurtleMimD_") + sym, close, close, close, ts); });
                 sdm.arm();   // DEPLOY-FORWARD: only live (post-seed) opens spawn legs
-                printf("[OMEGA-INIT][SEED] StockDip/Turtle BE-MIMIC wired: %d DIP names x 4 cells (T arm2/gb50 + W arm3/gb70 + X arm1.5/gb70 + Y arm2.5/gb60) + %d TURTLE names x 4 cells (A arm1.5/gb50, B arm2/gb50, C arm2.5/gb40, D arm3.5/gb40); cap10, half-of-arm pre-arm BE-ratchet + post-arm BE-floor, rt 8bp, $10k, triggered one-way from real DIP/breakout opens, close-grade daily feed, SHADOW deploy-forward, VALIDATED all-6 PASS ungated (STOCKDIP_MIMIC_FINDINGS_2026-07-15 + PREARM_FLOOR + TURTLE_MIMIC_FINDINGS_2026-07-16)\n",
-                       (int)(sizeof(DIP_NAMES)/sizeof(DIP_NAMES[0])), (int)(sizeof(TUR_NAMES)/sizeof(TUR_NAMES[0])));
+                printf("[OMEGA-INIT][SEED] StockDip/Turtle BE-MIMIC wired: %d DIP names x 4 cells (T arm2/gb50 + W arm3/gb70 + X arm1.5/gb70 + Y arm2.5/gb60) + %d TURTLE names x 4 cells (A arm1.5/gb50, B arm2/gb50, C arm2.5/gb40, D arm3.5/gb40); incl S-17k ext rosters (clip_path_ext_mimic ALL6-PASS 8+16bp); cap10, half-of-arm pre-arm BE-ratchet + post-arm BE-floor, rt 8bp, $10k, triggered one-way from real DIP/breakout opens, close-grade daily feed, SHADOW deploy-forward, VALIDATED all-6 PASS ungated (STOCKDIP_MIMIC_FINDINGS_2026-07-15 + PREARM_FLOOR + TURTLE_MIMIC_FINDINGS_2026-07-16)\n",
+                       (int)DIP_MIM.size(), (int)TUR_MIM.size());
                 fflush(stdout);
             }
 
             sdt.start_poller(sdt_csv, 900000);   // own 15-min poller
-            printf("[OMEGA-INIT][SEED] StockDip/StockTurtle books wired: %d dip + %d turtle names, %zu seed rows, %zu forward bars restored, %zu open entry_ts exempted from phantom-drop, $10k notional, rt 8bp, retire dip -$9.5k / turtle -$8.5k, LONG-only, SHADOW, deploy-forward, daily-CSV-polled\n",
+            printf("[OMEGA-INIT][SEED] StockDip/StockTurtle books wired: %d dip + %d turtle names (incl S-17k ext-11 dip @16bp retire -$9.7k + ext-14 turtle @16bp retire -$23k), %zu seed rows, %zu forward bars restored, %zu open entry_ts exempted from phantom-drop, $10k notional, live-11 rt 8bp retire dip -$9.5k / turtle -$8.5k, LONG-only, SHADOW, deploy-forward, daily-CSV-polled\n",
                    n_dip, n_tur, sdt_seeded, sdt_restored, sdt_exempt);
+            fflush(stdout);
+        }
+
+        // ── BigCapHi52 — 52wk-high-proximity portfolio book (S-2026-07-17k) ──
+        //   Scan candidate C, the one NEW archetype that beat the gated-EW45
+        //   control (sh 1.27 v 1.18, shEx24 1.10 v 0.98, 2022 -11.1 v -18.7,
+        //   2x-robust; backtest/BIGCAP45_ENGINE_SCAN_FINDINGS_2026-07-17.md).
+        //   Threshold membership (within 5% of own 52wk high), weekly rebal,
+        //   SPY-200DMA gate (data/spy_close_hist.csv, OmegaMacroRegime nightly;
+        //   stale >6d => FREEZE, never liquidate on a dead feed). PORTFOLIO
+        //   paper book: $10k pool, 8bp/side turnover cost, SHADOW, deploy-
+        //   forward, NO broker orders / ledger rows (rdagent-basket class);
+        //   record = hi52_state.json (+ persisted watermark/equity/weights).
+        //   ADVERSE-PROTECTION verdict lives in the engine header (gate +
+        //   weekly threshold-rebalance IS the protection — backtested).
+        {
+            omega::BigCapHi52Engine::Config hc;
+            const char* H52_UNIV[] = {
+                "NVDA","AMD","AVGO","MU","MRVL","SMCI","ARM","PLTR","TSLA","META",
+                "NFLX","CRWD","SHOP","COIN","MSTR","SNOW","NOW","PANW","UBER","ABNB",
+                "DELL","ORCL","QCOM","INTC","AMZN","GOOGL","MSFT","AAPL","CRM","ADBE",
+                "IONQ","RGTI","QBTS","ASTS","RKLB","NBIS","CRWV","ALAB","CRDO","WDC",
+                "STX","DD","TPR","BMY","SWKS" };   // the scanned BIGCAP-45, verbatim
+            for (const char* nm : H52_UNIV) hc.universe.push_back(nm);
+            auto& h52 = omega::bigcap_hi52_engine(&hc);
+            size_t h52_rows = h52.seed_from_wide_csv("data/rdagent/sp500_long_close.csv");
+            h52.start_poller("data/rdagent/sp500_long_close.csv", 900000);
+            printf("[OMEGA-INIT][SEED] BigCapHi52 portfolio book wired: 45-name universe, %zu seed rows, within-5%% of 52wk high, weekly rebal, SPY-200DMA gate (freeze-on-stale), $10k pool, 8bp/side, SHADOW, deploy-forward, daily-CSV-polled\n",
+                   h52_rows);
             fflush(stdout);
         }
 

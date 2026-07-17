@@ -106,6 +106,9 @@ KNOWN_UNREFRESHED = {
                               "grain for GoldDon15m); absent on Mac by design; producer task owns it",
     "mgc_10m_live.csv":       "LIVE stream file appended by tools/mgc_live_bars.py (S-2026-07-14 fine "
                               "grain for GoldDon10m); absent on Mac by design; producer task owns it",
+    "spy_close_hist.csv":     "owned by OmegaMacroRegime nightly VPS task (tools/fetch_macro_regime.py "
+                              "full-rewrites it, S-2026-07-17k BigCapHi52 gate); engine FREEZES (holds "
+                              "members, blocks rebals) when stale >6d -- graceful, never liquidates",
 }
 
 def refreshed_filenames(repo):
