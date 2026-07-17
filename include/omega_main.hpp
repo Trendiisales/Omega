@@ -307,6 +307,10 @@ int main(int argc, char* argv[])
     g_mgc_tf_4h.min_adx_entry      = 15.0;
     g_mgc_tf_4h.ledger_prefix      = "MgcTF4h_";
     g_mgc_tf_4h.ledger_symbol      = "MGC";
+    // S-2026-07-17q: own mimic book tag. Before this the class literal "XauTf4h" cross-fed
+    // the SPOT mimic book with MGC H4 bars/restores. "MgcTF4h" book registered in
+    // engine_init (certified backtest/MGC_VENUE_MIMIC_FINDINGS_2026-07-17.md, rt5/10bp).
+    g_mgc_tf_4h.mimic_tag          = "MgcTF4h";
     g_mgc_tf_4h.warmup_csv_path    = "data/mgc_h4_hist.csv";
     g_mgc_tf_4h.init();
     omega::warmup_or_die(g_mgc_tf_4h, "MgcTF4h");
@@ -330,6 +334,7 @@ int main(int argc, char* argv[])
     g_mgc_tf_2h.cell_vol_band_mask = 0x4;
     g_mgc_tf_2h.ledger_prefix     = "MgcTF2h_";
     g_mgc_tf_2h.ledger_symbol     = "MGC";
+    g_mgc_tf_2h.mimic_tag         = "MgcTF2h";  // S-17q: unregistered (bull-gated KILL S-17p) -> no-op; stops future spot-book cross-feed
     g_mgc_tf_2h.warmup_csv_path   = "data/mgc_h1_hist.csv";
     g_mgc_tf_2h.init();
     omega::warmup_or_die(g_mgc_tf_2h, "MgcTF2h");

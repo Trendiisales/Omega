@@ -469,7 +469,7 @@ public:
         p.mae           = 0.0;
         p.size_mult     = 1.0;       // preserve regression-sizing field at full size
         // one-way mimic notify (fire-and-forget; never reads/touches this position)
-        omega::gold_trend_mimic().on_trend_open("XauTf4h", p.is_long ? 1 : -1, p.entry_px, ps.entry_ts);
+        omega::gold_trend_mimic().on_trend_open(mimic_tag, p.is_long ? 1 : -1, p.entry_px, ps.entry_ts);
         return true;
     }
 
@@ -489,8 +489,9 @@ public:
 
         // SPECIFIC FEED: drive this engine's mimic book's leg management on the H4 bar (the
         // cadence GoldTrendMimicLadder backtested XauTf4h on). One-way; no-op if the book/tag
-        // is not registered or has no open legs.
-        omega::gold_trend_mimic().on_bar("XauTf4h", bar.high, bar.low, bar.close, now_ms / 1000);
+        // is not registered or has no open legs. Per-instance mimic_tag (S-17q): the MGC
+        // instance feeds ITS book, never the spot book (was cross-feeding via the literal).
+        omega::gold_trend_mimic().on_bar(mimic_tag, bar.high, bar.low, bar.close, now_ms / 1000);
 
         // Use external ATR if provided (preferred -- matches the rest of
         // the stack); otherwise compute locally.
@@ -972,6 +973,14 @@ private:
         p.broker_position_id.clear();
         p.entry_clOrdId.clear();
 
+        // GoldTrendMimicLadder one-way notify (fire-and-forget; never reads/touches this
+        // position). S-2026-07-17q GAP FIX: since 11e2b0fe the ONLY fire in this class sat
+        // in persist_restore — live opens never spawned mimic legs, so the book only saw
+        // entries that happened to survive a restart. The books were certified on the FULL
+        // parent entry stream (clip_path harnesses drive every open); this restores that
+        // contract. Pre-arm (seed replay) opens can't fire: enabled=false during warmup.
+        omega::gold_trend_mimic().on_trend_open(mimic_tag, p.is_long ? 1 : -1, p.entry_px, now_ms / 1000);
+
         // Live order dispatch is owned by the caller of this engine via
         // engine_init.hpp's fire hook (mirrors what GoldMicroScalper used).
         // The engine itself stays broker-agnostic; the host code is
@@ -1098,6 +1107,13 @@ public:
     // distinct ledger tag + symbol; defaults keep the spot instance byte-identical.
     std::string ledger_prefix = "XauTrendFollow4h_";
     std::string ledger_symbol = "XAUUSD";
+    // S-2026-07-17q: per-INSTANCE mimic tag (was the hardcoded literal "XauTf4h" in both
+    // the on_trend_open fire and the on_bar feed). With the literal, the MGC instance
+    // (g_mgc_tf_4h) cross-fed the SPOT XauTf4h mimic book with MGC H4 bars (double
+    // cadence + futures basis) and an MGC persist_restore would spawn a leg in the spot
+    // book at an MGC price. Spot default keeps the spot instance byte-identical; the MGC
+    // instance sets "MgcTF4h" (its own certified book, MGC_VENUE_MIMIC_FINDINGS).
+    std::string mimic_tag = "XauTf4h";
 
     int warmup_from_csv(const std::string& path) noexcept {
         if (!enabled) { printf("[XauTF4h-WARMUP] skipped -- disabled\n"); fflush(stdout); return 0; }

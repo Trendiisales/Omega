@@ -390,8 +390,9 @@ private:
         while ((int)bars_.size() > kBarHistory) bars_.pop_front();
 
         // Feed the GoldTrendMimicLadder legs on the NATIVE 2h close cadence (the cadence the
-        // mimic was backtested on). One-way; no-op if the "XauTf2h" book/tag isn't registered.
-        omega::gold_trend_mimic().on_bar("XauTf2h", cur_2h_.high, cur_2h_.low, cur_2h_.close, now_ms / 1000);
+        // mimic was backtested on). One-way; no-op if the book/tag isn't registered
+        // (both 2h tags retired/killed). Per-instance mimic_tag (S-17q).
+        omega::gold_trend_mimic().on_bar(mimic_tag, cur_2h_.high, cur_2h_.low, cur_2h_.close, now_ms / 1000);
 
         _update_atr14();
         _update_ema20();
@@ -609,7 +610,7 @@ private:
         // reads/moves/closes this position (additive, judged STANDALONE). Validated: legs
         // T gb8 +76.9%/W gb30 +88.5% (arm0.25/lc1.0/cap24/be0.15), WF both halves + ,
         // both REAL regimes + (bull+51.6/bear+25.2 T; bull+55.2/bear+33.3 W over 2022 bear + bull).
-        omega::gold_trend_mimic().on_trend_open("XauTf2h", p.is_long ? 1 : -1, p.entry_px, p.entry_ts_ms / 1000);
+        omega::gold_trend_mimic().on_trend_open(mimic_tag, p.is_long ? 1 : -1, p.entry_px, p.entry_ts_ms / 1000);
     }
 
     void _manage_open(int ci, double bid, double ask, int64_t now_ms,
@@ -714,6 +715,12 @@ public:
     // distinct ledger tag + symbol; defaults keep the spot instance byte-identical.
     std::string ledger_prefix = "XauTrendFollow2h_";
     std::string ledger_symbol = "XAUUSD";
+    // S-2026-07-17q: per-INSTANCE mimic tag (was the literal "XauTf2h" in the fire+feed).
+    // Both spot + MGC tags are unregistered today (XauTf2h book retired S-17, MgcTF2h
+    // bull-gated KILL S-17p) so both are no-ops — but the literal meant a future XauTf2h
+    // re-registration would silently receive MGC triggers/bars from g_mgc_tf_2h. Tag-ized
+    // for structural hygiene alongside the 4h fix.
+    std::string mimic_tag = "XauTf2h";
 
     int warmup_from_csv(const std::string& path) noexcept {
         if (!enabled) { printf("[XauTF2h-WARMUP] skipped -- disabled\n"); fflush(stdout); return 0; }

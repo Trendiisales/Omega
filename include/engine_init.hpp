@@ -1627,6 +1627,25 @@ static void init_engines(const std::string& cfg_path)
                 // Faithful re-validation (clip_path_noprebe_floor.cpp, real XauTf4h entries): ALL6-PASS,
                 // net +151->+142 (-6%), worst-clip 0.00, nNeg 0.
                 c.arm_pct=0.25; c.lc_pct=1.5; c.cap_bars=12; c.rt_cost_bp=15.0; c.be_entry_pct=0.15; c.no_prebe_loss=true; c.pend_bars=6; gm.add(std::move(c)); }
+            // ── MgcTF4h floored mimic (S-2026-07-17q, operator "Wire it" after the S-17p study) ──
+            // Certified backtest/MGC_VENUE_MIMIC_FINDINGS_2026-07-17.md, harness
+            // clip_path_mgc_venue_mimic.cpp (REAL parent classes, EXACT production feed order,
+            // live configs verbatim incl. gold_regime; chassis sanity 4/4 vs registry refs).
+            // VENUE-HONEST cost rt5/10bp (operator-accepted; precedent = live XAU_4h_DonchN20
+            // MGC book, L1711 — 15bp-of-price is ~9-20x the real MGC futures RT): ALL cells
+            // PASS on a 128/128 full-grid plateau — recent +179.8 PF14.6 WF+61.5/+118.3,
+            // 2x +156.4 PF6.92; 2022 bear +35.3 PF4.49 (halves+, bull+18.4/bear+16.9),
+            // 2x +22.4 PF2.11. At the SPOT 15/30bp convention it FAILS 2022@2x (128/128) —
+            // this book is certified ONLY on the MGC venue basis. UNGATED (bull_only=false):
+            // the parent is BOTH-WAYS; the H1-SMA200 gate vetoes the SHORT-side clips that
+            // carry the 2022 book (gated 2022 FAILS where ungated PASSES — see findings §1).
+            // be_entry(0.15) >= 2x rt(0.05%) — foundation confirm>=2xRT satisfied at rt5.
+            // HONEST FRAMING: floored exits book at the floor LEVEL; every BE-floored clip
+            // nets −cost (worst −0.05% base / −0.10% stress), nNeg counts those. nNeg=0 is
+            // NOT claimed. Trigger/feed = g_mgc_tf_4h via per-instance mimic_tag (S-17q).
+            {   omega::GoldTrendMimicBook::Config c; c.trigger_tag="MgcTF4h"; c.live_sym="XAUUSD.M";
+                c.legs={{"T",0.08},{"W",0.20}};
+                c.arm_pct=0.25; c.lc_pct=1.5; c.cap_bars=12; c.rt_cost_bp=5.0; c.be_entry_pct=0.15; c.no_prebe_loss=true; c.pend_bars=6; gm.add(std::move(c)); }
             // MgcFastDon — RETIRED S-2026-07-17 (full-grid floored re-val, no live money lost; was SHADOW).
             // The no_prebe_loss floor enabled S-17c for compliance edge-REGRESSED it, and the full re-val
             // shows there is NO recoverable edge: (1) close-grade OFF-floor on the current 2yr XAU-M30 sample
@@ -1831,7 +1850,7 @@ static void init_engines(const std::string& cfg_path)
                     // positive magnitudes in price units x size (S-2026-07-15 mfe/mae=0 fix)
                     tr.mfe=(mfe_pct/100.0)*entry_px*lots; tr.mae=(std::fabs(mae_pct)/100.0)*entry_px*lots;
                     handle_closed_trade(tr); });
-            printf("[OMEGA-INIT][SEED] GoldTrendMimicLadder wired: 12 trigger books (XauTf4h 4-leg, XauTfD1 2-leg, NAS100/US500/DJ30 Turtle 2-leg SHADOW [XauTf2h + MgcFastDon RETIRED S-2026-07-17: 0/576 floored configs pass, grid ceiling net-negative]; survivor XAU_4h_DonchN20 1-leg LIVE resting-exec 1 MGC + H1-SMA200 bear-gate; USTEC_4h_ZMR disabled S-14 intrabar FAIL; S-14bc BE-mimics be0.10 2-leg x5: MgcTf1h/GoldKeltM30/GoldTfBw1040/GoldTfBw20100/GoldDonH1 SHADOW; S-14 sub-30m re-open x1: GoldDon10m arm1.0/lc1.0 SHADOW 1m-truth-validated [GoldDon15m CULLED S-16 operator: kept losing]), specific native feeds, deploy-forward\n");
+            printf("[OMEGA-INIT][SEED] GoldTrendMimicLadder wired: 13 trigger books (XauTf4h 4-leg, MgcTF4h 2-leg SHADOW venue-cost rt5 UNGATED [S-17q wire; per-instance mimic_tag ends the MGC->spot cross-feed; open-path fire gap fixed 4h+D1], XauTfD1 2-leg, NAS100/US500/DJ30 Turtle 2-leg SHADOW [XauTf2h + MgcFastDon RETIRED S-2026-07-17: 0/576 floored configs pass, grid ceiling net-negative]; survivor XAU_4h_DonchN20 1-leg LIVE resting-exec 1 MGC + H1-SMA200 bear-gate; USTEC_4h_ZMR disabled S-14 intrabar FAIL; S-14bc BE-mimics be0.10 2-leg x5: MgcTf1h/GoldKeltM30/GoldTfBw1040/GoldTfBw20100/GoldDonH1 SHADOW; S-14 sub-30m re-open x1: GoldDon10m arm1.0/lc1.0 SHADOW 1m-truth-validated [GoldDon15m CULLED S-16 operator: kept losing]), specific native feeds, deploy-forward\n");
             fflush(stdout);
         }
 

@@ -675,6 +675,12 @@ private:
         }
         p.broker_position_id.clear();
         p.entry_clOrdId.clear();
+        // GoldTrendMimicLadder one-way notify (fire-and-forget; never reads/touches this
+        // position). S-2026-07-17q GAP FIX (same as XauTf4h): since 11e2b0fe the only fire
+        // sat in persist_restore — live opens never spawned XauTfD1 mimic legs. Book was
+        // certified on the FULL entry stream; this restores that contract. Pre-arm seed
+        // opens can't fire (enabled=false during warmup + registry armed_ latch).
+        omega::gold_trend_mimic().on_trend_open("XauTfD1", p.is_long ? 1 : -1, p.entry_px, now_ms / 1000);
     }
 
     void _manage_open(int ci, double bid, double ask, int64_t now_ms,
