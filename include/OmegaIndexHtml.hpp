@@ -296,10 +296,10 @@ R"OMEGAD1(  <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wra
 <!-- ═══ LADDER + STOCK merged into ONE right-column cstack (S-2026-07-11 operator: fill the empty
      right-column space -- STOCK MOVERS + STOCK BASKET now stack with the ladders instead of
      stranding in a short column). ═══ -->
-<!-- ═══ INDEX LADDER — H1 upjump giveback LADDER books (no-floor · shadow, additive · S-2026-07-07x 676e89aa) ═══ -->
+<!-- ═══ INDEX LADDER — H1 upjump giveback LADDER books (BE-floored-on-open · shadow, additive · S-2026-07-17 1ba35842) ═══ -->
 <div class="pan">
   <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px">
-    <span class="lbl">INDEX LADDER — H1 upjump LADDER (no-floor) · US500 W24/2.0 · NAS100 W24/1.5 · GER40 W12/1.5 BULL-GATED (index_risk_off) · TIGHT+WIDE+STACKED + reclip cap5 · LC 5×thr (native C++ · shadow · never vs-WIDE)</span>
+    <span class="lbl">INDEX LADDER — H1 upjump LADDER (BE-floored-on-open, unrealized mark can still show red pre-exit) · US500 W24/2.0 · NAS100 W24/1.5 · GER40 W12/1.5 BULL-GATED (index_risk_off) · TIGHT+WIDE+STACKED + reclip cap5 · LC 5×thr floored (native C++ · shadow · never vs-WIDE)</span>
     <span id="ixladinfo" class="lbl" style="margin-left:auto">…</span>
   </div>
   <div style="overflow:auto;max-height:340px"><table id="ixladtab"><tr><td class="l d">loading…</td></tr></table></div>
@@ -307,10 +307,10 @@ R"OMEGAD1(  <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wra
   <div id="ixladtradeswrap" style="display:none;margin-top:6px"><div class="lbl">TRADES LOG (completed forward clips)</div><div style="overflow-x:auto"><table id="ixladtrades"></table></div></div>
 </div>
 
-<!-- ═══ FX LADDER — H1 upjump giveback LADDER books (no-floor · shadow, additive · S-2026-07-07x cacd890a) ═══ -->
+<!-- ═══ FX LADDER — H1 upjump giveback LADDER books (BE-floored-on-open · shadow, additive · S-2026-07-17) ═══ -->
 <div class="pan">
   <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px">
-    <span class="lbl">FX LADDER — H1 upjump LADDER (no-floor) · close ≥thr% off W-bar low → window · TIGHT+WIDE+STACKED + reclip cap5 · LC 5×thr · GBPUSD W48/0.75 ONLY — re-validated 3Y IBKR (S-2026-07-10): +40.5% PF1.44 all-6 clean; EUR/AUD/NZD/CAD FAIL the real feed (no config passes) (native C++ · shadow · never vs-WIDE)</span>
+    <span class="lbl">FX LADDER — H1 upjump LADDER (BE-floored-on-open, unrealized mark can still show red pre-exit) · close ≥thr% off W-bar low → window · TIGHT+WIDE+STACKED + reclip cap5 · LC 5×thr floored · GBPUSD W48/0.75 ONLY — re-validated 3Y IBKR (S-2026-07-10): +40.5% PF1.44 all-6 clean; EUR/AUD/NZD/CAD FAIL the real feed (no config passes) (native C++ · shadow · never vs-WIDE)</span>
     <span id="fxladinfo" class="lbl" style="margin-left:auto">…</span>
   </div>
   <div style="overflow:auto;max-height:340px"><table id="fxladtab"><tr><td class="l d">loading…</td></tr></table></div>
@@ -391,9 +391,9 @@ async function pollHealth(){
   // S-2026-07-09: a health-fetch TIMEOUT/error is NOT a FAIL -- treat it as UNKNOWN so a busy
   // VPS / slow /api/health does NOT beep. The "random sounds, nothing alarming" was this: a
   // transient timeout hit catch -> overall='FAIL' -> transition-into-FAIL -> beep, then the next
-  // poll recovered. Only a REAL API-returned FAIL beeps now. UNKNOWN shows a dim badge, does not
 )OMEGAD1"
-R"OMEGAD2(  // beep, and does NOT overwrite __lastHealth (so a genuine FAIL after a blip still transitions).
+R"OMEGAD2(  // poll recovered. Only a REAL API-returned FAIL beeps now. UNKNOWN shows a dim badge, does not
+  // beep, and does NOT overwrite __lastHealth (so a genuine FAIL after a blip still transitions).
   var h; try{ h=await fetch('/api/health',{cache:'no-store'}).then(function(r){return r.json();}); }
   catch(e){ h=null; }
   if(!h){ b.style.color='var(--dim,#888)'; b.textContent='HEALTH ?'; return; }   // fetch failed -> no beep
@@ -569,9 +569,9 @@ function cxApply(sym,px,chg,hi,lo){var t=CTKS.find(function(x){return x[1]===sym
 var _cwsOk=false,_cwsRest=null;
 function cxRestPoll(){if(_cwsOk)return;
  fetch('https://api.binance.com/api/v3/ticker/24hr?symbols='+_CSYMS).then(function(r){return r.json();})
-  .then(function(arr){(arr||[]).forEach(function(d){cxApply(d.symbol,safe(d.lastPrice),safe(d.priceChangePercent),safe(d.highPrice),safe(d.lowPrice));});}).catch(function(){});}
 )OMEGAD2"
-R"OMEGAD3(function cxFallback(){if(!_cwsRest){cxRestPoll();_cwsRest=setInterval(cxRestPoll,1000);}}/* 1Hz REST fallback when WS down */
+R"OMEGAD3(  .then(function(arr){(arr||[]).forEach(function(d){cxApply(d.symbol,safe(d.lastPrice),safe(d.priceChangePercent),safe(d.highPrice),safe(d.lowPrice));});}).catch(function(){});}
+function cxFallback(){if(!_cwsRest){cxRestPoll();_cwsRest=setInterval(cxRestPoll,1000);}}/* 1Hz REST fallback when WS down */
 function cxWsUp(){if(_cwsRest){clearInterval(_cwsRest);_cwsRest=null;}}
 (function cws(){var streams=CTKS.map(function(t){return t[1].toLowerCase()+'@ticker';}).join('/');
  try{var s=new WebSocket('wss://stream.binance.com:9443/stream?streams='+streams);
@@ -744,14 +744,14 @@ function render(J){lastJ=J;
    else{tke.textContent='—';tke.style.color='var(--w)';}}
   if(b>0&&a>0&&t[0]!=='vix')el('tks_'+t[0]).textContent='s '+fmt2(a-b,a-b<0.01?5:2);
   if(t[2]){var lo=safe(J[t[2]+'_curl']),hi=safe(J[t[2]+'_curh']);
-   if(hi>lo&&b>0){var p=Math.max(0,Math.min(1,(b-lo)/(hi-lo)));var r=el('tkr_'+t[0]);r.style.width=(p*100)+'%';
+)OMEGAD3"
+R"OMEGAD4(   if(hi>lo&&b>0){var p=Math.max(0,Math.min(1,(b-lo)/(hi-lo)));var r=el('tkr_'+t[0]);r.style.width=(p*100)+'%';
     r.style.background=p>0.85||p<0.15?'var(--amb)':'var(--blu)';}}});
 
  /* RISK&GOVERNOR + CLUSTER EXPOSURE + SL COOLDOWNS populators removed 2026-07-04 (panels deleted). */
 
 
-)OMEGAD3"
-R"OMEGAD4( var ph=[['XAU','xau'],['SP','sp'],['NQ','nq'],['OIL','cl'],['XAG','xag'],['BRENT','brent']];
+ var ph=[['XAU','xau'],['SP','sp'],['NQ','nq'],['OIL','cl'],['XAG','xag'],['BRENT','brent']];
  el('phases').innerHTML=ph.map(function(p){var v=safe(J[p[1]+'_phase']);
   var t=v===3?'TRADE':v===2?'BRK':v===1?'COMP':'FLAT';
   var bg=v===3?'var(--grnD)':v===2?'#7a5a14':v===1?'#143042':'var(--pan2)';
@@ -919,10 +919,10 @@ function pollTrades(){
     if(cn)cn.innerHTML='· '+nAll+' total ('+nMimic+' mimic'+(nStock?' · '+nStock+' stock':'')+(nCrypto?' · '+nCrypto+' crypto':'')+')';
     var top=all.slice(0,15);
     var el=document.getElementById('alltrades'); if(!el)return;
-    if(!top.length){ el.innerHTML='<tr><td class="l d">no closed trades yet</td></tr>'; return; }
-    var hdr='<tr><th class="l">time (UTC)</th><th class="l">book/engine</th><th class="l">sym</th><th>side</th><th>entry</th><th>exit</th><th>pnl</th><th class="l">why</th></tr>';
 )OMEGAD4"
-R"OMEGAD5(    var rows=top.map(function(t){
+R"OMEGAD5(    if(!top.length){ el.innerHTML='<tr><td class="l d">no closed trades yet</td></tr>'; return; }
+    var hdr='<tr><th class="l">time (UTC)</th><th class="l">book/engine</th><th class="l">sym</th><th>side</th><th>entry</th><th>exit</th><th>pnl</th><th class="l">why</th></tr>';
+    var rows=top.map(function(t){
       var p=safe(t.net_pnl!=null?t.net_pnl:t.pnl);
       var col=p>0?'var(--grn)':(p<0?'var(--red)':'var(--t2)');
       var when=t.exit_ts_utc?String(t.exit_ts_utc).replace(' UTC',''):fmtTs(t.exitTs);
@@ -1098,14 +1098,14 @@ function drawCC(){var live=window._cc||{};var tags=Object.keys(live);
     must FOLD into the Omega totals (operator S-2026-07-05d: "why is this not in the Omega total").
     _cctot = Σ ccWbp (WEIGHTED bank_bp_real_w, BE-floor clamped) over ALL live books — S-17q one
     $ convention: the fold now matches LAST-15/ledger desk-$ (was raw unweighted → 260-vs-65).
-    Store the all-time weighted bp here; drawLedger/drawEquity read it. Re-trigger both. */
+)OMEGAD5"
+R"OMEGAD6(    Store the all-time weighted bp here; drawLedger/drawEquity read it. Re-trigger both. */
  window._cctot=totbank;
  if(typeof drawLedger==='function')drawLedger();
  if(typeof drawEquity==='function')drawEquity();
  if(typeof updDayPnl==='function')updDayPnl();/* header ALL-TIME folds crypto too (full pnl) */
 }
-)OMEGAD5"
-R"OMEGAD6(function pollCC(){fetch('/api/crypto_companion').then(function(r){return r.json();}).then(function(j){
+function pollCC(){fetch('/api/crypto_companion').then(function(r){return r.json();}).then(function(j){
  /* key by companion TAG (grid cell identity, S-2026-07-12). Fallback to sym for a not-yet-
     updated producer file (old shape keyed the 4 cells to one sym — the stale-roster bug). */
  var m={};(j.legs||[]).forEach(function(p){if(p&&(p.tag||p.sym))m[p.tag||p.sym]=p;});
@@ -1445,7 +1445,7 @@ R"OMEGAD8(    +'<td class="num">'+wtxt+'</td><td class="num">'+nopen+'</td>'
  var dcol=(desk>0?'var(--grn)':(desk<0?'var(--red)':'var(--t2)'));
  var openTxt=allOpen.length?(' · <span style="color:var(--grn)">'+allOpen.length+' open now</span>'):'';
  el(pfx+'info').innerHTML='DESK <span style="color:'+dcol+';font-weight:600">'+fmt$(desk)+'</span> forward · '
-   +allTrades.length+' closed clip'+(allTrades.length===1?'':'s')+openTxt+' · '+pairs.length+' '+label+' ('+nact+' active) · H1 · shadow · ladder no-floor';
+   +allTrades.length+' closed clip'+(allTrades.length===1?'':'s')+openTxt+' · '+pairs.length+' '+label+' ('+nact+' active) · H1 · shadow · BE-floored-on-open';
  renderCompanionOpenTrades(pfx,allOpen,allTrades,pfx==='fxlad'?5:1);
 }
 function ladTot(j){return ((j||{}).pairs||[]).reduce(function(s,p){return s+safe(p.usd_real!==undefined?p.usd_real:p.usd);},0);}/* S-2026-07-10: index/FX LADDER totals fold REALIZED forward clips ONLY. Open-leg unrealized MTM removed -- the no-floor stacked ladder legs mark red between reclips (5 NAS100Lad -$37 each as NAS ticks down; 5 GBPUSDLad -$17) and dragged ALL-TIME DOWN in real time = the "dropping while I watch it" phantom. Per-panel DESK still shows uPnL. Same fix as _idxtot/_fxtot/_smtot (52a902d2) -- that missed ladTot, THIS is the ladder path. */
