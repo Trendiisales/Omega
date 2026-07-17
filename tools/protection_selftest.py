@@ -19,6 +19,12 @@ FOUR CHECKS (each pass/fail independently; overall RED if any fail):
   [6] INPUT-FRESHNESS     — the companion's inputs are fresh (stale feed = wrong peak = missed clip).
   [7] BEFLOOR-REAL-HONESTY— index BE-floor REAL column within designed bounds (cap enforcing; no
                             model-fiction bleed). Added S-2026-07-07 after -$273 x5 booked under GREEN.
+  [8] STALL-BANK-LEDGER-PARITY — every profitable stall-book ENGINE_EXIT bank (7d) must be explained
+                            by its OWN parent ledger close within +/-2h (one close validates
+                            ONE bank). Added S-2026-07-17r after telemetry-frame flap + restart key
+                            drift banked the SAME IndexBearShort ride 5x (+$980.90 phantom realized)
+                            with ZERO parent ledger closes. Catches any accounting inflation class
+                            where the companion "realizes" money its parent never closed.
 
 Exit 0 = all green. Exit 1 = one or more RED. Writes a status file the SessionStart hook surfaces.
 """
@@ -306,6 +312,77 @@ def check_befloor_real_honesty():
               if ok else "*** " + "; ".join(probs[:4]) + " ***")
     record("[7] BEFLOOR-REAL-HONESTY", ok, detail)
 
+def check_stall_bank_ledger_parity():
+    # S-2026-07-17r: the stall companion banks ENGINE_EXIT when a parent's key LEAVES the
+    # telemetry live set. A partial-frame flap / restart entry-precision drift made the same
+    # open IndexBearShort ride bank 5x (+$980.90 phantom) with the parent NEVER closing.
+    # Invariant asserted here (mechanism-independent): a profitable ENGINE_EXIT bank exists
+    # ONLY because the real trade closed => for every bank (|pnl|>=$5, last 7d) there must be
+    # a parent LEDGER close row (same engine tag) within +/-2h (wide because survivor/H4 ledger
+    # exit stamps are BAR-aligned while the companion banks at tick time), and one ledger close
+    # may validate only ONE bank. The one-close-one-bank rule is the teeth: a flap that banks
+    # the same ride N times finds only one close. Unmatched bank = phantom realized = RED.
+    # ONE ssh call (RAM reaper). Value-based -> no weekend guard.
+    # NO powershell pipelines: the remote command goes through cmd.exe, which splits at
+    # '|' even inside single quotes (same reason check_befloor_real_honesty uses foreach).
+    # Filename filtering (bak/pre_/culled) is done python-side off the ===LFILE markers.
+    ps = (r"foreach($d in Get-ChildItem 'C:\Omega\stall' -Directory){"
+          r"$f=Join-Path $d.FullName 'companion_closed.csv';"
+          r"if(Test-Path $f){Write-Output ('===BOOK '+$d.Name);Get-Content $f}};"
+          r"foreach($lf in Get-ChildItem 'C:\Omega\logs\trades\omega_trade_closes*.csv'){"
+          r"Write-Output ('===LFILE '+$lf.Name);Get-Content $lf.FullName}")
+    try:
+        r = subprocess.run(["ssh","omega-new","powershell","-NoProfile","-Command",ps],
+                           capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        record("[8] STALL-BANK-LEDGER-PARITY", False, "ssh omega-new failed -- bank parity UNVERIFIABLE"); return
+    raw = (r.stdout or "")
+    if r.returncode != 0 or not raw.strip():
+        record("[8] STALL-BANK-LEDGER-PARITY", False, "ssh omega-new failed -- bank parity UNVERIFIABLE"); return
+    import csv as _csv
+    now = time.time(); week = now - 7*86400
+    banks = []                       # (ts, book, engine, pnl)
+    ledger = {}                      # engine -> [exit_ts,...]
+    section, book = None, None
+    for line in raw.splitlines():
+        if line.startswith("===BOOK "): section, book = "book", line[8:].strip(); continue
+        if line.startswith("===LFILE "):
+            nm = line[9:].strip().lower()
+            section = "skip" if any(x in nm for x in ("bak", "pre_", "culled", "removed", "tmp")) else "ledger"
+            continue
+        if section == "skip" or not line.strip(): continue
+        try: row = next(_csv.reader([line]))
+        except Exception: continue
+        if section == "book":
+            # ts,book,reason,engine,symbol,side,entry,realized_pnl,mfe_peak_pct,bars_held
+            if len(row) < 10 or row[0] == "ts": continue
+            try: ts = float(row[0]); pnl = float(row[7])
+            except ValueError: continue
+            if row[2] == "ENGINE_EXIT" and ts >= week and abs(pnl) >= 5.0:
+                banks.append((ts, book, row[3], pnl))
+        elif section == "ledger":
+            # exit_ts_unix = col idx 5, engine = col idx 9
+            if len(row) < 10 or row[0] == "trade_id": continue
+            try: lts = float(row[5])
+            except ValueError: continue
+            ledger.setdefault(row[9], []).append(lts)
+    for v in ledger.values(): v.sort()
+    probs = []; used = set()
+    for ts, bk, eng, pnl in sorted(banks):
+        hit = None
+        for lts in ledger.get(eng, []):
+            if (eng, lts) in used: continue
+            if ts - 7200.0 <= lts <= ts + 7200.0: hit = lts; break
+        if hit is not None:
+            used.add((eng, hit))
+        else:
+            when = datetime.datetime.fromtimestamp(ts, datetime.timezone.utc).strftime("%m-%d %H:%M")
+            probs.append(f"{bk}/{eng} banked ${pnl:+.0f} @ {when}Z with NO parent ledger close (phantom ENGINE_EXIT)")
+    ok = (len(probs) == 0)
+    detail = (f"{len(banks)} profitable ENGINE_EXIT bank(s) in 7d, all explained by own parent ledger close"
+              if ok else "*** " + "; ".join(probs[:4]) + " ***")
+    record("[8] STALL-BANK-LEDGER-PARITY", ok, detail)
+
 def main():
     check_scheduled_alive()
     check_real_not_shadow()
@@ -314,6 +391,7 @@ def main():
     check_binary_close_path()
     check_input_freshness()
     check_befloor_real_honesty()
+    check_stall_bank_ledger_parity()
     overall = all(ok for _,ok,_ in results)
     ts = time.strftime("%Y-%m-%d %H:%M:%S")
     lines = [f"PROTECTION SELF-TEST {'GREEN -- all protection FUNCTIONAL' if overall else 'RED -- PROTECTION NOT WORKING'}  ({ts})"]

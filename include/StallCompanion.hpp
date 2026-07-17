@@ -234,6 +234,78 @@ public:
         if (!omega_empty) {
             const int64_t bar = now / cfg_.tf_sec;
             std::map<std::string, double> live;   // key -> last upnl
+
+            // ── KEY-MIGRATION pre-pass (S-2026-07-17r flap fix) ──────────────────
+            // A live row whose key drifted — the parent's REPORTED entry changed
+            // representation across a restart/manual-rebook (NAS100 28987.4 <->
+            // 28987.375) — is the SAME leg, not an exit + a new leg. Re-key the open
+            // companion (and any clip memory) IN PLACE. Without this the old key
+            // banked ENGINE_EXIT and the new key reopened at the parent entry,
+            // RE-REALIZING the full from-entry upnl on every drift (2026-07-17:
+            // +$980.90 phantom over 5 spurious banks on ONE IndexBearShort ride).
+            // Runs BEFORE the main row loop so a drifted row can never open a
+            // duplicate companion first. Trade-off: a genuine close + instant
+            // re-entry within kKeyDriftTol of the old entry merges into the old leg
+            // (no bank) — conservative direction, never double-counts.
+            {
+                std::map<std::string, const StallLiveRow*> in;   // filtered incoming rows by key
+                for (const auto& r : rows_all) {
+                    if (excluded_(r.eng) || !included_(r.eng, r.sym)) continue;
+                    in[mkkey_(r.book, r.eng, r.sym, r.entry)] = &r;
+                }
+                struct ReKey { std::string oldk, newk; double entry; };
+                std::vector<ReKey> mv;
+                for (const auto& kv : pos_) {
+                    if (in.count(kv.first)) continue;            // key still live, nothing to do
+                    const Pos& p = kv.second;
+                    for (const auto& ik : in) {
+                        if (pos_.count(ik.first) || clipped_.count(ik.first)) continue;   // target already tracked
+                        bool taken = false;
+                        for (const auto& m : mv) if (m.newk == ik.first) { taken = true; break; }
+                        if (taken) continue;
+                        const StallLiveRow& r = *ik.second;
+                        if (r.book != p.book || r.eng != p.eng || r.sym != p.sym || r.side != p.side) continue;
+                        if (std::fabs(r.entry - p.entry) > kKeyDriftTol * std::max(std::fabs(p.entry), 1.0)) continue;
+                        mv.push_back(ReKey{kv.first, ik.first, r.entry});
+                        break;
+                    }
+                }
+                for (const auto& m : mv) {
+                    Pos p = pos_[m.oldk]; pos_.erase(m.oldk);
+                    p.entry = round4(m.entry);
+                    pos_[m.newk] = p;
+                    absent_.erase(m.oldk);
+                    std::printf("[STALL][REKEY] book=%s %s -> %s (parent entry drift, same leg -- no ENGINE_EXIT bank)\n",
+                                cfg_.name.c_str(), m.oldk.c_str(), m.newk.c_str());
+                    std::fflush(stdout);
+                }
+                // Clip memories drift the same way — re-key so the clip survives (a
+                // flap-orphaned clip memory would let the returning row REOPEN and
+                // re-clip a ride the book already banked). Side is not in the key.
+                std::vector<ReKey> mvc;
+                for (const auto& kv : clipped_) {
+                    if (in.count(kv.first)) continue;
+                    std::string b, e, s; double en = 0.0;
+                    if (!keyfields_(kv.first, b, e, s, en)) continue;
+                    for (const auto& ik : in) {
+                        if (pos_.count(ik.first) || clipped_.count(ik.first)) continue;
+                        bool taken = false;
+                        for (const auto& m : mvc) if (m.newk == ik.first) { taken = true; break; }
+                        if (taken) continue;
+                        const StallLiveRow& r = *ik.second;
+                        if (r.book != b || r.eng != e || r.sym != s) continue;
+                        if (std::fabs(r.entry - en) > kKeyDriftTol * std::max(std::fabs(en), 1.0)) continue;
+                        mvc.push_back(ReKey{kv.first, ik.first, r.entry});
+                        break;
+                    }
+                }
+                for (const auto& m : mvc) {
+                    const double pk = clipped_[m.oldk]; clipped_.erase(m.oldk);
+                    clipped_[m.newk] = pk;
+                    absent_.erase(m.oldk);
+                }
+            }
+
             for (const auto& r : rows_all) {
                 if (excluded_(r.eng) || !included_(r.eng, r.sym)) continue;
                 const std::string key = mkkey_(r.book, r.eng, r.sym, r.entry);
@@ -299,13 +371,40 @@ public:
                     && is_gold_(r.sym) && cfg_.cold_loss_bear > cold) cold = cfg_.cold_loss_bear;
                 if (r.upnl <= cold) { close_(key, "LOSS_CUT_CLIP", r.upnl, bar); clipped_[key] = peak_store; continue; }
             }
-            // real trade closed first -> ENGINE_EXIT any open companion whose key left `live`
+            // real trade closed first -> ENGINE_EXIT any open companion whose key left `live`.
+            // ── ABSENCE DEBOUNCE (S-2026-07-17r flap fix): a telemetry frame can transiently
+            // DROP one live row while others remain (partial-frame flap — the GUI already
+            // ignores such frames, omega_desk.html "COMP-BANK 54<->29"). Banking on FIRST
+            // absence re-realized the same open ride 4x intraday on 2026-07-17. Bank only
+            // after the key is absent kExitMissCycles CONSECUTIVE drive cycles (60s cadence
+            // -> ~2 min confirmation; a genuine parent close banks the SAME carried
+            // last_upnl one cycle later, so nothing real is lost).
             std::vector<std::string> gone;
             for (const auto& kv : pos_) if (live.find(kv.first) == live.end()) gone.push_back(kv.first);
-            for (const auto& key : gone) close_(key, "ENGINE_EXIT", pos_[key].last_upnl, bar);
-            // a clip stays clipped only while its real trade is live; drop once the engine actually closes it
+            for (const auto& key : gone) {
+                const int miss = ++absent_[key];
+                if (miss < kExitMissCycles) {
+                    std::printf("[STALL][FLAP-HOLD] book=%s key=%s absent %d/%d cycles -- ENGINE_EXIT deferred\n",
+                                cfg_.name.c_str(), key.c_str(), miss, kExitMissCycles);
+                    std::fflush(stdout);
+                    continue;
+                }
+                absent_.erase(key);
+                close_(key, "ENGINE_EXIT", pos_[key].last_upnl, bar);
+            }
+            // a clip stays clipped only while its real trade is live; drop once the engine
+            // actually closes it — same debounce (a flap-pruned clip memory would let the
+            // returning row REOPEN + re-clip a ride the book already banked).
             for (auto it = clipped_.begin(); it != clipped_.end();) {
-                if (live.find(it->first) == live.end()) it = clipped_.erase(it); else ++it;
+                if (live.find(it->first) == live.end() && ++absent_[it->first] >= kExitMissCycles) {
+                    absent_.erase(it->first);
+                    it = clipped_.erase(it);
+                } else ++it;
+            }
+            // absence counters reset the moment the key is seen live again (or is untracked)
+            for (auto it = absent_.begin(); it != absent_.end();) {
+                const bool tracked = pos_.count(it->first) || clipped_.count(it->first);
+                if (!tracked || live.count(it->first)) it = absent_.erase(it); else ++it;
             }
         }
         save_pos_();
@@ -323,6 +422,10 @@ private:
         double last_upnl = 0.0;
     };
 
+    // ── S-2026-07-17r flap-fix knobs (see step() KEY-MIGRATION + ABSENCE DEBOUNCE) ──
+    static constexpr int    kExitMissCycles = 2;    // consecutive absent drive cycles before ENGINE_EXIT banks / clip memory prunes
+    static constexpr double kKeyDriftTol    = 1e-4; // rel entry tolerance separating same-leg key drift from a genuine new entry
+
     Config cfg_;
     bool usd_mode_ = false;
     double banked_net_ = 0.0;          // S-2026-07-08c auto-retirement running net
@@ -330,6 +433,7 @@ private:
     std::string closed_path_, state_path_, pos_path_, clipped_path_;
     std::unordered_map<std::string, Pos>    pos_;
     std::unordered_map<std::string, double> clipped_;
+    std::unordered_map<std::string, int>    absent_;   // key -> consecutive drive cycles absent from live (transient, not persisted)
     StallRollUp roll_;
 
     std::string mkkey_(const std::string& book, const std::string& eng,
@@ -397,13 +501,18 @@ private:
     // ── persistence (C++-owned .tsv; survives binary restart, not python-compatible) ──
     void save_pos_() const {
         std::ofstream f(pos_path_, std::ios::trunc);
-        if (f.is_open())
+        if (f.is_open()) {
+            // S-2026-07-17r: default ostream precision (6 sig figs) truncated the entry
+            // (28987.375 -> "28987.4"), so load_pos_ rebuilt a DIFFERENT key than the live
+            // row after every restart -> guaranteed spurious ENGINE_EXIT bank + reopen.
+            f << std::setprecision(12);
             for (const auto& kv : pos_) {
                 const Pos& p = kv.second;
                 f << kv.first << '\t' << p.book << '\t' << p.eng << '\t' << p.sym << '\t' << p.side
                   << '\t' << p.entry << '\t' << p.open_bar << '\t' << p.ext_bar << '\t' << p.mfe_pct
                   << '\t' << p.mfe_usd << '\t' << p.stall << '\t' << p.last_upnl << '\n';
             }
+        }
         std::ofstream g(clipped_path_, std::ios::trunc);
         if (g.is_open()) for (const auto& kv : clipped_) g << kv.first << '\t' << kv.second << '\n';
     }
@@ -446,6 +555,16 @@ private:
         for (char ch : s) { if (ch == d) { out.push_back(cur); cur.clear(); } else cur += ch; }
         out.push_back(cur);
         return out;
+    }
+    // Parse a companion key back into its fields ("book|eng|sym|entry"); used by the
+    // clip-memory KEY-MIGRATION path (clipped_ stores no Pos fields, only key -> peak).
+    static bool keyfields_(const std::string& key, std::string& book, std::string& eng,
+                           std::string& sym, double& entry) {
+        std::vector<std::string> t = split_(key, '|');
+        if (t.size() != 4) return false;
+        book = t[0]; eng = t[1]; sym = t[2];
+        char* end = nullptr; entry = std::strtod(t[3].c_str(), &end);
+        return end != t[3].c_str() && *end == '\0';
     }
 
     // ── roll-up from companion_closed.csv + open pos (faithful to python build_state) ──
