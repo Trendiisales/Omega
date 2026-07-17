@@ -1,0 +1,55 @@
+# scripts/persist_restore_allowlist.txt
+# Allowlist for scripts/persist_restore_semantics_audit.sh (S-2026-07-17k).
+# One key per line, first whitespace-delimited field = key; everything after is
+# the documented reason. EVERY entry was triaged by reading the flagged site --
+# do NOT add an entry without reading the source field's unit / the restore
+# body's hold semantics (the blanket-allowlist-to-green move is forbidden).
+#
+# Key formats:
+#   UNITS      <Base>.hpp:<lhs>.entry_ts=<rhs>   (whitespace-stripped assignment)
+#   HOLD-CLOCK HOLD:<Base>.hpp
+#
+# ---- CLASS 1: UNITS -- verified seconds-native sources (no /1000 needed) ----
+# Each reason names the source field + where its SECONDS unit is established.
+BreakoutEngine.hpp:o.entry_ts=pos.entry_ts                       seconds-native: pos.entry_ts = `now` = nowSec() at entry (L~1240); all holds compare vs nowSec().
+CrossAssetEngines.hpp:out.entry_ts=pos_.entry_ts                 seconds-native (3 identical sites): CrossPosition.entry_ts = ca_now_sec() on open (L260); timeout compares ca_now_sec()-entry_ts.
+GoldBothWaysShortTfEngine.hpp:o.entry_ts=entry_ts_               seconds-native: entry_ts_ set from the 30m bar clock ts_sec / bucket-close seconds (on_30m_bar path).
+GoldCampaignD1AnchEngine.hpp:o.entry_ts=pos.entry_ts             seconds-native: pos.entry_ts = ts_sec at open (L382).
+IndexFlowEngine.hpp:out.entry_ts=pos_.entry_ts                   seconds-native: IdxOpenPosition.entry_ts = idx_now_sec() (field commented "UTC seconds", L377/401).
+IndexFlowEngine.hpp:out.entry_ts=base_entry_ts_                  seconds-native: base_entry_ts_ = idx_now_sec() (L1108).
+MgcSlowDonchian30mEngine.hpp:o.entry_ts=entry_ts_                seconds-native: entry_ts_ = ts_sec at open (L211).
+OpenPositionRegistry.hpp:p.entry_ts=std::atoll(tok[9].c_str())   the registry's OWN restore-from-file parse; CSV column 9 is epoch seconds by the file contract this audit enforces.
+PositionPersistence.hpp:ps.entry_ts=eng.pos.entry_ts             wire_livepos template: LivePos contract field is seconds -- all 7 wired engines set pos.entry_ts = m_last_tick_s (sec); MicroScalper leaves 0 = "unknown" per contract.
+PositionPersistence.hpp:ps.entry_ts=c.st.pos_entry_ts            Survivor persist source: st.pos_entry_ts = st.bars.back().ts_sec (SurvivorPortfolio.hpp L582) -- seconds.
+RSIReversalEngine.hpp:o.entry_ts=pos.entry_ts                    seconds-native: pos.entry_ts = now_s = now_ms/1000 (L167/459).
+XauusdFvgEngine.hpp:o.entry_ts=m_pos.entry_ts                    seconds-native: m_pos.entry_ts = bar.start_ts, documented "already in epoch SECONDS" in the persist_save header comment (L265).
+engine_init.hpp:ps.entry_ts=c.st.pos_entry_ts                    Survivor DISPLAY source (register_source lambda): same st.pos_entry_ts seconds field as the persist wire above.
+engine_init.hpp:ps.entry_ts=p.entry_ts                           IndexIntradayDrift display source: pos contract comment directly above says "entry_ts(sec)" -- seconds.
+#
+# ---- CLASS 2: HOLD-CLOCK -- documented restore semantics --------------------
+# (a) Boot-restart counters: bars_held/held is ++'d ONLY while pos active; the
+#     engine object is freshly constructed at boot so the counter is 0 when
+#     restore adopts the position -> the hold clock restarts at boot (exactly
+#     the semantics the c1903e88 IndexBearShort fix chose). Seed replay cannot
+#     inflate it (no active position during seeding; restore runs after seed).
+HOLD:ConnorsRSI2Engine.hpp        boot-restart counter: restore does pos=Position{} (held=0); pos.held++ gated on pos.active (L169).
+HOLD:Ger40TurtleH4Engine.hpp      boot-restart counter: pos_.bars_held boot-default 0; ++ gated on pos_.active (L211-213).
+HOLD:HTFSwingEngines.hpp          boot-restart counters: h1_bars_held/h4_bars_held boot-default 0; ++ gated on pos_.active (L276-277/698-699). Both engines in this header.
+HOLD:MinimalH4Breakout.hpp        boot-restart counter: h4_bars_held boot-default 0; ++ gated on pos_.active (L429-430).
+HOLD:MinimalH4GER40Breakout.hpp   boot-restart counter: same MinimalH4 family shape.
+HOLD:MinimalH4US30Breakout.hpp    boot-restart counter: same MinimalH4 family shape.
+HOLD:NasTurtleD1Engine.hpp        boot-restart counter: pos_.bars_held boot-default 0; ++ gated on pos_.active (L280-281).
+HOLD:XauStraddleM30Engine.hpp     boot-restart counter: pos_.bars_held boot-default 0; ++ gated on pos_.active (L303-304). Covers gold + all IdxStraddle instances (shared class).
+HOLD:XauThreeBar30mEngine.hpp     boot-restart counters: pos.bars_held + guards.st.bars_held both boot-default 0; ++/on_bar_held() gated on pos.active (L504-506).
+#
+# (b) Structural non-engines / delegation:
+HOLD:Ger40KeltnerH1Engine.hpp     bars_held is INFORMATIONAL only (logging) -- no hold-based exit exists in this engine (grep: no bars_held>= / MAX_HOLD comparison).
+HOLD:PumpScalpManager.hpp         manager shell: persist_restore delegates to the per-symbol PumpScalpEngine (wall-clock MAXHOLD_SEC anchored on entry_ms, restored from ps.entry_ts*1000 in that engine). maxhold tokens here are config passthrough.
+#
+# (c) LATENT IndexBearShort-shaped bugs -- allowlisted ONLY because the restore
+#     path is currently unreachable. Same convention as the disabled-engine list
+#     in ungated_engine_allowlist.txt: MUST fix the re-anchor BEFORE any
+#     wire/re-enable. Removing the blocker without fixing = this gate fires.
+HOLD:GoldRegimeDailyEngine.hpp    LATENT: TIME_STOP uses m_bars_seen - entry_bar_seq (L346) and persist_restore does m_pos=LivePos{} leaving entry_bar_seq=0 -- BUT persist_save/restore are NOT wired (no wire_* / register_restorer anywhere), so no restore can run. MUST add entry_bar_seq=m_bars_seen re-anchor (c1903e88 pattern) before wiring persistence.
+HOLD:GoldScalpPyramidEngine.hpp   LATENT: same shape (bars_held = m_bars_seen - entry_bar_seq, L1009) AND the warmup feed ++m_bars_seen (L509) -- but NOT wired into PositionPersistence and engine disabled (S45 scalp purge). MUST add entry_bar_seq re-anchor before any wire/re-enable.
+HOLD:XauusdFvgEngine.hpp          LATENT (closest to live): wire_cross'd ("XauusdFvg") + warmup_from_csv advances m_bars_seen before restore + persist_restore leaves entry_bar_seq=0 -> a restored position would TIME_STOP instantly (elapsed=m_bars_seen-0>=60). Unreachable today ONLY because g_disable_xauusd_fvg=true (globals.hpp) keeps the engine signal-dead so no snapshot is ever written. MUST add m_pos.entry_bar_seq=m_bars_seen re-anchor in persist_restore before flipping g_disable_xauusd_fvg.

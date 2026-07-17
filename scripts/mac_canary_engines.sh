@@ -310,4 +310,22 @@ bash "$(dirname "$0")/prebe_loss_audit.sh" || {
   exit 1
 }
 
+# PERSIST/RESTORE SEMANTICS GATE (added S-2026-07-17k, handoff item 3 "confirm no
+# more trade cancellations on deploy"): closes the c1903e88 IndexBearShort class
+# structurally -- (1) every PositionSnapshot.entry_ts write must be visibly
+# /1000-converted, seconds-native-commented, or documented in
+# scripts/persist_restore_allowlist.txt (an ms value in the seconds field broke
+# the phantom-drop exemption -> a restored position's close silently vanished
+# from the ledger); (2) every engine with a restore path + a bar-seq/hold-counter
+# time exit must re-anchor its hold clock inside restore (or restore a persisted
+# held counter) or be documented (unrestored entry_bar_seq while seed replay
+# advances the bar counter -> spurious TIME_STOP at boot). A NEW unexplained hit
+# = exit 1 = P1 (the deploy-eats-trades class).
+echo ""
+echo "[mac-canary-engines] persist/restore semantics audit (snapshot ts units + hold-clock re-anchor)..."
+bash "$(dirname "$0")/persist_restore_semantics_audit.sh" || {
+  echo "[mac-canary-engines] FAIL: persist/restore semantics audit -- see scripts/persist_restore_semantics_audit.sh output above."
+  exit 1
+}
+
 exit 0
