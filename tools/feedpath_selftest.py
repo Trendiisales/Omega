@@ -83,12 +83,25 @@ def ssh(cmd, timeout=25):
         return f"__SSH_ERR__ {e}"
 
 def fx_market_open(now=None):
+    # FX week = Sun 17:00 -> Fri 17:00 America/New_York (5pm NY close, DST-aware).
+    # The old fixed "Fri >= 22 UTC" window was winter-only: in July (EDT) the market
+    # closes 21:00 UTC, so 21:00-22:00 Fri produced a false BRIDGE-FRESH RED
+    # (2026-07-18: USDCAD "stale 50min" at 21:50 UTC — last tick was 21:00:00, the close).
     now = now or datetime.datetime.now(datetime.timezone.utc)
-    wd, hr = now.weekday(), now.hour
-    if wd == 5: return False                      # Sat
-    if wd == 6 and hr < 21: return False          # Sun pre-open
-    if wd == 4 and hr >= 22: return False         # Fri post-close
-    return True
+    try:
+        from zoneinfo import ZoneInfo
+        ny = now.astimezone(ZoneInfo("America/New_York"))
+        wd, hr = ny.weekday(), ny.hour
+        if wd == 4 and hr >= 17: return False     # Fri post-close (5pm NY)
+        if wd == 5: return False                  # Sat
+        if wd == 6 and hr < 17: return False      # Sun pre-open (5pm NY)
+        return True
+    except Exception:
+        wd, hr = now.weekday(), now.hour          # fallback: old fixed-UTC window
+        if wd == 5: return False
+        if wd == 6 and hr < 21: return False
+        if wd == 4 and hr >= 21: return False     # conservative: earliest (summer) close
+        return True
 
 def main():
     checks, red = [], False
