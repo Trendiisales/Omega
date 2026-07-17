@@ -35,7 +35,40 @@ case "$HOST" in
     exit 1;;
 esac
 
-if [[ "${1:-}" != "--no-push" ]]; then
+# ── flags ────────────────────────────────────────────────────────────────────
+NO_PUSH=0; FORCE_CLOSE_WINDOW=0
+for a in "$@"; do
+  case "$a" in
+    --no-push)             NO_PUSH=1;;
+    --force-close-window)  FORCE_CLOSE_WINDOW=1;;
+    *) echo "[deploy][WARN] unknown arg: $a (accepted: --no-push --force-close-window)" >&2;;
+  esac
+done
+
+# ── DEPLOY-WINDOW GUARD (S-2026-07-17h) ──────────────────────────────────────
+# A restart during the daily-close DISPATCH window (20:00-23:00 UTC) makes the
+# seed-on-boot replay absorb the session's just-closed rows as HISTORY -> the
+# day's live signals book NOTHING ("deploy-forward: seed primes the detector
+# only, books nothing"). This is the DIRECT root cause of the 2026-07-16 whole-
+# book zero-trade gap: 5 restarts (the 17e ship storm) landed inside the window.
+# BLOCK a deploy inside the window unless the operator passes --force-close-window.
+CLOSE_WIN_START=20; CLOSE_WIN_END=23     # UTC hours, half-open [start,end)
+UTC_HOUR=$(date -u +%H)                  # zero-padded; 10# below forces base-10 (avoid octal 08/09)
+if (( 10#$UTC_HOUR >= CLOSE_WIN_START && 10#$UTC_HOUR < CLOSE_WIN_END )); then
+  if (( FORCE_CLOSE_WINDOW )); then
+    echo "[deploy][WARN] inside daily-close dispatch window (${UTC_HOUR}:00 UTC, ${CLOSE_WIN_START}:00-${CLOSE_WIN_END}:00 UTC)" >&2
+    echo "               -- proceeding under --force-close-window. Seed-on-boot may absorb today's closes." >&2
+  else
+    echo "[deploy][FATAL] restart blocked: it is ${UTC_HOUR}:00 UTC, INSIDE the daily-close dispatch" >&2
+    echo "                window (${CLOSE_WIN_START}:00-${CLOSE_WIN_END}:00 UTC). A restart here makes seed-on-boot absorb the" >&2
+    echo "                session's just-closed rows as history -> today's live signals book" >&2
+    echo "                NOTHING (this caused the 2026-07-16 whole-book zero-trade gap)." >&2
+    echo "                Wait until after ${CLOSE_WIN_END}:00 UTC, or pass --force-close-window to override." >&2
+    exit 1
+  fi
+fi
+
+if (( ! NO_PUSH )); then
   echo "[deploy] pushing origin/main..."
   git push origin main
 fi
