@@ -474,15 +474,18 @@ function __compClosed(j){if(!j)return 0;var n=(j.trades||[]).length;
  (j.syms||j.names||j.pairs||j.flavors||[]).forEach(function(s){n+=((s.trades||[]).length);});return n;}
 var __compBooks=[['gold','_gold'],['idx','_idx'],['fx','_fx'],['xag','_xag'],['usoil','_usoil'],['stk','_sm']];
 function pollFires(){var now=Date.now();
- if(window._seenComp===undefined){window._seenComp={};window._compBase=true;window._compClosed={};}
+ /* _compClosedN (S-2026-07-18c): RENAMED from _compClosed -- pollComp stores the
+    closed_detail ARRAY under window._compClosed for compClipRows; this map was
+    clobbering it every 5s (rows panel blanked + banked detection lost its baseline). */
+ if(window._seenComp===undefined){window._seenComp={};window._compBase=true;window._compClosedN={};}
  var openWhy=[],bankWhy=[];
  __compBooks.forEach(function(bk){var j=window[bk[1]];if(!j)return;
   __compOpens(j).forEach(function(o){var k=bk[0]+'|'+(o.flavor||o.name||'')+'|'+(o.tier||'')+'|'+(o.entry_ts||o.entry||'');
    if(!(k in window._seenComp)||(now-window._seenComp[k])>90000){if(!window._compBase)openWhy.push(bk[0]+' '+(o.flavor||o.name||'leg'));}
    window._seenComp[k]=now;});
-  var nc=__compClosed(j),pc=window._compClosed[bk[0]];
+  var nc=__compClosed(j),pc=window._compClosedN[bk[0]];
   if(pc!==undefined&&nc>pc&&!window._compBase)bankWhy.push(bk[0]+' +'+(nc-pc)+' clip(s)');
-  window._compClosed[bk[0]]=nc;});
+  window._compClosedN[bk[0]]=nc;});
  for(var k in window._seenComp){if(now-window._seenComp[k]>600000)delete window._seenComp[k];}
  if(!window._compBase){
   if(openWhy.length)almRing('companion open: '+openWhy.slice(0,4).join(', ')+(openWhy.length>4?' +'+(openWhy.length-4):''),'open',entryBell);
