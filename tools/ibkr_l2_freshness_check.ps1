@@ -31,10 +31,17 @@ $ErrorActionPreference = 'Continue'
 
 # ---- config ------------------------------------------------------------------
 # 2026-06-04: matches the bridge's live --symbols (register_omega_ibkr_bridge.ps1).
-# NAS100/US500 dropped (empty depth, no CME index sub); MGC added (paid COMEX
-# L2). Keep this list in sync with the bridge or the watchdog false-alarms and
-# kills the (healthy) bridge python on a missing-CSV check.
-$Symbols  = @('XAUUSD', 'MGC')
+# NAS100/US500 dropped (empty depth, no CME index sub).
+# 2026-07-17h: MGC REMOVED. It was dropped from the bridge --symbols on 2026-07-03
+# (commit 2f5733ec, swap MGC->DJ30 to free the 3rd/last depth slot) but THIS
+# watchdog was never updated in sync -- so for ~2 weeks it false-alarmed
+# "MISSING MGC" and (MISSING => restart-fixable, no backoff) killed the HEALTHY
+# bridge python -- which serves XAUUSD depth + all stock L1 -- and restarted the
+# task every 2 min during market hours. That is the recurring "VPS down / won't
+# restart" incident (bridge flaps every 2 min, feeds churn, desk sees it as down).
+# MGC's only consumer (MgcFastDon) was retired 2026-07-17f (8b83b77a). Keep this
+# list in sync with the bridge --symbols or the watchdog kills the healthy bridge.
+$Symbols  = @('XAUUSD')
 $Dir      = 'C:\Omega\logs\ibkr_l2'
 $StaleSec = 180        # CSV must be touched within this many seconds
 $MinBytes = 200        # header alone is ~80-120 bytes; any data writes > 200
