@@ -22,9 +22,12 @@ from pathlib import Path
 
 CSV      = Path.home() / "Omega" / "data" / "rdagent" / "sp500_long_close.csv"
 OUT      = Path.home() / "Omega" / "data" / "rdagent" / "daymover_universe.json"
+# MUST == engine_init BIGCAP_LAD (all 45). Enforced EXACT by scripts/roster_parity_audit.py
+# check [4] -- any add/drop that misses this copy fails the mac canary. S-2026-07-17: 39->45
+# (added WDC STX DD TPR BMY SWKS) to match the ladder roster; flipped from SUBSET to EXACT.
 BIGCAP   = ("NVDA AMD AVGO MU MRVL SMCI ARM PLTR TSLA META NFLX CRWD SHOP COIN MSTR "
             "SNOW NOW PANW UBER ABNB DELL ORCL QCOM INTC AMZN GOOGL MSFT AAPL CRM ADBE "
-            "IONQ RGTI QBTS ASTS RKLB NBIS CRWV ALAB CRDO").split()
+            "IONQ RGTI QBTS ASTS RKLB NBIS CRWV ALAB CRDO WDC STX DD TPR BMY SWKS").split()
 GLITCH   = {"POM", "CPWR", "MI"}
 W        = 1
 BE_BP    = 10.0

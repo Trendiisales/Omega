@@ -304,6 +304,132 @@ def check_ps1(bridge_path, ps1_path):
         print(f"    ok: {checked} comment mapping token(s) agree with INDEX_FUTURES")
 
 
+# ---------------------------------------------------------------- check 4
+# The BIGCAP roster is ALSO hand-copied into the Python data toolchain (the 5m
+# puller, the daily-close feed, the IBKR close refresher, the day-mover screen).
+# check [1] only polices the two C++/bridge copies -- a name added to BIGCAP_LAD
+# but missed in vps_stockmover_feed.py means the new ladder cell gets NO daily
+# close (the sp500_long_close frozen-mark class); missed in ibkr_stock5m_pull.py
+# means the backtest silently omits it. Direction is per-file:
+#   EXACT ( == BIGCAP_LAD ): every Python copy that touches the 45-name universe.
+#     (S-2026-07-17: daymover_pername_screen.py reconciled 39->45 and moved from
+#     SUBSET to EXACT on operator instruction -- "ensure it cannot drift again".
+#     All four python copies are now locked exact to the ladder roster.)
+PY_ROSTERS_EXACT = [
+    os.path.join("backtest", "ibkr_stock5m_pull.py"),
+    os.path.join("tools", "rdagent", "vps_stockmover_feed.py"),
+    os.path.join("tools", "rdagent", "refresh_close_ibkr.py"),
+    os.path.join("tools", "rdagent", "daymover_pername_screen.py"),
+]
+PY_ROSTERS_SUBSET = []
+
+
+def parse_py_bigcap(path):
+    """Names in a `BIGCAP = ( "..." "..." ).split()` / `BIGCAP = "...".split()`
+    assignment, python comments stripped. Zero-parse -> FAIL (parser blind)."""
+    lines = read_lines(path)
+    if lines is None:
+        return None
+    text = "\n".join(strip_ps1_comment(ln) for ln in lines)  # '#' comment stripper
+    m = re.search(r"BIGCAP\s*=\s*(.*?)\.split\(", text, re.S)
+    if m is None:
+        fail(f"{path}: no `BIGCAP = ... .split(` assignment found -- roster moved/renamed, "
+             f"parser blind. Update scripts/roster_parity_audit.py.")
+        return None
+    names = set(re.findall(r"[A-Z][A-Z0-9.]{1,6}", m.group(1)))
+    if not names:
+        fail(f"{path}: BIGCAP assignment parsed to ZERO tickers -- format drifted, parser blind.")
+        return None
+    return names
+
+
+def check_py_rosters(engine_init_path, repo):
+    print("[4] python BIGCAP copies  vs  engine_init BIGCAP_LAD")
+    b = parse_bigcap_lad(engine_init_path)
+    if b is None:
+        return
+    bigcap, bline = b
+    for rel in PY_ROSTERS_EXACT:
+        p = os.path.join(repo, rel)
+        s = parse_py_bigcap(p)
+        if s is None:
+            continue
+        extra = sorted(s - bigcap)
+        missing = sorted(bigcap - s)
+        if extra:
+            fail(f"{p}: BIGCAP has names NOT in BIGCAP_LAD ({engine_init_path}:{bline}): "
+                 f"{', '.join(extra)} -- a stale name pulled/fed but no longer in the ladder.")
+        if missing:
+            fail(f"{p}: BIGCAP MISSING ladder names ({engine_init_path}:{bline}): "
+                 f"{', '.join(missing)} -- this data path silently omits them "
+                 f"(new ladder cell gets no feed / backtest skips the name).")
+        if not extra and not missing:
+            print(f"    ok (exact): {rel} == {len(bigcap)} names")
+    for rel in PY_ROSTERS_SUBSET:
+        p = os.path.join(repo, rel)
+        s = parse_py_bigcap(p)
+        if s is None:
+            continue
+        outside = sorted(s - bigcap)
+        if outside:
+            fail(f"{p}: BIGCAP has names OUTSIDE the ladder roster ({engine_init_path}:{bline}): "
+                 f"{', '.join(outside)} -- a screen name that is not a real ladder cell.")
+        else:
+            print(f"    ok (subset<=BIGCAP_LAD): {rel} = {len(s)}/{len(bigcap)} names")
+
+
+# ---------------------------------------------------------------- check 5
+# Inside the BIGCAP ladder loop (engine_init.hpp ~2399) two more hand-lists set
+# per-name TRADE TREATMENT keyed off the roster:
+#   AGG_ELITE[] -> 2x notional / 2x retirement bar
+#   AGG_OUT[]   -> ranked_out (no new windows)
+# A name in either that is NOT in BIGCAP_LAD is a silent no-op (the inner match
+# loop never fires) -- so dropping a name from the roster while leaving it in
+# AGG_OUT/AGG_ELITE means the ranking list drifts from the traded list unseen.
+# elite and out must also be DISJOINT (a name can't be both 2x and ranked-out).
+def parse_cxx_name_array(path, anchor):
+    lines = read_lines(path)
+    if lines is None:
+        return None
+    blk = block_after_anchor(lines, anchor, r"\};", path)
+    if blk is None:
+        return None
+    lineno, body = blk
+    names = set()
+    for ln in body:
+        names.update(re.findall(r'"([A-Z][A-Z0-9.]*)"', strip_cxx_comment(ln)))
+    if not names:
+        fail(f"{path}:{lineno}: '{anchor}' parsed to ZERO tickers -- format drifted, parser blind.")
+        return None
+    return names, lineno
+
+
+def check_bigcap_ranking(engine_init_path):
+    print("[5] BIGCAP per-name ranking lists (AGG_ELITE / AGG_OUT)  SUBSET-OF  BIGCAP_LAD, disjoint")
+    b = parse_bigcap_lad(engine_init_path)
+    e = parse_cxx_name_array(engine_init_path, "AGG_ELITE[] = {")
+    o = parse_cxx_name_array(engine_init_path, "AGG_OUT[]   = {")
+    if b is None or e is None or o is None:
+        return
+    bigcap, bline = b
+    elite, eline = e
+    out, oline = o
+    e_bad = sorted(elite - bigcap)
+    o_bad = sorted(out - bigcap)
+    both = sorted(elite & out)
+    if e_bad:
+        fail(f"{engine_init_path}:{eline}: AGG_ELITE names NOT in BIGCAP_LAD ({bline}): "
+             f"{', '.join(e_bad)} -- 2x-notional tag on a name the ladder no longer trades (silent no-op).")
+    if o_bad:
+        fail(f"{engine_init_path}:{oline}: AGG_OUT names NOT in BIGCAP_LAD ({bline}): "
+             f"{', '.join(o_bad)} -- ranked-out tag on a name not in the roster (silent no-op).")
+    if both:
+        fail(f"{engine_init_path}: name(s) in BOTH AGG_ELITE and AGG_OUT: {', '.join(both)} "
+             f"-- a name cannot be 2x-elite and ranked-out at once.")
+    if not e_bad and not o_bad and not both:
+        print(f"    ok: AGG_ELITE ({len(elite)}) + AGG_OUT ({len(out)}) all in BIGCAP_LAD, disjoint")
+
+
 def main():
     ap = argparse.ArgumentParser(description="hand-mirrored roster/contract-map parity audit")
     ap.add_argument("--repo", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
@@ -322,6 +448,8 @@ def main():
     check_bigcap(bridge, einit)
     check_futures_map(bridge, iexec)
     check_ps1(bridge, ps1)
+    check_py_rosters(einit, repo)
+    check_bigcap_ranking(einit)
 
     if FAILS:
         print(f"\nFAIL: {len(FAILS)} parity violation(s) -- a hand-mirrored copy drifted (or a parser went blind).")
