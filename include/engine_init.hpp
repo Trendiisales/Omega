@@ -5942,6 +5942,15 @@ static void init_engines(const std::string& cfg_path)
                 s.side = "SHORT"; s.size = p.size;
                 s.entry = p.entry; s.sl = p.stop; s.tp = p.tp;
                 s.entry_ts = p.entry_ts / 1000LL;
+                // S-2026-07-17j display fix: current/unrealized were never set -> the GUI
+                // LIVE OPEN TRADES row showed 0.00/+$0 (display-only; the engine's own
+                // _manage() protection was always live). MidScalperGold snapshot idiom.
+                double current = p.entry;
+                const auto it = g_last_tick_bid.find("NAS100");
+                if (it != g_last_tick_bid.end() && it->second > 0.0) current = it->second;
+                s.current        = current;
+                s.unrealized_pnl = (p.entry - current) * p.size
+                                   * tick_value_multiplier(std::string("NAS100"));
                 v.push_back(s);
             }
             return v;
@@ -5981,6 +5990,13 @@ static void init_engines(const std::string& cfg_path)
                 s.side = "SHORT"; s.size = p.size;
                 s.entry = p.entry; s.sl = p.stop; s.tp = p.tp;
                 s.entry_ts = p.entry_ts / 1000LL;
+                // S-2026-07-17j display fix (same as the NAS instance above).
+                double current = p.entry;
+                const auto it = g_last_tick_bid.find("US500");
+                if (it != g_last_tick_bid.end() && it->second > 0.0) current = it->second;
+                s.current        = current;
+                s.unrealized_pnl = (p.entry - current) * p.size
+                                   * tick_value_multiplier(std::string("US500"));
                 v.push_back(s);
             }
             return v;
