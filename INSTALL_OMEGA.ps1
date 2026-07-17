@@ -227,7 +227,10 @@ if ($InstallService) {
     # here is exactly how the var stayed missing. nssm set with multiple values writes
     # a REG_MULTI_SZ (one env per line) -- pass BOTH so neither is ever dropped again.
     # Guarded end-to-end by tools/feedpath_selftest.py ([SERVICE-ENV] + [BIGCAP-CONSUMER]).
-    & $NssmExe set $OmegaSvcName AppEnvironmentExtra "OMEGA_IBKR_BRIDGE=1" "OMEGA_BIGCAP_BRIDGE=1"
+    # S-2026-07-18 REAL-MONEY CUTOVER: OMEGA_IBKR_PORT=4001 + OMEGA_IBKR_LIVE_ORDERS=1
+    # route execution to the LIVE gateway (4001) with paper_only cleared. A re-provision
+    # that omits them silently reverts the book to paper — pass ALL FOUR, always.
+    & $NssmExe set $OmegaSvcName AppEnvironmentExtra "OMEGA_IBKR_BRIDGE=1" "OMEGA_BIGCAP_BRIDGE=1" "OMEGA_IBKR_PORT=4001" "OMEGA_IBKR_LIVE_ORDERS=1"
     & $NssmExe set $OmegaSvcName DisplayName       "Omega Trading Engine"
     & $NssmExe set $OmegaSvcName Description       "Omega commodities + indices breakout trading engine. Managed by NSSM. Use OMEGA.ps1 to start/stop/restart."
 

@@ -6306,7 +6306,11 @@ static void init_engines(const std::string& cfg_path)
         // = Sharpe/diversifier leg, freq (NOT lot) caps dollars. PF10.23 headline =
         // bull cherry-pick; true headline PF4.17. Do NOT build a breadth book
         // (sweep KILLED RSI2/IBS+breadth>=2 vs asym-veto -- see handoff 2026-06-26b).
-        g_connors_nas.lot         = 3.0;    // dollar-normalized shadow size (index convention)
+        // S-2026-07-18 REAL-MONEY CUTOVER (operator: "set all to lowest"): 3.0 -> 1.0.
+        // With the MNQ micro contract + FUT qty floor (IbkrExecutionEngine), each
+        // unit = 1 MNQ ($2/pt); MAX_UNITS=2 caps worst case at 2 MNQ. The 3.0
+        // DD-budget sizing (S-2026-06-26s) can be restored once live is proven.
+        g_connors_nas.lot         = 1.0;    // dollar-normalized size (index convention)
         g_connors_nas.shadow_mode = false;  // S-2026-07-01: LIVE on IBKR 4002 paper (validated EDGE)
         g_connors_nas.enabled     = true;   // SHADOW
         g_connors_nas.REGIME_GATE  = 1;     // S-2026-06-20: asym sustained-bear veto > SMA200 (faithful 6/6) — SHADOW

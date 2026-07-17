@@ -187,6 +187,13 @@ def parse_index_futures(bridge_path):
 # depth-feed key, which is a different role than XAUUSD.M order routing.
 EXEC_ONLY_FUT = {"XAUUSD", "XAUUSD.M"}
 
+# S-2026-07-18 real-money cutover: EXECUTION trades the MICRO tier while the
+# FEED keeps watching the deep full-size book (same underlying, prices track
+# 1:1; signals stay identical to the backtested feed). A micro exec contract
+# is therefore parity-OK against its documented mini feed counterpart — and
+# ONLY these pairs; any other divergence is still a FAIL.
+MICRO_EXEC_OF_FEED_MINI = {"MNQ": "NQ", "MES": "ES", "MYM": "YM", "MGC": "GC"}
+
 
 def parse_exec_specs(exec_path):
     lines = read_lines(exec_path)
@@ -230,11 +237,16 @@ def check_futures_map(bridge_path, exec_path):
             continue
         want = index_futures[key]
         got = (ib, exch, cur)
-        if want != got:
+        micro_ok = (MICRO_EXEC_OF_FEED_MINI.get(ib) == want[0]
+                    and (exch, cur) == (want[1], want[2]))
+        if want != got and not micro_ok:
             fail(f"{exec_path}:{lineno}: '{om}' = {got} but {bridge_path} INDEX_FUTURES['{key}'] = {want} "
                  f"-- feed and execution disagree on the contract.")
         else:
             checked += 1
+            if micro_ok:
+                print(f"    ok(micro): exec '{om}' trades {ib} against feed {want[0]} "
+                      f"(documented micro-exec/mini-feed pair)")
     print(f"    ok: {checked} FUT rows match (+{len(EXEC_ONLY_FUT & set(fut_rows))} documented exec-only gold rows skipped; "
           f"{len(index_futures) - checked} bridge-only feed entries allowed by direction)")
 

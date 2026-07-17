@@ -109,18 +109,23 @@ struct IbkrExecutionEngine : public DefaultEWrapper {
     ~IbkrExecutionEngine() { stop_watchdog(); stop(); }
 
     void init_specs() {
-        // FULL-SIZE contracts (operator decision 2026-06-16).
+        // MICRO contracts (operator real-money cutover order 2026-07-18: flatten,
+        // start from zero, ALL sizes at minimum — supersedes the 2026-06-16
+        // full-size GC/ES/NQ/YM decision, which was taken for paper).
+        // NOTE: XAUUSD and XAUUSD.M now BOTH resolve to MGC; ibkr_to_omega_ is
+        // last-add-wins (MGC -> XAUUSD.M) but fill->ledger reconciliation is
+        // keyed by clOrdId (g_live_orders), so attribution stays per-engine.
         auto add = [&](const char* om, IbkrContractSpec s) {
             spec_[om] = s; ibkr_to_omega_[s.ibkr_symbol] = om;
         };
-        add("XAUUSD",  {"GC",     "FUT",  "COMEX",    "USD", 1.0});
+        add("XAUUSD",  {"MGC",    "FUT",  "COMEX",    "USD", 1.0});
         // Micro gold (10oz) for the small-notional mimic books (S-2026-07-14 operator
-        // sizing: 1 MGC). Distinct omega sym so everything routed on "XAUUSD" stays GC.
+        // sizing: 1 MGC). Distinct omega sym kept for per-book routing/attribution.
         add("XAUUSD.M",{"MGC",    "FUT",  "COMEX",    "USD", 1.0});
-        add("US500.F", {"ES",     "FUT",  "CME",      "USD", 1.0});
-        add("USTEC.F", {"NQ",     "FUT",  "CME",      "USD", 1.0});
-        add("NAS100",  {"NQ",     "FUT",  "CME",      "USD", 1.0});
-        add("DJ30.F",  {"YM",     "FUT",  "CBOT",     "USD", 1.0});
+        add("US500.F", {"MES",    "FUT",  "CME",      "USD", 1.0});
+        add("USTEC.F", {"MNQ",    "FUT",  "CME",      "USD", 1.0});
+        add("NAS100",  {"MNQ",    "FUT",  "CME",      "USD", 1.0});
+        add("DJ30.F",  {"MYM",    "FUT",  "CBOT",     "USD", 1.0});
         add("GER40",   {"DAX",    "FUT",  "EUREX",    "EUR", 1.0});
         add("ESTX50",  {"ESTX50", "FUT",  "EUREX",    "EUR", 1.0});
         add("UK100",   {"Z",      "FUT",  "ICEEU",    "GBP", 1.0});
@@ -255,15 +260,22 @@ struct IbkrExecutionEngine : public DefaultEWrapper {
         Order o;
         o.action        = is_long ? "BUY" : "SELL";
         o.orderType     = type;
-        o.totalQuantity = DecimalFunctions::doubleToDecimal(qty);
+        // Futures quantity must be a whole number of contracts >= 1. Engine-side
+        // "lots" are CFD-convention fractions (0.01 gold etc.); a fractional FUT
+        // qty is a silent IBKR reject (REJECTs never reach the fill callback —
+        // known thin-interface gap), so the order would vanish without a trace.
+        // Operator min-size mandate 2026-07-18: round to integer, floor at 1.
+        double send_qty = qty;
+        if (c.secType == "FUT") send_qty = std::max(1.0, std::round(qty));
+        o.totalQuantity = DecimalFunctions::doubleToDecimal(send_qty);
         if (type == "LMT") o.lmtPrice = px;
         if (type == "STP") o.auxPrice = px;
 
         long oid = next_id_.fetch_add(1);
         client_->placeOrder(oid, c, o);
-        std::printf("[IBKR-EXEC] %s %s %s qty=%.0f type=%s px=%.2f oid=%ld%s\n",
+        std::printf("[IBKR-EXEC] %s %s %s qty=%.0f (eng=%.2f) type=%s px=%.2f oid=%ld%s\n",
                     paper_only ? "PAPER" : "LIVE", o.action.c_str(), omega_sym.c_str(),
-                    qty, type.c_str(), px, oid, paper_only ? " [SHADOW]" : "");
+                    send_qty, qty, type.c_str(), px, oid, paper_only ? " [SHADOW]" : "");
         std::fflush(stdout);
         return oid;
     }
