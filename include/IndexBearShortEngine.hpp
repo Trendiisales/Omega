@@ -95,12 +95,24 @@ public:
         if (!m_pos.active) return false;
         ps.engine = tag; ps.symbol = sym; ps.side = "SHORT";
         ps.size = m_pos.size; ps.entry = m_pos.entry; ps.sl = m_pos.stop; ps.tp = m_pos.tp;
-        ps.entry_ts = m_pos.entry_ts; return true;
+        // PositionSnapshot.entry_ts is EPOCH SECONDS; engine clock is ms. Saving raw ms
+        // put an ms value into g_restored_entry_ts while trade_lifecycle compares
+        // tr.entryTs in seconds -> the phantom-drop exemption never matched and a
+        // restored position's close was silently dropped (2026-07-17 boot: NAS SHORT
+        // TIME_STOP +$111.75 vanished from the ledger).
+        ps.entry_ts = m_pos.entry_ts / 1000; return true;
     }
     bool persist_restore(const omega::PositionSnapshot& ps) {
         m_pos = LivePos{};
         m_pos.active = true; m_pos.entry = ps.entry; m_pos.stop = ps.sl; m_pos.tp = ps.tp;
-        m_pos.size = ps.size; m_pos.entry_ts = ps.entry_ts;
+        m_pos.size = ps.size; m_pos.entry_ts = ps.entry_ts * 1000;
+        m_pos.ll = ps.entry;
+        // bar_seq_ resets each boot and the H1 seed replay advances it before restore
+        // runs (omega_main restores AFTER init_engines seeding). Leaving entry_bar_seq
+        // at 0 makes bar_seq_ - entry_bar_seq >= MAX_HOLD instantly true -> spurious
+        // TIME_STOP on the first live bar (2026-07-17 boot closed the live NAS SHORT
+        // 2.8h into a 240-bar max hold). Restart the hold clock at restore instead.
+        m_pos.entry_bar_seq = bar_seq_;
         return true;
     }
 
