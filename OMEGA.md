@@ -133,6 +133,18 @@ job is to keep mining it for fixable leaks.
 | BROKER-MISMATCH | engine pnl != broker pnl | fill/phantom audit |
 | BAD-PAYOFF | small wins, big losses | fix R:R |
 
+**ML loss mining (added 2026-07-18):** `tools/ml_loss_miner/mine_losses.py` — complements the
+fixed-metric analytics above with LEARNED pattern discovery (decision tree + groupby fallback for
+small n) across BOTH Omega and Chimera ledgers: which exit_reason/regime/weekday/symbol
+combinations predict a loss, per engine. Outputs `outputs/ML_LOSS_MINING_REPORT_<date>.md` with a
+PROPOSED mitigation per surfaced pattern — proposals only, never auto-wired; every one still needs
+a certified backtest before touching config/code. Run via the `rdagent4qlib` conda env (has
+sklearn): `/opt/homebrew/Caskroom/miniforge/base/envs/rdagent4qlib/bin/python
+tools/ml_loss_miner/mine_losses.py --system both`. Not scheduled/cron'd yet (live sample sizes are
+still small post-CryptoCompleteZero + Omega's recent live cutover — 31 combined closed trades at
+build time); re-run periodically as forward data accrues, or point `--csv` at a backtest export
+for a larger-n dry run of the pipeline itself.
+
 **Known gaps to close as data fills:** ~10 engines emit MFE=0 (capture-blind) —
 wire `pos.mfe = max(...)` into their manage block. Engine-return correlation +
 book equity metrics need the shadow ledger to accumulate (was wiped 2026-06-15).
