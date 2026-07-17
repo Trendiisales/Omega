@@ -8,7 +8,7 @@ logged, never closed), or silently-missing (gold gave back $142 uncaught) passed
 while doing nothing. This test asserts FUNCTION, not existence. It is the single source of truth for
 "is our profit/loss protection actually working" and runs at every session start.
 
-FOUR CHECKS (each pass/fail independently; overall RED if any fail):
+NINE CHECKS (each pass/fail independently; overall RED if any fail):
   [1] ALIVE               — the REAL in-binary C++ StallCompanion on the VPS wrote its aggregate
                             companion_state.json in the last N min (weekend-guarded). Re-pointed
                             2026-07-06 off the retired Mac python file+crontab (false RED source).
@@ -25,6 +25,12 @@ FOUR CHECKS (each pass/fail independently; overall RED if any fail):
                             drift banked the SAME IndexBearShort ride 5x (+$980.90 phantom realized)
                             with ZERO parent ledger closes. Catches any accounting inflation class
                             where the companion "realizes" money its parent never closed.
+  [9] PROFIT-LOCK-COVERAGE — the RUNNING zoo's [PROFIT-LOCK-GATE] runtime sweep is armed AND no live
+                            leg was claimed by zero giveback books/mirrors in 24h. Added S-2026-07-17u
+                            (pre-live hole H5): commit-time config-text proof is not runtime proof —
+                            the IBS $400 giveback rode in a book whose arm never latched, and Rider4h
+                            was invisible to every audit. RED = an uncovered leg can ride profit
+                            back down right now, or the gate itself is not running.
 
 Exit 0 = all green. Exit 1 = one or more RED. Writes a status file the SessionStart hook surfaces.
 """
@@ -383,6 +389,55 @@ def check_stall_bank_ledger_parity():
               if ok else "*** " + "; ".join(probs[:4]) + " ***")
     record("[8] STALL-BANK-LEDGER-PARITY", ok, detail)
 
+def check_profit_lock_coverage():
+    # S-2026-07-17u (pre-live hole H5): the RUNNING zoo's [PROFIT-LOCK-GATE] sweep
+    # (StallCompanion.hpp maybe_drive) writes logs/profit_lock_uncovered.log whenever a
+    # live leg is claimed by ZERO giveback books/mirrors (the IBS-incident class:
+    # config-text said covered, runtime arm was dead/absent). This check surfaces it:
+    # any uncovered-leg row stamped in the last 24h = RED. Also verifies the gate is
+    # actually ARMED (boot line in the service stdout log) — a silent gate is the H5
+    # failure mode itself. ONE ssh call (RAM reaper).
+    ps = (r"if(Test-Path 'C:\Omega\logs\profit_lock_uncovered.log'){"
+          r"Write-Output '===UNCOV';Get-Content 'C:\Omega\logs\profit_lock_uncovered.log' -Tail 50};"
+          r"Write-Output '===BOOT';"
+          r"Select-String -Path 'C:\Omega\logs\omega_service_stdout.log' -Pattern 'PROFIT-LOCK-GATE' "
+          r"-SimpleMatch | Select-Object -Last 3 | ForEach-Object {$_.Line}")
+    try:
+        r = subprocess.run(["ssh","omega-new","powershell","-NoProfile","-Command",ps],
+                           capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        record("[9] PROFIT-LOCK-COVERAGE", False, "ssh omega-new failed -- runtime coverage UNVERIFIABLE"); return
+    raw = (r.stdout or "")
+    if r.returncode != 0:
+        record("[9] PROFIT-LOCK-COVERAGE", False, "ssh omega-new failed -- runtime coverage UNVERIFIABLE"); return
+    now = time.time(); day = now - 86400
+    uncov, armed, section = [], False, None
+    for line in raw.splitlines():
+        s = line.strip()
+        if s == "===UNCOV": section = "uncov"; continue
+        if s == "===BOOT":  section = "boot";  continue
+        if not s: continue
+        if section == "uncov":
+            parts = s.split(",")
+            try: ts = float(parts[0])
+            except (ValueError, IndexError): continue
+            if ts >= day and len(parts) >= 3:
+                uncov.append(f"{parts[1]} {parts[2]}")
+        elif section == "boot":
+            if "coverage sweep armed" in s: armed = True
+            if "UNCOVERED LIVE LEG" in s and not uncov: uncov.append(s[:120])
+    if uncov:
+        record("[9] PROFIT-LOCK-COVERAGE", False,
+               "*** live leg(s) with NO giveback cover (24h): " + "; ".join(sorted(set(uncov))[:4]) + " ***")
+    elif not armed:
+        # gate line absent: binary predates H5 OR gate never ran (zoo dead => check [1]
+        # would also flag). RED — "built" is not "running" (effect-level doctrine).
+        record("[9] PROFIT-LOCK-COVERAGE", False,
+               "no '[PROFIT-LOCK-GATE] ... armed' boot line in service stdout -- gate NOT RUNNING on the live binary")
+    else:
+        record("[9] PROFIT-LOCK-COVERAGE", True,
+               "runtime sweep armed; no uncovered live leg in 24h")
+
 def main():
     check_scheduled_alive()
     check_real_not_shadow()
@@ -392,6 +447,7 @@ def main():
     check_input_freshness()
     check_befloor_real_honesty()
     check_stall_bank_ledger_parity()
+    check_profit_lock_coverage()
     overall = all(ok for _,ok,_ in results)
     ts = time.strftime("%Y-%m-%d %H:%M:%S")
     lines = [f"PROTECTION SELF-TEST {'GREEN -- all protection FUNCTIONAL' if overall else 'RED -- PROTECTION NOT WORKING'}  ({ts})"]

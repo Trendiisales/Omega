@@ -143,7 +143,27 @@ static std::string send_live_order(const std::string& symbol, bool is_long,
     // execution_broker is flipped before full validation.
     if (g_cfg.execution_broker == "IBKR") {
         const long oid = omega::ibkr_exec::place_order(symbol, is_long, qty, "MKT");
-        return oid >= 0 ? ("IB-" + std::to_string(oid)) : std::string{};
+        if (oid < 0) return {};
+        const std::string clOrdId = "IB-" + std::to_string(oid);
+        // S-2026-07-17u (pre-live hole H1): the IBKR route used to return WITHOUT
+        // recording into g_live_orders, so IBKR orders had no ACK/reconciliation
+        // record at all (the FIX route below always records one). The fill callback
+        // (engine_init set_on_fill) marks acked + calls g_omegaLedger.applyBrokerFill
+        // with this same clOrdId -- engines store it as entry/close clOrdId, so the
+        // ledger folds the REAL broker fill price exactly like the FIX
+        // ExecutionReport path.
+        {
+            std::lock_guard<std::mutex> lk(g_live_orders_mtx);
+            LiveOrderRecord rec;
+            rec.clOrdId = clOrdId;
+            rec.symbol  = symbol;
+            rec.side    = is_long ? "LONG" : "SHORT";
+            rec.qty     = qty;         // engine-side qty in lots
+            rec.price   = mid_price;
+            rec.ts      = nowSec();
+            g_live_orders[clOrdId] = rec;
+        }
+        return clOrdId;
     }
 #endif
 

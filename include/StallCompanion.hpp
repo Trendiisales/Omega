@@ -193,9 +193,10 @@ public:
         // its clip level FLOORED at anchor + floor_cost_usd (>= BE by construction —
         // a config property, NOT an execution guarantee: an H1 gap through the floor
         // books the real fill / real tail, per the S-17f honesty rule). Reclip is
-        // LEVEL-anchored: reopen when fav_usd >= prior_peak + retrig_usd + confirm_usd,
-        // anchor = prior_peak + retrig_usd (restart-safe: the only reclip state is the
-        // persisted peak). trail_usd doubles as the giveback trail; the pct paths,
+        // LEVEL-anchored GAP-25 (S-17u): reopen when fav_usd >= prior_peak + retrig_usd,
+        // anchor = max(0, prior_peak + retrig_usd − confirm_usd) — anchor = reopen −
+        // confirm, identical BE-entry room to the initial open (restart-safe: the only
+        // reclip state is the persisted peak). trail_usd doubles as the giveback trail; the pct paths,
         // stall clip and cold-loss cut are all bypassed (a flat-until-confirm book has
         // no pre-BE exposure to cut). Certified per-cell before wiring any book
         // (backtest/stall_clip_sweep_idx_bearshort.py; feedback-profit-lock-mandatory).
@@ -240,6 +241,14 @@ public:
     const Config& config() const { return cfg_; }
     const std::string& name() const { return cfg_.name; }
     const StallRollUp& rollup() const { return roll_; }
+
+    // [PROFIT-LOCK-GATE] (S-2026-07-17u, H5): would this book adopt a leg with this
+    // engine tag + symbol? Exposes the EXACT step-filter semantics (excluded_/included_)
+    // so the registry's runtime coverage sweep uses the matching code itself, not a
+    // config-text re-derivation.
+    bool claims(const std::string& eng, const std::string& sym) const {
+        return !excluded_(eng) && included_(eng, sym);
+    }
 
     // ── one cycle. rows_all = ALL live_trades (unfiltered), for the omega_empty guard;
     //    filtering is done inside. gold_bull: 1 up / 0 down / -1 unknown (computed once
@@ -345,11 +354,22 @@ public:
                     const double prior_peak = cit->second;
                     bool retrig = false;
                     if (be_mode_) {
-                        // reopen only once the leg clears peak + retrig + confirm; anchor at the
-                        // LEVEL peak + retrig so the reclip leg banks its own segment only.
+                        // GAP-25 reclip (S-2026-07-17u, operator: "capture every 25 instead of 50"):
+                        // reopen once the leg clears peak + retrig; anchor = reopen − confirm so the
+                        // reclip leg opens exactly confirm above its anchor (same BE-entry room as the
+                        // initial open) and banks its own segment only. With retrig==confirm the anchor
+                        // sits AT the prior peak — the never-banked strip between clips shrinks from
+                        // retrig+confirm to retrig. No overlap with the prior banked segment (prior
+                        // bank level = peak − trail <= peak <= anchor). Certified BOTH symbols, both
+                        // reclip variants, cost x1/x2 (sweep_gap25 over stall_clip_sweep_idx_bearshort
+                        // paths: NAS +12,110 PF7.9 worst −190; US500 +2,307 PF12.2 worst −50; 12/12
+                        // grid PASS, WF halves + — beats the shipped gap-50 on net AND worst-leg).
                         retrig = (cfg_.retrig_usd > 0.0 && prior_peak > 0.0
-                                  && fav_usd >= prior_peak + cfg_.retrig_usd + cfg_.confirm_usd);
-                        if (retrig) { reopen_anchor = prior_peak + cfg_.retrig_usd; reopened = true; }
+                                  && fav_usd >= prior_peak + cfg_.retrig_usd);
+                        if (retrig) {
+                            reopen_anchor = std::max(0.0, prior_peak + cfg_.retrig_usd - cfg_.confirm_usd);
+                            reopened = true;
+                        }
                     }
                     else if (usd_mode_) retrig = (cfg_.retrig_usd > 0.0 && prior_peak > 0.0 && fav_usd > prior_peak + cfg_.retrig_usd);
                     else                retrig = (cfg_.retrig_pct > 0.0 && prior_peak > 0.0 && fav     > prior_peak * (1.0 + cfg_.retrig_pct));
@@ -1067,12 +1087,62 @@ public:
         for (auto& b : books_) b.step(rows_all, gold_bull, gold_price_bear, now);
         for (auto& m : mirrors_) m.step(rows_all, now);
         write_aggregate_(now);
+        profit_lock_gate_(rows_all, now);
     }
 
 private:
     std::vector<StallBook> books_;
     std::vector<MirrorBook> mirrors_;
     int64_t last_drive_ = 0;
+    std::unordered_map<std::string, bool> plg_seen_;   // eng|sym -> covered (report once per boot)
+    bool plg_announced_ = false;
+
+    // ── [PROFIT-LOCK-GATE] runtime coverage sweep (S-2026-07-17u, pre-live hole H5) ──
+    // Commit-time proof (companion_coverage_audit.sh parsing config text) is NOT
+    // runtime proof — the IBS incident arm sat dead ABOVE the peak in a book that
+    // config-text said covered it, and Rider4h was invisible to the audit universe
+    // entirely. This sweep asks the RUNNING zoo, every drive cycle, using the books'
+    // own matching code: "does ANY book/mirror claim this live leg?" A leg claimed by
+    // ZERO books can ride profit back down with no giveback cover — the exact
+    // profit-lock-mandatory violation class. RED line + logs/profit_lock_uncovered.log
+    // (surfaced by tools/protection_selftest.py check [9]); reported once per tag per
+    // boot so a persistent hole cannot spam the tape.
+    void profit_lock_gate_(const std::vector<StallLiveRow>& rows_all, int64_t now) {
+        if (!plg_announced_) {
+            printf("[PROFIT-LOCK-GATE] runtime coverage sweep armed: %zu books + %zu mirrors watch every live leg\n",
+                   books_.size(), mirrors_.size());
+            fflush(stdout);
+            plg_announced_ = true;
+        }
+        for (const auto& r : rows_all) {
+            if (r.book != "OMEGA") continue;          // crypto legs: the crypto binary's own floor gate
+            const std::string tag = r.eng + "|" + r.sym;
+            if (plg_seen_.count(tag)) continue;
+            bool covered = false;
+            for (const auto& b : books_) if (b.claims(r.eng, r.sym)) { covered = true; break; }
+            if (!covered) {
+                const bool is_short = !r.side.empty() && (r.side[0] == 'S' || r.side[0] == 's');
+                for (const auto& m : mirrors_) {
+                    const auto& mc = m.config();
+                    if (mc.long_only && is_short) continue;
+                    for (const auto& l : mc.legs)
+                        if (l == r.eng + "|" + r.sym) { covered = true; break; }
+                    if (covered) break;
+                }
+            }
+            plg_seen_[tag] = covered;
+            if (!covered) {
+                printf("[PROFIT-LOCK-GATE] *** UNCOVERED LIVE LEG %s %s entry=%.5f -- NO giveback "
+                       "book/mirror claims it (profit-lock-mandatory VIOLATION; wire cover or exclude) ***\n",
+                       r.eng.c_str(), r.sym.c_str(), r.entry);
+                fflush(stdout);
+                std::ofstream f("logs/profit_lock_uncovered.log", std::ios::app);
+                if (f.is_open())
+                    f << now << "," << r.eng << "," << r.sym << ","
+                      << stall_detail::pyfloat(stall_detail::round4(r.entry), 4) << "\n";
+            }
+        }
+    }
 
     // Gold 4h trend from gold_d1_trend_h4.csv (ts_ms,o,h,l,c) tail 60. Fast SMA(10) vs
     // slow SMA(30) of h4 closes: up when fast>=slow. Faithful to python gold_4h_bull().

@@ -78,6 +78,32 @@ certified trail per profit-lock rule):
    entry; regression-tested RED on the pre-fix state. 13 grandfathered OWED entries
    (main-defaults cover, certification debt visible).
 
+## GAP-25 reclip re-certification (S-2026-07-17u, operator order)
+
+Operator: "capture every 25 instead of 50 after the initial clip". Semantics change
+(`StallCompanion.hpp` be-mode): reopen when `fav >= peak + retrig` (was `+ retrig + confirm`),
+anchor = `max(0, peak + retrig − confirm)` — the `anchor = reopen − confirm` invariant is
+preserved (reclip leg opens exactly confirm above its anchor, same BE-entry room as the
+initial open; floor = anchor + floor_cost unchanged). With retrig=confirm=25 the reclip
+anchor sits AT the prior peak: never-banked strip between clips 50 → 25.
+
+Re-certified on the SAME path CSVs (harness re-run reproduced 90/74 legs bit-identical
+grids; `backtest/stall_clip_sweep_ibs_gap25.py` imports the base sweep and swaps only the
+reclip formula):
+
+| cell cnf25/tr25/rt25 | variant | n | net$ | PF | worst | WF-H1 | WF-H2 |
+|---|---|---|---|---|---|---|---|
+| NAS100 | shipped gap-50 | 146 | +10,944 | 7.66 | −211 | +4,321 | +6,623 |
+| NAS100 | **GAP-25** | 164 | **+12,110** | 7.90 | −190 | +5,061 | +7,049 |
+| NAS100 ×2cost | GAP-25 | 165 | +11,423 | 6.86 | −194 | +4,674 | +6,749 |
+| US500 | shipped gap-50 | 70 | +1,996 | 15.12 | −56 | +1,028 | +968 |
+| US500 | **GAP-25** | 83 | **+2,307** | 12.18 | −50 | +1,179 | +1,129 |
+| US500 ×2cost | GAP-25 | 83 | +2,208 | 10.86 | −51 | +1,123 | +1,084 |
+
+Full 12-cell GAP-25 grid (confirm 10/25/50 × trail 25/50/75/100) PASSES both symbols,
+WF halves positive everywhere. GAP-25 beats gap-50 on net AND worst-leg on both symbols —
+shipped. Book configs unchanged (confirm25/trail25/retrig25); only the reclip formula moved.
+
 ## Deploy notes
 
 - The open incident leg's `main`-book companion row must be PRE-CLEANED from

@@ -230,6 +230,15 @@ public:
     //   BE_BUFFER_PCT -- BE_CUT triggers when move <= entry*pct/100 after arm.
     //   Override via the backtest harness CLI for the sweep; set _PCT = 0.0
     //   to disable a phase entirely.
+    // ADVERSE-PROTECTION: (backtested verdicts; header tag added S-2026-07-17u
+    //   when the ENTRY_RE widening exposed this file as un-tagged.)
+    //   Verdict = COLD-LOSS CUT + WIDE-ARM BE RATCHET (both set in engine_init):
+    //   * LOSS_CUT_PCT=1.0 (S-2026-06-17, losscut_batch_b.py): net flat,
+    //     maxDD -68% (-341 -> -110), worst -174 -> -53.
+    //   * BE_ARM_PCT=5.0 / BE_BUFFER_PCT=1.0 (S-2026-06-25 re-sweep,
+    //     xau_tf_d1_bearm_sweep, real engine, 2yr H4, bull+bear, WF): PF1.58
+    //     +$4160 maxDD $1553, both-WF-halves+; arm1/2 tight-lock GUTS the edge
+    //     (PF<1) -- wide-arm mandatory, plateau arm3-5.
     double LOSS_CUT_PCT  = 0.0;
     double BE_ARM_PCT    = 0.0;
     double BE_BUFFER_PCT = 0.0;

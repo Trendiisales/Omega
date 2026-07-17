@@ -357,6 +357,15 @@ inline void register_position_persistence() {
     wire_cross(g_idx_bear_short_nas, "IndexBearShort",   "NAS100");
     wire_cross(g_idx_bear_short_sp,  "IndexBearShortSP", "US500.F");
 
+    // ---- XauTrendRider4h (bank-and-reload rider on the XauTf4h host cells) ----
+    // S-2026-07-17u (pre-live hole H2): the rider gained register_source visibility,
+    // which exposed that its legs died silently on every restart (fresh re-arm at
+    // current px, no ledger close for the pre-restart leg — the same vanish class as
+    // the IndexBearShort 06-26 wire above). persist_save_all/persist_restore added to
+    // the engine; snapshot tag "XauTrendRider4h#<ci>". restore_blocked_disabled gates
+    // resurrect (rider has .enabled). D1 rider is disabled (S-07-12 cull) — not wired.
+    wire_multicell(g_rider_4h, "XauTrendRider4h", "XAUUSD");
+
     // ---- BigCapMomoIbkr / Luke (in-process IBKR engine; own Sym book, not a g_* global) ----
     // S-2026-06-26: this engine showed positions (register_source "BigCapMomoIbkr") but did NOT persist
     // -> Luke/surge fills vanished with no ledger close on every restart/deploy. collect_positions()

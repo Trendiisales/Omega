@@ -5,7 +5,7 @@
 # scripts/adverse_protection_audit.sh as "legacy (backfill owed)" WARNINGS -- they
 # do NOT fail the build. This list is NOT empty (a prior header claimed "backfill
 # complete / intentionally EMPTY" while 3 entries sat below it -- fixed S-2026-07-14,
-# latent-class sweep item 8a). Current count: 8 entries.
+# latent-class sweep item 8a). Current count: 12 entries.
 #
 # RULES:
 #   * Grandfathering is for PRE-GATE code only. A NEW position-opening engine with
@@ -42,3 +42,22 @@ SweepableEngines
 #   open ~L191, pos_mgr_.open(sig,..) ~L409/~L628) -- dormant, still owed a verdict
 #   or removal if ever re-armed.
 LatencyEdgeEngines
+# --- S-2026-07-17u ENTRY_RE widening (pre-live audit hole H4): the local-ref idiom
+#     'auto& p = pos[ci]; p.active = true' was invisible to the pos_-anchored regex.
+#     Widening exposed 6 pre-gate files. The 2 LIVE ones (XauTrendFollow1h,
+#     XauTrendFollowD1) got REAL annotations (certified verdicts already existed in
+#     their engine_init blocks: 1h LC=0.5 losscut_xau_faithful.py S-06-17; D1 LC=1.0
+#     losscut_batch_b.py + BE arm5/buf1.0 xau_tf_d1_bearm_sweep S-06-25) -- NOT here.
+#     The 4 below are dormant/disabled pre-gate code, grandfathered:
+# XauTrendFollow2hEngine: g_xau_tf_2h.enabled=false (engine_init ~L3912); owed a
+#   verdict before any re-enable.
+XauTrendFollow2hEngine
+# Us30EnsembleEngine: never instantiated -- wiring commented out in engine_init
+#   (~L880 include; "re-enable after shadow trace" block is comment-only).
+Us30EnsembleEngine
+# UstecTrendFollow5mEngine: never instantiated -- only RiskMonitor shadow-pin
+#   callbacks reference the global defensively; no live init block.
+UstecTrendFollow5mEngine
+# UstecTrendFollowHtfEngine: never instantiated -- wiring commented out
+#   ("shadow_mode/enabled" block is comment-only, ~L66-79 of the header).
+UstecTrendFollowHtfEngine

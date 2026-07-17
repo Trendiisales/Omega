@@ -221,6 +221,13 @@ public:
     int    er_gate_n   = 20;
 
     // S63-pattern in-flight protection (defaults disabled).
+    // ADVERSE-PROTECTION: (S-2026-06-17 — backtested verdict; header tag added
+    //   S-2026-07-17u when the ENTRY_RE widening exposed this file as un-tagged.)
+    //   Verdict = COLD-LOSS CUT, LOSS_CUT_PCT=0.5 (set in engine_init): faithful
+    //   M30->H1 backtest (backtest/losscut_xau_faithful.py) -> net +337,
+    //   maxDD -44% (-602 -> -339), worst trade -191 -> -27. Tighter than the H4
+    //   family (faster TF). BE ratchet stays 0.0 (the 4h family's trail-only
+    //   evidence applies: banking clips the runners that ARE the edge).
     double LOSS_CUT_PCT  = 0.0;
     double BE_ARM_PCT    = 0.0;
     double BE_BUFFER_PCT = 0.0;

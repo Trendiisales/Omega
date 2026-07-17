@@ -6,6 +6,9 @@
 //
 // SINGLE-TRANSLATION-UNIT include -- only include from main.cpp
 
+#include <fstream>   // S-17u H1: ibkr_fills.csv durable append in the set_on_fill lambda
+#include <iomanip>   // S-17u H1: full-precision fill px (the 6-sig-fig default truncated 28987.375 once)
+#include <mutex>     // S-17u H1: fills_mtx
 #include "SeedGuard.hpp"
 #include "PortfolioGuard.hpp"
 #include "IbkrExec.hpp"   // thin TWS-free IBKR execution interface
@@ -1525,6 +1528,35 @@ static void init_engines(const std::string& cfg_path)
                omega::kXauTfNumCells, (int)g_rider_4h.shadow_mode, (int)g_rider_4h.enabled,
                omega::kXauTfD1NumCells, (int)g_rider_d1.shadow_mode, (int)g_rider_d1.enabled);
         fflush(stdout);
+        // S-2026-07-17u (pre-live audit hole H2): Rider4h was the ONLY live engine with
+        // NO register_source snapshot — invisible to the stall-companion zoo, the GUI
+        // live-trades frame AND companion_coverage_audit.sh (whose universe is snapshot
+        // engine tags). Snapshot per active rider leg; the tag now demands giveback
+        // cover per the coverage gate (main-book defaults apply immediately via EXG;
+        // certified dedicated cell per backtest/XAU_RIDER4H_CLIP_FINDINGS_2026-07-17.md).
+        g_open_positions.register_source("XauTrendRider4h", []() {
+            std::vector<omega::PositionSnapshot> v;
+            if (!g_rider_4h.enabled) return v;
+            double current = 0.0;
+            const auto it = g_last_tick_bid.find("XAUUSD");
+            if (it != g_last_tick_bid.end() && it->second > 0.0) current = it->second;
+            for (int ci = 0; ci < g_rider_4h.ncells; ++ci) {
+                const auto& L = g_rider_4h.leg[ci];
+                if (!L.active) continue;
+                omega::PositionSnapshot s;
+                s.symbol = "XAUUSD"; s.engine = "XauTrendRider4h";
+                s.side = L.is_long ? "LONG" : "SHORT"; s.size = g_rider_4h.lot;
+                s.entry = L.open_px;
+                s.entry_ts = L.open_ts / 1000LL;
+                const double cur = current > 0.0 ? current : L.open_px;
+                s.current        = cur;
+                const double dir = L.is_long ? 1.0 : -1.0;
+                s.unrealized_pnl = (cur - L.open_px) * dir * g_rider_4h.lot
+                                   * tick_value_multiplier(std::string("XAUUSD"));
+                v.push_back(s);
+            }
+            return v;
+        });
 
         // ── Gold WaveTrend momentum-confirm gate (S-2026-06-03) ──────────────
         // Gold-validated X1 filter now gates XauTrendFollow 1h/4h/D1 entries:
@@ -3015,9 +3047,18 @@ static void init_engines(const std::string& cfg_path)
             const std::vector<std::string> EXG =   // the shared "main" book's default engine exclude list
                 {"IBS","Mean-Rev","MeanRev","RSIrev","RSIRev","Regime","Connors","Seasonal",
                  "Monday","Turnaround","TurnOfMonth","Turtle","TSMom50",
-                 "IndexBearShort"};   // S-2026-07-17t: covered by the DEDICATED floored clip pair below
+                 "IndexBearShort",    // S-2026-07-17t: covered by the DEDICATED floored clip pair below
                                       // (main's uncertified gate_pct=1.5 never armed at mfe 1.47% =
                                       // the $400 giveback incident; mirror of the Turtle exclude)
+                 "XauTrendRider4h",   // S-2026-07-17u (H2): covered by the DEDICATED certified
+                                      // floored book below -- main's uncertified defaults would
+                                      // double-cover + full-mirror the rider's -1R reload legs
+                 "XauThreeBar30m"};   // S-2026-07-17u (H3): covered by the DEDICATED certified
+                                      // floored book below. main's gate_pct=1.5 cover simmed
+                                      // -$400.41 PF0.63 on the REAL 584-leg path corpus -- the
+                                      // arm NEVER latches in 4.3yr (max ride mfe 0.9%) while
+                                      // ENGINE_EXIT re-books every parent loser. The exact
+                                      // IBS-incident shape, certified dead on this parent.
             auto& reg = omega::stall_companions();
             auto B = [&](SC c){ c.dir = "stall/" + c.name; reg.add(std::move(c)); };
             // helpers: PCT book / USD book (mirrors the two cron gauges)
@@ -3043,6 +3084,33 @@ static void init_engines(const std::string& cfg_path)
             //   US500 0.6 + 2x0.3). Judged STANDALONE (companion-independent rule).
             { SC c; c.name="idx_bearshort_clip_nas"; c.include={"IndexBearShort NAS100"}; c.confirm_usd=25; c.trail_usd=25; c.retrig_usd=25; c.floor_cost_usd=4.0; c.stall_bars=9999; c.tf_sec=3600; B(c); }
             { SC c; c.name="idx_bearshort_clip_spx"; c.include={"IndexBearShort US500"}; c.confirm_usd=25; c.trail_usd=25; c.retrig_usd=25; c.floor_cost_usd=1.2; c.stall_bars=9999; c.tf_sec=3600; B(c); }
+            // --- XauTrendRider4h FLOORED giveback clip (S-2026-07-17u, pre-live hole H2) ---
+            //   Rider4h was LIVE with NO cover and NO snapshot visibility (invisible to this
+            //   zoo AND companion_coverage_audit.sh) until the S-17u register_source +
+            //   ENTRY_RE widening. CERTIFIED per-cell (backtest/stall_clip_sweep_xau_rider4h.py
+            //   over backtest/clip_path_xau_rider4h.cpp -- REAL XauTrendFollow4h host + REAL
+            //   rider, XAUUSD H1 2022-2026 gate-CERTIFIED, 876 rider legs, honest intrabar
+            //   worse-of fills): BE-ENTRY FLOORED confirm$25/trail$25/retrig$25 GAP-25 reclip
+            //   -- intrabar x1 +$13,226 PF17.7 worst -36 (x2cost +$12,652 PF14.9), WF
+            //   +3,318/+9,908, EVERY calendar year positive incl 2022 bear +$1,043 and the
+            //   2026 crash +$3,266; 60/60-cell plateau PASS both grains/both reclip variants.
+            //   Always-on USD mirror = 0/64 PASS (re-books all 340 rider reload losers) --
+            //   floored-only, per the IBS precedent. floor_cost_usd=1.6 (lot 0.01 x mult 100
+            //   = $1/pt; IBKR XAU RT 2x0.00015xpx + $0.30 spread ~ $1.6 @ 4300).
+            { SC c; c.name="xau_rider4h_clip"; c.include={"XauTrendRider4h"}; c.confirm_usd=25; c.trail_usd=25; c.retrig_usd=25; c.floor_cost_usd=1.6; c.stall_bars=9999; c.tf_sec=3600; B(c); }
+            // --- XauThreeBar30m FLOORED giveback clip (S-2026-07-17u, pre-live hole H3) ---
+            //   The ONLY live engine among the 13 coverage-OWED tags. CERTIFIED per-cell
+            //   (backtest/stall_clip_sweep_xau_threebar30m.py over
+            //   backtest/clip_path_xau_threebar30m.cpp -- REAL engine, FULL live config
+            //   incl slope/vol-band/regime gates, XAUUSD M30 2022-2026 gate-CERTIFIED,
+            //   584 parent legs, M1-grain paths = the live 60s companion drive cadence):
+            //   GOLD-SCALED cell confirm$5/trail$3/retrig$5 GAP-reclip -- +$536.10 PF135.9
+            //   worst -1.11, WF +141/+395, 2xcost +$408.63 PF49.2, every year positive.
+            //   The operator-uniform 25/25/25 does NOT map to this parent (rides are
+            //   $1-38 at lot 0.01 -- n=7, WF-H1 $0; stated in the findings, not forced).
+            //   Always-on mirrors 0/31 PASS. floor_cost_usd=2.0 (IBKR XAU RT ceiling
+            //   $1.71 @ 4700, lot 0.01 x mult 100 = $1/pt). confirm5 >= 2xRT holds.
+            { SC c; c.name="xau_threebar30m_clip"; c.include={"XauThreeBar30m"}; c.confirm_usd=5; c.trail_usd=3; c.retrig_usd=5; c.floor_cost_usd=2.0; c.stall_bars=9999; c.tf_sec=1800; B(c); }
             // --- index turtle D1 clips (PCT gauge, arm2, giveback variants) ---
             //   S-2026-07-17t: include={"US500"} is a SYMBOL substring match, so these
             //   books were silently also mirroring IndexBearShort US500 legs (uncertified
@@ -6709,8 +6777,46 @@ static void init_engines(const std::string& cfg_path)
                     std::cout << "[IBKR-EXEC] LEDGER-FILL " << f.omega_symbol << " " << f.side
                               << " qty=" << f.qty << " px=" << f.price
                               << " oid=" << f.order_id << " exec=" << f.exec_id << "\n";
-                    // TODO Phase 2: reconcile into OmegaTradeLedger as a real broker fill
-                    // (entry/exit match + pnl), mirroring the FIX ExecutionReport path.
+                    // S-2026-07-17u (pre-live hole H1, closes the Phase-2 TODO): mirror the
+                    // FIX ExecutionReport path for IBKR fills.
+                    // (1) DURABLE broker record -- every fill appends to
+                    //     logs\trades\ibkr_fills.csv (before this, a real-money fill
+                    //     existed only as a scrolling log line).
+                    // (2) LEDGER RECONCILIATION -- applyBrokerFill(clOrdId=IB-<oid>) folds
+                    //     the REAL fill price into the matching trade row (engines store
+                    //     send_live_order's "IB-<oid>" return as entry/close clOrdId; the
+                    //     call is thread-safe and silently no-ops on non-matching ids,
+                    //     exactly like the FIX path at handle_execution_report).
+                    // (3) ACK -- mark the g_live_orders record acked (registered at
+                    //     place time in order_exec.hpp's IBKR branch).
+                    // NOTE: IBKR rejects/errors do not reach this callback (thin-interface
+                    // scope); the watchdog + [IBKR-EXEC] error lines cover those. Fill
+                    // runs on the IBKR reader thread -- everything called here is
+                    // mutex-guarded.
+                    const std::string clOrdId = "IB-" + std::to_string(f.order_id);
+                    if (f.price > 0.0)
+                        g_omegaLedger.applyBrokerFill(clOrdId, f.price,
+                                                      tick_value_multiplier(f.omega_symbol));
+                    {
+                        std::lock_guard<std::mutex> lk(g_live_orders_mtx);
+                        auto it = g_live_orders.find(clOrdId);
+                        if (it != g_live_orders.end()) it->second.acked = true;
+                    }
+                    {
+                        static std::mutex fills_mtx;
+                        std::lock_guard<std::mutex> lk(fills_mtx);
+                        const char* fp = "C:\\Omega\\logs\\trades\\ibkr_fills.csv";
+                        const bool need_header = !std::ifstream(fp).good();
+                        std::ofstream fcsv(fp, std::ios::app);
+                        if (fcsv.is_open()) {
+                            if (need_header)
+                                fcsv << "ts_unix,exec_id,order_id,clOrdId,omega_symbol,ibkr_symbol,side,qty,price\n";
+                            fcsv << f.ts_unix << ',' << f.exec_id << ',' << f.order_id << ','
+                                 << clOrdId << ',' << f.omega_symbol << ',' << f.ibkr_symbol << ','
+                                 << f.side << ',' << f.qty << ','
+                                 << std::setprecision(12) << f.price << "\n";
+                        }
+                    }
                 });
                 if (omega::ibkr_exec::connect())
                     std::cout << "[IBKR-EXEC] execution_broker=IBKR ACTIVE port=" << ib_port

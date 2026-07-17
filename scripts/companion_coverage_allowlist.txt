@@ -37,5 +37,8 @@ GoldOrbRetraceLDN   MAIN-DEFAULTS-COVER, certification owed (intraday ORB, fixed
 H1SwingGold         MAIN-DEFAULTS-COVER, certification owed
 MicroScalperGold    MAIN-DEFAULTS-COVER, certification owed (scalper, seconds-to-minutes holds)
 MidScalperGold      MAIN-DEFAULTS-COVER, certification owed (scalper, minutes holds)
-XauThreeBar30m      MAIN-DEFAULTS-COVER, certification owed
+# XauThreeBar30m: REMOVED from allowlist S-2026-07-17u -- dedicated CERTIFIED floored
+#   book xau_threebar30m_clip wired (confirm5/trail3/retrig5, gap-reclip, +$536 PF136,
+#   backtest/XAU_THREEBAR30M_FLOORED_CLIP_FINDINGS_2026-07-17.md); main-book cover was
+#   certified DEAD on this parent (-$400.41 PF0.63, arm never latched in 4.3yr).
 XauusdFvg           MAIN-DEFAULTS-COVER, certification owed

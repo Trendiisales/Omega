@@ -110,3 +110,12 @@ GoldTrendMimicLadder
 BeCascadeCompanionEngine
 # (OmegaBeCascadeBook.hpp — the omega wrapper/book — opens nothing itself, so it does
 #  NOT trip the ungated opener regex; no allowlist entry needed.)
+# StallCompanion: the stall-accountant/giveback-clip book zoo itself. Never places a
+#   broker order — mirrors parent snapshot legs into its OWN paper book (companion-
+#   independence rule); companion RT cost is debited inside every bank
+#   (cost_omega/floor_cost_usd), so no OmegaCostGuard reference exists. Opener hit is
+#   the mirror-watch `w.active = true` (~L902) newly visible to the S-2026-07-17u widened
+#   ENTRY_RE (local-ref idiom). Loss protection = BE-floored be-mode + stall/cold
+#   paths, certified per-cell before wiring (feedback-profit-lock-mandatory).
+#   [NEW-EXPOSURE S-2026-07-17u]
+StallCompanion

@@ -40,7 +40,11 @@ cd "$(dirname "$0")/.." || exit 2
 # position-representation idiom MUST be added here.
 # S-2026-07-08c: + 'w_ = want' -- the weight-book idiom (GoldTsmomD1V2 rebalance
 # allocation book holds a signed weight, no pos struct).
-ENTRY_RE='pos_?\.active *= *true|pos_active_? *= *true|pos_?\.open\(|\.open\(sig|legs_\.push_back|w_ *= *want'
+# S-2026-07-17u: '<anyref>.active = true' -- the local-ref idiom (auto& p = pos[ci];
+# p.active = true) used by XauTrendFollow1h/D1 evaded the pos_-anchored form, so two
+# LIVE engines passed with NO verdict (pre-live audit hole H4). Any identifier
+# followed by '.active = true' now counts as an opener.
+ENTRY_RE='[A-Za-z_][A-Za-z0-9_]*\.active *= *true|pos_active_? *= *true|pos_?\.open\(|\.open\(sig|legs_\.push_back|w_ *= *want'
 TAG='ADVERSE-PROTECTION:'
 LEGACY_FILE='scripts/adverse_protection_legacy.txt'
 
