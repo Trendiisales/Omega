@@ -207,7 +207,10 @@ def mine_engine(df_eng: pd.DataFrame, engine_name: str) -> dict:
     from sklearn.tree import DecisionTreeClassifier, export_text
     from sklearn.preprocessing import LabelEncoder
 
-    feat_cols_num = [c for c in ("hour_utc", "hold_sec", "mfe", "mae", "mfe_giveback",
+    # NOTE: mfe_giveback is EXCLUDED from tree features — it is computed from net_pnl
+    # ((mfe - net_pnl)/mfe), i.e. a function of the target; including it is leakage and
+    # makes the tree trivially "predict" losses. It remains available as a report-side stat.
+    feat_cols_num = [c for c in ("hour_utc", "hold_sec", "mfe", "mae",
                                   "spread_at_entry", "latency_ms") if c in df_eng.columns]
     feat_cols_cat = [c for c in ("exit_reason", "regime", "weekday_utc", "side", "symbol")
                       if c in df_eng.columns]
@@ -386,7 +389,8 @@ def main():
     results.append(mine_engine(df, "__ALL_ENGINES_COMBINED__"))
     results.sort(key=lambda r: r["net_pnl_sum"])  # worst-losing engines first
 
-    out_path = Path(args.out) if args.out else Path("outputs") / "ML_LOSS_MINING_REPORT_2026-07-18.md"
+    from datetime import date
+    out_path = Path(args.out) if args.out else Path("outputs") / f"ML_LOSS_MINING_REPORT_{date.today().isoformat()}.md"
     out_path.parent.mkdir(parents=True, exist_ok=True)
     render_report(results, out_path)
 
