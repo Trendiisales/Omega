@@ -36,12 +36,16 @@ case "$HOST" in
 esac
 
 # ── flags ────────────────────────────────────────────────────────────────────
-NO_PUSH=0; FORCE_CLOSE_WINDOW=0
+NO_PUSH=0; FORCE_CLOSE_WINDOW=0; CLEAN=0
 for a in "$@"; do
   case "$a" in
     --no-push)             NO_PUSH=1;;
     --force-close-window)  FORCE_CLOSE_WINDOW=1;;
-    *) echo "[deploy][WARN] unknown arg: $a (accepted: --no-push --force-close-window)" >&2;;
+    # --clean: forward -Clean to OMEGA.ps1 (full rebuild). REQUIRED for header-only
+    # wires — incremental MSBuild can skip the header->main.cpp recompile (correct
+    # stamped hash, missing code; memory project-header-wire-incremental-stale-build).
+    --clean)               CLEAN=1;;
+    *) echo "[deploy][WARN] unknown arg: $a (accepted: --no-push --force-close-window --clean)" >&2;;
   esac
 done
 
@@ -101,7 +105,8 @@ echo "[deploy] launching DETACHED deploy on $HOST (survives disconnect)..."
 # It runs tools/deploy_detached.ps1 (in-repo; scp'd here as a bootstrap in case
 # the box checkout predates the file — OMEGA.ps1 deploy pulls it into C:\Omega).
 scp -q "$(dirname "$0")/deploy_detached.ps1" "$HOST:C:/Omega/tools/deploy_detached.ps1"
-LAUNCH=$(ssh "$HOST" "powershell -NoProfile -ExecutionPolicy Bypass -Command \"\$lg='C:\\Omega\\logs\\deploy_'+(Get-Date -Format yyyyMMdd_HHmmss)+'.log'; \$r=Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{CommandLine=('powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\\Omega\\tools\\deploy_detached.ps1 -LogPath '+\$lg)}; Write-Output ('DEPLOY_PID='+\$r.ProcessId+' log='+\$lg)\"")
+CLEAN_ARG=""; (( CLEAN )) && CLEAN_ARG=" -Clean"
+LAUNCH=$(ssh "$HOST" "powershell -NoProfile -ExecutionPolicy Bypass -Command \"\$lg='C:\\Omega\\logs\\deploy_'+(Get-Date -Format yyyyMMdd_HHmmss)+'.log'; \$r=Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{CommandLine=('powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\\Omega\\tools\\deploy_detached.ps1${CLEAN_ARG} -LogPath '+\$lg)}; Write-Output ('DEPLOY_PID='+\$r.ProcessId+' log='+\$lg)\"")
 echo "  $LAUNCH"
 PID=$(echo "$LAUNCH" | sed -n 's/.*DEPLOY_PID=\([0-9]*\).*/\1/p')
 LOG=$(echo "$LAUNCH" | sed -n 's/.* log=\(.*[Ll]og\).*/\1/p')

@@ -10,7 +10,18 @@
 # Invoked by tools/omega_deploy.sh (which also scp's this file to the box as a
 # bootstrap in case the checkout there predates it). Do not run by hand unless
 # you know why; the canonical entry point stays `bash tools/omega_deploy.sh`.
-param([string]$LogPath = ('C:\Omega\logs\deploy_' + (Get-Date -Format yyyyMMdd_HHmmss) + '.log'))
+param(
+  [string]$LogPath = ('C:\Omega\logs\deploy_' + (Get-Date -Format yyyyMMdd_HHmmss) + '.log'),
+  # S-2026-07-17: header-only wires need a full rebuild (incremental MSBuild can
+  # skip the header->main.cpp recompile: correct stamped hash, MISSING code —
+  # memory project-header-wire-incremental-stale-build). omega_deploy.sh --clean
+  # forwards this switch.
+  [switch]$Clean
+)
 Set-Content -Path 'C:\Omega\logs\deploy_latest_logname.txt' -Value $LogPath
 Set-Location C:\Omega
-& .\OMEGA.ps1 deploy *> $LogPath
+if ($Clean) {
+  & .\OMEGA.ps1 deploy -Clean *> $LogPath
+} else {
+  & .\OMEGA.ps1 deploy *> $LogPath
+}
