@@ -310,6 +310,23 @@ bash "$(dirname "$0")/prebe_loss_audit.sh" || {
   exit 1
 }
 
+# COMPANION GIVEBACK-COVERAGE GATE (added S-2026-07-17t, IndexBearShort $400
+# giveback: the leg's ONLY profit lock was the shared main stall book, whose
+# uncertified gold-era gate_pct=1.5 arm sat 0.03% above the leg's 1.47% peak, so
+# the clip never armed and +$425 rode back to ~+$25 -- feedback-profit-lock-
+# mandatory violation). This gate derives every live snapshot engine tag
+# (s.engine writes in engine_init.hpp) and requires each to have a DEDICATED
+# stall-book include / mirror leg, or a documented allowlist entry
+# (scripts/companion_coverage_allowlist.txt). A NEW engine whose only giveback
+# cover is the uncertified main-book defaults FAILS the build. Regression-tested
+# RED on the pre-fix state (IndexBearShort uncovered), GREEN post-fix.
+echo ""
+echo "[mac-canary-engines] companion giveback-coverage gate (no engine on uncertified main-book defaults)..."
+bash "$(dirname "$0")/companion_coverage_audit.sh" || {
+  echo "[mac-canary-engines] FAIL: a live engine has no certified giveback cover -- see companion_coverage_audit.sh output above."
+  exit 1
+}
+
 # PERSIST/RESTORE SEMANTICS GATE (added S-2026-07-17k, handoff item 3 "confirm no
 # more trade cancellations on deploy"): closes the c1903e88 IndexBearShort class
 # structurally -- (1) every PositionSnapshot.entry_ts write must be visibly

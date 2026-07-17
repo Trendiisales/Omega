@@ -3014,18 +3014,45 @@ static void init_engines(const std::string& cfg_path)
             using SC = omega::StallBook::Config;
             const std::vector<std::string> EXG =   // the shared "main" book's default engine exclude list
                 {"IBS","Mean-Rev","MeanRev","RSIrev","RSIRev","Regime","Connors","Seasonal",
-                 "Monday","Turnaround","TurnOfMonth","Turtle","TSMom50"};
+                 "Monday","Turnaround","TurnOfMonth","Turtle","TSMom50",
+                 "IndexBearShort"};   // S-2026-07-17t: covered by the DEDICATED floored clip pair below
+                                      // (main's uncertified gate_pct=1.5 never armed at mfe 1.47% =
+                                      // the $400 giveback incident; mirror of the Turtle exclude)
             auto& reg = omega::stall_companions();
             auto B = [&](SC c){ c.dir = "stall/" + c.name; reg.add(std::move(c)); };
             // helpers: PCT book / USD book (mirrors the two cron gauges)
             // --- shared main book (default EXCLUDE, default gauge) ---
             { SC c; c.name="main"; c.exclude=EXG; B(c); }
+            // --- IndexBearShort FLOORED giveback clips (S-2026-07-17t, P1 fix) ---
+            //   Incident 2026-07-17: IndexBearShort NAS100 short peaked +$425 (mfe 1.47%)
+            //   and rode back to ~+$25 with NO clip -- the only cover was the shared
+            //   "main" book whose 1.5% arm gate (uncertified gold-era transcription)
+            //   sat 0.03% above the peak (feedback-profit-lock-mandatory violation).
+            //   CERTIFIED per-cell (backtest/stall_clip_sweep_idx_bearshort.py over
+            //   backtest/clip_path_idx_bearshort.cpp REAL-engine H1 paths, NAS100 DON24
+            //   90 legs / US500 DON48 74 legs, 2022-2026 gate-CERTIFIED data, honest
+            //   fills, companion RT cost incl): BE-ENTRY FLOORED mode confirm$25/
+            //   trail$25/retrig$25 -- NAS +$10,944 PF7.7 (2xcost +$10,304 PF6.7),
+            //   US500 +$1,996 PF15.1 (2xcost +$1,912), both WF halves positive, FULL
+            //   48/48-cell plateau PASS, worst leg -211/-56 (honest H1 gap tails; the
+            //   floor LEVEL is >=BE by construction, the fill is real -- S-17f rule).
+            //   Always-on mirrors (pct + usd gauges, 288 cells) FAIL standalone on this
+            //   parent (loser -1R drag); the flat-until-confirm floored shape is the
+            //   ONLY certified architecture. Incident replay: banks ~$396 of the $425.
+            //   floor_cost_usd = per-leg companion RT $ (NAS 2.0pt cost + 2x1.0 spread;
+            //   US500 0.6 + 2x0.3). Judged STANDALONE (companion-independent rule).
+            { SC c; c.name="idx_bearshort_clip_nas"; c.include={"IndexBearShort NAS100"}; c.confirm_usd=25; c.trail_usd=25; c.retrig_usd=25; c.floor_cost_usd=4.0; c.stall_bars=9999; c.tf_sec=3600; B(c); }
+            { SC c; c.name="idx_bearshort_clip_spx"; c.include={"IndexBearShort US500"}; c.confirm_usd=25; c.trail_usd=25; c.retrig_usd=25; c.floor_cost_usd=1.2; c.stall_bars=9999; c.tf_sec=3600; B(c); }
             // --- index turtle D1 clips (PCT gauge, arm2, giveback variants) ---
-            { SC c; c.name="spx_turtle_clip";      c.include={"US500"}; c.gate_pct=2; c.rev_gb=0.50; c.stall_bars=9999; c.retrig_pct=0.02; c.tf_sec=24*3600; B(c); }
+            //   S-2026-07-17t: include={"US500"} is a SYMBOL substring match, so these
+            //   books were silently also mirroring IndexBearShort US500 legs (uncertified
+            //   for that parent, full loser mirror). Excluded -- IBS has its own certified
+            //   floored pair above.
+            { SC c; c.name="spx_turtle_clip";      c.include={"US500"}; c.exclude={"IndexBearShort"}; c.gate_pct=2; c.rev_gb=0.50; c.stall_bars=9999; c.retrig_pct=0.02; c.tf_sec=24*3600; B(c); }
             { SC c; c.name="dj30_turtle_clip";     c.include={"DJ30"};  c.gate_pct=2; c.rev_gb=0.50; c.stall_bars=9999; c.retrig_pct=0.02; c.tf_sec=24*3600; B(c); }
-            { SC c; c.name="spx_turtle_clip_gv40"; c.include={"US500"}; c.gate_pct=2; c.rev_gb=0.40; c.stall_bars=9999; c.retrig_pct=0;    c.tf_sec=24*3600; B(c); }
-            { SC c; c.name="spx_turtle_clip_gv60"; c.include={"US500"}; c.gate_pct=2; c.rev_gb=0.60; c.stall_bars=9999; c.retrig_pct=0;    c.tf_sec=24*3600; B(c); }
-            { SC c; c.name="spx_turtle_clip_gv80"; c.include={"US500"}; c.gate_pct=2; c.rev_gb=0.80; c.stall_bars=9999; c.retrig_pct=0;    c.tf_sec=24*3600; B(c); }
+            { SC c; c.name="spx_turtle_clip_gv40"; c.include={"US500"}; c.exclude={"IndexBearShort"}; c.gate_pct=2; c.rev_gb=0.40; c.stall_bars=9999; c.retrig_pct=0;    c.tf_sec=24*3600; B(c); }
+            { SC c; c.name="spx_turtle_clip_gv60"; c.include={"US500"}; c.exclude={"IndexBearShort"}; c.gate_pct=2; c.rev_gb=0.60; c.stall_bars=9999; c.retrig_pct=0;    c.tf_sec=24*3600; B(c); }
+            { SC c; c.name="spx_turtle_clip_gv80"; c.include={"US500"}; c.exclude={"IndexBearShort"}; c.gate_pct=2; c.rev_gb=0.80; c.stall_bars=9999; c.retrig_pct=0;    c.tf_sec=24*3600; B(c); }
             // --- gold vol/panic/mgc %-clips ---
             { SC c; c.name="mgc_fastdon_clip";        c.include={"MgcFastDonchian30m"}; c.gate_pct=1; c.rev_gb=0.50; c.stall_bars=9999; c.retrig_pct=0; c.tf_sec=1800;   B(c); }
             { SC c; c.name="gold_panic_bounce_clip";  c.include={"GoldPanicBounce"};    c.gate_pct=1; c.rev_gb=0.50; c.stall_bars=9999; c.retrig_pct=0; c.tf_sec=3600;   B(c); }

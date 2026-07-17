@@ -1,0 +1,41 @@
+# scripts/companion_coverage_allowlist.txt
+# ---------------------------------------------------------------------
+# Allowlist for scripts/companion_coverage_audit.sh — the COMPANION
+# GIVEBACK-COVERAGE gate (S-2026-07-17t, IndexBearShort $400-giveback fix).
+#
+# Format: one live snapshot engine tag per line, followed by the documented
+# reason it is allowed to run WITHOUT a dedicated (per-cell certified)
+# giveback book/mirror. Blank lines and # lines ignored.
+#
+# Legitimate categories:
+#   * MAIN-DEFAULTS-COVER, CERTIFICATION OWED — the shared "main" stall book
+#     mirrors the tag with its UNCERTIFIED gold-era defaults (gate 1.5 /
+#     rev_gb 0.05). This is exactly the incident class: the entry documents
+#     the debt; certify a per-cell floored clip (stall_clip_sweep_* precedent)
+#     opportunistically and remove the line.
+#   * OWN-MANAGE-PATH — the engine's own in-flight manage block (BE ratchet /
+#     trail / fixed TP) is the certified profit lock; a mirror clip adds
+#     nothing (cite the backtest).
+#   * SHORT-HOLD — intraday session engine whose holds are minutes-to-hours
+#     with a fixed TP; peak-giveback exposure is structurally small (cite).
+#
+# Adding a NEW engine here instead of certifying a floored clip is a visible
+# red flag in review. Certify the cell.
+# ---------------------------------------------------------------------
+
+# --- MAIN-DEFAULTS-COVER, CERTIFICATION OWED (grandfathered S-2026-07-17t;
+#     each was already live under the main book's uncertified defaults when
+#     the gate was introduced; burn down opportunistically) ---
+AudusdSydneyOpen    MAIN-DEFAULTS-COVER, certification owed (session open engine, fixed TP/SL own manage)
+EurusdLondonOpen    MAIN-DEFAULTS-COVER, certification owed (session open engine, fixed TP/SL own manage)
+GbpusdLondonOpen    MAIN-DEFAULTS-COVER, certification owed (session open engine, fixed TP/SL own manage)
+NzdusdAsianOpen     MAIN-DEFAULTS-COVER, certification owed (session open engine, fixed TP/SL own manage)
+UsdjpyAsianOpen     MAIN-DEFAULTS-COVER, certification owed (session open engine, fixed TP/SL own manage)
+EMACrossGold        MAIN-DEFAULTS-COVER, certification owed
+GoldOrbRetrace      MAIN-DEFAULTS-COVER, certification owed (intraday ORB, fixed TP own manage)
+GoldOrbRetraceLDN   MAIN-DEFAULTS-COVER, certification owed (intraday ORB, fixed TP own manage)
+H1SwingGold         MAIN-DEFAULTS-COVER, certification owed
+MicroScalperGold    MAIN-DEFAULTS-COVER, certification owed (scalper, seconds-to-minutes holds)
+MidScalperGold      MAIN-DEFAULTS-COVER, certification owed (scalper, minutes holds)
+XauThreeBar30m      MAIN-DEFAULTS-COVER, certification owed
+XauusdFvg           MAIN-DEFAULTS-COVER, certification owed

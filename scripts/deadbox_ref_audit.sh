@@ -37,6 +37,7 @@ DEPLOY_S12_PS1_CONSOLIDATION.sh|3|HISTORICAL S12-era one-shot (already ran); old
 tools/feeds_selftest.py|2|intentional history: L38 cutover explanation + L268 alias-DISABLED note (stale ssh-form docstrings repointed S-2026-07-14q)
 scripts/mac_canary_engines.sh|5|this gate own wiring: comment block + echo lines NAME the dead box to explain what the gate blocks
 tools/engine_watermark_audit.py|1|guard comment on VPS="omega-new" naming the dead box ("never omega-vps/185") to warn future editors -- intentional, mirrors the refresh_crypto_companion.sh entry
+tools/engine_perf_watch.py|1|guard comment on HOST="omega-new" naming the dead box ("omega-vps = retired dead box, never use") -- intentional, mirrors the engine_watermark_audit.py entry (S-2026-07-17t; the S-17s commit landed before this gate saw it)
 '
 
 allowed_count() {  # $1 = path -> echoes expected count, or empty if not allowlisted

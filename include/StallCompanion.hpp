@@ -185,6 +185,25 @@ public:
         double arm_usd      = 0.0;                 // STALL_GATE_USD (>0 => USD gauge)
         double trail_usd    = 0.0;                 // TRAIL_USD
         double retrig_usd   = 0.0;                 // COMPANION_RETRIG_USD
+        // ── S-2026-07-17t BE-ENTRY FLOORED mimic mode (BeFloorOnOpenFoundation) ──
+        // confirm_usd > 0 switches the book to the mandated floored-on-open shape:
+        // the companion stays FLAT (books NOTHING, mirrors no parent loser) until the
+        // leg's fav_usd >= confirm_usd; it then opens ANCHORED (le=epx: banks measure
+        // from the parent entry / reclip level, never the crossing-bar overshoot) with
+        // its clip level FLOORED at anchor + floor_cost_usd (>= BE by construction —
+        // a config property, NOT an execution guarantee: an H1 gap through the floor
+        // books the real fill / real tail, per the S-17f honesty rule). Reclip is
+        // LEVEL-anchored: reopen when fav_usd >= prior_peak + retrig_usd + confirm_usd,
+        // anchor = prior_peak + retrig_usd (restart-safe: the only reclip state is the
+        // persisted peak). trail_usd doubles as the giveback trail; the pct paths,
+        // stall clip and cold-loss cut are all bypassed (a flat-until-confirm book has
+        // no pre-BE exposure to cut). Certified per-cell before wiring any book
+        // (backtest/stall_clip_sweep_idx_bearshort.py; feedback-profit-lock-mandatory).
+        // NOTE: anchor is carried in fav_usd units and subtracted from the banked
+        // r.upnl — valid while the parent leg's size x tick-mult == 1 ($1/pt index
+        // CFD legs); certify before reusing on a scaled symbol.
+        double confirm_usd    = 0.0;               // >0 => floored BE-ENTRY mode
+        double floor_cost_usd = 0.0;               // BE floor offset above anchor (companion RT cost)
         bool   bull_only    = false;               // COMPANION_BULL_ONLY
         double retire_usd   = -300.0;              // S-2026-07-08c auto-retirement: banked net <= this
                                                    //   => no NEW companions (0 = disabled; ~2x a worst
@@ -207,7 +226,8 @@ public:
     };
 
     explicit StallBook(Config c) : cfg_(std::move(c)) {
-        usd_mode_ = cfg_.arm_usd > 0.0;
+        be_mode_  = cfg_.confirm_usd > 0.0;
+        usd_mode_ = cfg_.arm_usd > 0.0 || be_mode_;   // be-mode gauges/peaks in fav_usd
         { std::error_code ec; std::filesystem::create_directories(cfg_.dir, ec); }   // never silent-die on a missing state dir
         closed_path_  = cfg_.dir + "/companion_closed.csv";
         banked_net_   = stall_closed_net_(closed_path_);   // S-2026-07-08c retirement watermark
@@ -320,16 +340,27 @@ public:
                 const double fav_usd =   is_long ? (r.current - r.entry) : (r.entry - r.current);
 
                 auto cit = clipped_.find(key);
+                double reopen_anchor = 0.0; bool reopened = false;   // be-mode LEVEL-anchored reclip
                 if (cit != clipped_.end()) {
                     const double prior_peak = cit->second;
                     bool retrig = false;
-                    if (usd_mode_) retrig = (cfg_.retrig_usd > 0.0 && prior_peak > 0.0 && fav_usd > prior_peak + cfg_.retrig_usd);
-                    else           retrig = (cfg_.retrig_pct > 0.0 && prior_peak > 0.0 && fav     > prior_peak * (1.0 + cfg_.retrig_pct));
+                    if (be_mode_) {
+                        // reopen only once the leg clears peak + retrig + confirm; anchor at the
+                        // LEVEL peak + retrig so the reclip leg banks its own segment only.
+                        retrig = (cfg_.retrig_usd > 0.0 && prior_peak > 0.0
+                                  && fav_usd >= prior_peak + cfg_.retrig_usd + cfg_.confirm_usd);
+                        if (retrig) { reopen_anchor = prior_peak + cfg_.retrig_usd; reopened = true; }
+                    }
+                    else if (usd_mode_) retrig = (cfg_.retrig_usd > 0.0 && prior_peak > 0.0 && fav_usd > prior_peak + cfg_.retrig_usd);
+                    else                retrig = (cfg_.retrig_pct > 0.0 && prior_peak > 0.0 && fav     > prior_peak * (1.0 + cfg_.retrig_pct));
                     if (retrig) clipped_.erase(cit);
                     else        continue;
                 }
 
                 if (pos_.find(key) == pos_.end()) {
+                    // BE-ENTRY (be-mode): stay FLAT until the leg has covered confirm_usd —
+                    // a parent loser is never mirrored, so the book has no pre-BE exposure.
+                    if (be_mode_ && !reopened && fav_usd < cfg_.confirm_usd) continue;
                     // BULL-REGIME GATE: only OPEN a new gold companion while the 4h trend is up.
                     // Never blocks an already-open companion. FAIL-SAFE: unknown regime -> skip open.
                     if (cfg_.bull_only && is_gold_(r.sym) && gold_bull != 1) continue;
@@ -345,6 +376,7 @@ public:
                     p.entry = round4(r.entry);
                     p.open_bar = bar; p.mfe_pct = fav; p.mfe_usd = fav_usd; p.ext_bar = bar;
                     p.last_upnl = r.upnl;
+                    p.anchor = reopen_anchor;   // be-mode: 0 on a fresh open, peak+retrig on a reclip
                     pos_[key] = p;
                 }
                 Pos& p = pos_[key];
@@ -355,6 +387,21 @@ public:
                 p.stall     = (int)(bar - p.ext_bar);
                 p.last_upnl = r.upnl;
                 const double peak_store = usd_mode_ ? p.mfe_usd : p.mfe_pct;
+
+                // ── be-mode: FLOORED giveback trail (opened at confirm => armed by construction).
+                // Clip LEVEL never below the BE floor (anchor + floor_cost_usd); the BANK is the
+                // real mark at detection (honest fill — a gap through the floor books its tail).
+                // No stall/cold-loss paths: a flat-until-confirm book has no pre-BE exposure.
+                if (be_mode_) {
+                    const double stop_lvl = std::max(p.mfe_usd - cfg_.trail_usd,
+                                                     p.anchor + cfg_.floor_cost_usd);
+                    if (fav_usd <= stop_lvl) {
+                        close_(key, "FLOOR_CLIP", r.upnl - p.anchor, bar);
+                        clipped_[key] = peak_store;
+                    }
+                    continue;
+                }
+
                 const bool armed = usd_mode_ ? (p.mfe_usd >= cfg_.arm_usd) : (p.mfe_pct >= cfg_.gate_pct);
 
                 if (armed && p.stall >= cfg_.stall_bars) { close_(key, "STALL_CLIP", r.upnl, bar); clipped_[key] = peak_store; continue; }
@@ -390,7 +437,8 @@ public:
                     continue;
                 }
                 absent_.erase(key);
-                close_(key, "ENGINE_EXIT", pos_[key].last_upnl, bar);
+                // be-mode: an open floored leg banks its own segment only (anchored)
+                close_(key, "ENGINE_EXIT", pos_[key].last_upnl - (be_mode_ ? pos_[key].anchor : 0.0), bar);
             }
             // a clip stays clipped only while its real trade is live; drop once the engine
             // actually closes it — same debounce (a flap-pruned clip memory would let the
@@ -420,6 +468,7 @@ private:
         double mfe_pct = 0.0, mfe_usd = 0.0;
         int    stall = 0;
         double last_upnl = 0.0;
+        double anchor = 0.0;   // be-mode reclip anchor (fav_usd level banks measure from)
     };
 
     // ── S-2026-07-17r flap-fix knobs (see step() KEY-MIGRATION + ABSENCE DEBOUNCE) ──
@@ -428,6 +477,7 @@ private:
 
     Config cfg_;
     bool usd_mode_ = false;
+    bool be_mode_  = false;            // S-2026-07-17t: confirm_usd > 0 => BE-ENTRY FLOORED mimic mode
     double banked_net_ = 0.0;          // S-2026-07-08c auto-retirement running net
     bool   retired_logged_ = false;
     std::string closed_path_, state_path_, pos_path_, clipped_path_;
@@ -510,7 +560,8 @@ private:
                 const Pos& p = kv.second;
                 f << kv.first << '\t' << p.book << '\t' << p.eng << '\t' << p.sym << '\t' << p.side
                   << '\t' << p.entry << '\t' << p.open_bar << '\t' << p.ext_bar << '\t' << p.mfe_pct
-                  << '\t' << p.mfe_usd << '\t' << p.stall << '\t' << p.last_upnl << '\n';
+                  << '\t' << p.mfe_usd << '\t' << p.stall << '\t' << p.last_upnl
+                  << '\t' << p.anchor << '\n';
             }
         }
         std::ofstream g(clipped_path_, std::ios::trunc);
@@ -528,6 +579,7 @@ private:
             p.ext_bar = std::atoll(t[7].c_str()); p.mfe_pct = std::atof(t[8].c_str());
             p.mfe_usd = std::atof(t[9].c_str()); p.stall = std::atoi(t[10].c_str());
             p.last_upnl = std::atof(t[11].c_str());
+            p.anchor = t.size() > 12 ? std::atof(t[12].c_str()) : 0.0;   // pre-anchor rows load as 0
             // Rebuild the key from the row's own fields instead of trusting t[0]: migrates old
             // "%.4f"-keyed rows to the pyfloat key format in place (no spurious ENGINE_EXIT/reopen
             // churn on the first post-upgrade harvest).
