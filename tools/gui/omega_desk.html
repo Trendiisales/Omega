@@ -540,7 +540,12 @@ var CTKS=[['BTC','BTCUSDT'],['ETH','ETHUSDT'],['SOL','SOLUSDT'],['BNB','BNBUSDT'
  ['DOT','DOTUSDT'],['THETA','THETAUSDT'],['SUSHI','SUSHIUSDT'],
  /* S-2026-07-17: roster grew to 26 coins; ATOM/LTC TRADED on josgp1 with no tile
     (display-truth [SYMBOL-COV] RED). Add both -> full traded set tiled. */
- ['ATOM','ATOMUSDT'],['LTC','LTCUSDT']];
+ ['ATOM','ATOMUSDT'],['LTC','LTCUSDT'],
+ /* S-2026-07-18i: XSEC-universe remainder — live pilot allowlist widened to 41 (operator:
+    all viable coins tradeable); these 9 rank in the live-routed XSEC top-3 basket, so
+    display-truth [SYMBOL-COV] wants tiles before their first live pick. */
+ ['FIL','FILUSDT'],['ICP','ICPUSDT'],['SAND','SANDUSDT'],['MANA','MANAUSDT'],
+ ['CRV','CRVUSDT'],['COMP','COMPUSDT'],['ETC','ETCUSDT'],['VET','VETUSDT'],['RUNE','RUNEUSDT']];
 /* last-close SEED — baked from the Tick daily files at desk build time (Fri 2026-07-03 closes).
    Floor UNDER the localStorage last-tick cache so a COLD browser over a weekend shows a dimmed
    last-close instead of '—' (operator 2026-07-04: 57cb0ed0 was localStorage-only and failed on a
