@@ -225,14 +225,12 @@ a{color:var(--blu);text-decoration:none}
      bottom. -->
 <div class="cstack">
 
-<!-- ═══ CRYPTO MIMIC BOOKS — companion-at-BE mimics (shadow, additive · josgp1) ═══ -->
-<div class="pan">
-  <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px">
-    <span class="lbl">CRYPTO MIMIC BOOKS — companion-at-BE mimics (REGIME-BEMIMIC + validated sweet-spot SWEET cells) · never opens underwater (confirm 20bp) · BE-cascade · shadow · additive · judged STANDALONE, never vs-WIDE · rendered LIVE from josgp1 state, no baked roster (S-2026-07-13)</span>
-    <span id="ccinfo" class="lbl" style="margin-left:auto">…</span>
-  </div>
-  <div style="overflow:auto;max-height:420px"><table id="cctab"><tr><td class="l d">loading…</td></tr></table></div>
-</div>
+<!-- CRYPTO MIMIC BOOKS panel REMOVED S-2026-07-19g (operator: "if its real paper trades they
+     should NOT be in any live system" -- panel was 100% shadow_mode=true bookkeeping per
+     chimera-direct persist_companion_clip(), a leftover pre-live prototype layer from before
+     S-18al's real live_mirror execution path existed. Real crypto companion $ is untouched --
+     see pollCC()'s live_mirror/_ccMirror handling + the mirPnl tile. See feedback-no-backtest-
+     in-live-gui + this session's handoff for the full whiplash history this closes out. -->
 
 <!-- ═══ GOLD/XAG/USOIL/FX retired BE-floor banners moved to the compact RETIRED strip below
      (S-2026-07-07w, operator: bottom boxes wasted space — actives up, retired tucked underneath) ═══ -->
@@ -1214,67 +1212,13 @@ function ccKind(s){
   return 'sweet-spot self-detect '+(s.det_w!==undefined?s.det_w:'?')+'h/+'+fmt2(s.det_thr_pct,1)+'%';
  return cell||'mimic';
 }
-function drawCC(){var live=window._cc||{};var tags=Object.keys(live);
- if(!tags.length){
-  el('cctab').innerHTML='<tr><td class="l d">awaiting josgp1 state push (launchd 120s relay)&hellip;</td></tr>';
-  el('ccinfo').innerHTML='<span class="d">no live state yet</span>';
-  window._cctot=0;return;
- }
- var bySym={};tags.forEach(function(t){var p=live[t];if(!p||!p.sym)return;(bySym[p.sym]=bySym[p.sym]||[]).push(p);});
- var h='<tr><td class="l lbl">coin / book</td><td class="l lbl">type</td><td class="l lbl">state</td>'
-      +'<td class="lbl">peak MFE%</td><td class="lbl">clips</td><td class="lbl">banked?</td></tr>';
- var nbooks=0,narm=0,totclips=0,totbank=0,ntrading=0,syms=Object.keys(bySym).sort();
- syms.forEach(function(sy){
-  var books=bySym[sy].sort(function(a,b){return String(a.tag).localeCompare(String(b.tag));});
-  var coinbank=0,coinact=0;
-  /* S-2026-07-15n (operator "get rid of the fake crypto"): floor every leg's realized at BE(0).
-     A companion-at-BE mimic can NEVER book a loss ([[feedback-mimic-be-floor-mandatory]]); a
-     negative bank_bp_real (e.g. the ETH-PJ7W24 -73.61bp leg) is a floor VIOLATION, not a real loss
-     -> clamp to 0 everywhere it's summed/shown. josgp1 root (why the leg booked neg) is owed.
-     S-2026-07-17q: fold is WEIGHTED (ccWbp) — one $ convention with LAST-15/ledger. */
-  books.forEach(function(s){coinbank+=ccWbp(s);if(s.armed||(s.sublegs&&s.sublegs.length))coinact++;});
-  if(coinact)ntrading++;
-  /* S-19c(3) had hidden this to a word-only "banked" flag (operator "it still shows 130 ffs",
-     4x same session) -- REVERSED same-day (operator: "what does banked mean if it is an amount
-     then we need to put this in"): show the bp figure again, bp-labelled ("NOT dollars" caption
-     lives on ccinfo below), just no raw/mult breakdown (ccMult was retired, one weighted figure). */
-  var cb=(coinbank!==0)
-   ?'<span style="color:'+(coinbank>0?'var(--grn)':'var(--red)')+'">'+fmt2(coinbank,1)+' bp</span>'
-   :'<span class="d">0.0 bp</span>';
-  h+='<tr><td class="l" style="font-weight:600">'+esc(sy)+'</td>'
-    +'<td class="l d" style="font-size:9px">'+books.length+' book'+(books.length>1?'s':'')+'</td>'
-    +'<td class="l">'+(coinact?'<span class="g" style="font-weight:600">'+coinact+' TRADING</span>':'<span class="d">idle</span>')+'</td>'
-    +'<td colspan="2"></td><td class="num">'+cb+'</td></tr>';
-  books.forEach(function(s){
-   nbooks++;totclips+=safe(s.clips);totbank+=ccWbp(s);if(s.armed)narm++;/* BE-floor: no mimic leg counts negative (see above); WEIGHTED fold (S-17q one-convention) */
-   var act=!!(s.armed||(s.sublegs&&s.sublegs.length));
-   var pk=s.peak_mfe_pct===undefined?'<span class="d">—</span>':fmt2(s.peak_mfe_pct,2);
-   var bkv=ccWbp(s);/* WEIGHTED desk bank, BE-floor clamped — same $ as this book's LAST-15 rows */
-   var bk='<span style="color:'+(bkv>0?'var(--grn)':(bkv<0?'var(--red)':'var(--t2)'))+'">'+fmt2(bkv,1)+' bp</span>';
-   h+='<tr'+(act?'':' style="opacity:.75"')+'><td class="l d" style="border-left:2px solid '+(act?'var(--grn)':'var(--t2)')+';padding-left:10px">&#8627; '+esc(s.tag||'?')+'</td>'
-     +'<td class="l d" style="font-size:9px">'+ccKind(s)+'</td>'
-     +'<td class="l">'+ccState(s)+'</td><td class="num">'+pk+'</td>'
-     +'<td class="num">'+(s.clips===undefined?'<span class="d">—</span>':String(s.clips))+'</td><td class="num">'+bk+'</td></tr>';
-   (s.sublegs||[]).forEach(function(sl){
-    var lpk=sl.peak_mfe_pct===undefined?'<span class="d">—</span>':fmt2(sl.peak_mfe_pct,2);
-    h+='<tr style="opacity:.85"><td class="l d" style="border-left:2px solid var(--grn);padding-left:24px">&#8627; '+esc(sl.id||'?')+'</td>'
-      +'<td class="l d" style="font-size:9px">cascade leg</td>'
-      +'<td class="l"><span class="g">'+(sl.armed?'ARMED':'OPEN')+'</span></td><td class="num">'+lpk+'</td><td colspan="2"></td></tr>';
-   });
-  });
- });
- el('cctab').innerHTML=h;
- /* S-19c(3) (operator "it still shows 130 ffs why cn u not see that", 4th time same session):
-    correctly-bp-labelled "NOT dollars" caption still wasn't enough -- the number itself, in ANY
-    form, anywhere, keeps reading as real money. No bank NUMBER renders in this panel any more
-    (drawCC per-coin/per-book cells above are "banked"/"—" only); totbank is still computed for
-    internal bookkeeping (S-18w: never folded into $ totals) but never printed. */
- el('ccinfo').innerHTML=nbooks+' live book(s) · '+syms.length+' coin(s) · '+ntrading+' trading · '+narm+' armed · '+totclips+' clips <span class="d" style="font-size:9px">(PAPER shadow — NOT dollars, NOT in PnL; real cash only in headline + TRADING tile $, S-18w/19a)</span>';
- /* crypto companion book is a SEPARATE INDEPENDENT ADDITIVE engine — its all-time realized bank
-    must FOLD into the Omega totals (operator S-2026-07-05d: "why is this not in the Omega total").
-    _cctot = Σ ccWbp (WEIGHTED bank_bp_real_w, BE-floor clamped) over ALL live books — S-17q one
-    $ convention: the fold now matches LAST-15/ledger desk-$ (was raw unweighted → 260-vs-65).
-    Store the all-time weighted bp here; drawLedger/drawEquity read it. Re-trigger both. */
+function drawCC(){
+ /* Panel + DOM rendering REMOVED S-2026-07-19g (see markup-side comment above cstack).
+    _cctot is still computed and stored -- harmless, already excluded from ALL-TIME by S-18w --
+    purely so nothing downstream (drawLedger/drawEquity/updDayPnl/mimic_pnl_completeness_gate)
+    silently breaks on a now-undefined global. No DOM element for this panel exists any more. */
+ var live=window._cc||{},totbank=0;
+ Object.keys(live).forEach(function(t){var s=live[t];if(s)totbank+=ccWbp(s);});
  window._cctot=totbank;
  if(typeof drawLedger==='function')drawLedger();
  if(typeof drawEquity==='function')drawEquity();
