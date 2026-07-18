@@ -23,7 +23,7 @@
 # Cadence/latency: cron EVERY 1 MIN; 3 consecutive fails => banner, so worst-case
 # operator notification ~3 min after failure. Renotify every 6h while RED; single
 # "recovered" banner. Overlap-guarded (lock dir) so a hung ssh cannot pile up
-# processes (project-omega-vps-ram-red-reaper). NIGHTLY QUIET WINDOW 22:40-23:05Z
+# processes (VPS-RAM-red reaper memory). NIGHTLY QUIET WINDOW 22:40-23:05Z
 # (gateway auto-restart ~23:45 London): strikes neither count nor reset — a real
 # outage entering the window resumes counting on exit, restart blips never fire.
 # Read-only ssh (AUDIT_PROBE_SAFETY: no mutation, no gateway restart).

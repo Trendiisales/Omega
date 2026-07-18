@@ -59,6 +59,8 @@ button.on{border-color:var(--grn);color:var(--grnB)}
 select{background:var(--pan2);color:var(--t);border:1px solid var(--bd2);border-radius:3px;font:11px 'IBM Plex Mono',monospace;padding:2px 6px}
 a{color:var(--blu);text-decoration:none}
 .dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:4px;vertical-align:0}
+/* neon TRADING beacon (operator 2026-07-18: "much brighter neon green symbol when it is trading") */
+@keyframes neonPulse{0%,100%{opacity:1}50%{opacity:.55}}
 /* heat tiles halved 2026-07-08 (operator: panel unnecessary at full size) — one-line row tile */
 .tile{border-radius:3px;height:13px;display:flex;flex-direction:row;align-items:center;gap:5px;padding:1px 5px;overflow:hidden}
 .tile b{font-size:8.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -104,6 +106,7 @@ a{color:var(--blu);text-decoration:none}
   <button id="almbtn" title="alarm log — every audible alert with its cause (click to open)" style="position:relative">🔔<span id="almct" class="num" style="margin-left:3px;color:var(--t2)">0</span></button>
   <button id="killall" title="PANIC: market-close ALL open positions in THIS book (sends live opposing MKT orders)" style="background:#3a0d0d;color:#ff5a5a;border:1px solid #ff5a5a;font-weight:700;letter-spacing:.5px" onclick="killAll(this)">KILL ALL</button>
   <span class="num" id="clk" style="color:var(--w)">--:--:-- UTC</span>
+  <span class="lbl"><span class="dot" id="trdot" style="background:var(--t3);width:10px;height:10px"></span><span id="trdlbl" style="font-weight:700;letter-spacing:.5px">IDLE</span></span>
   <span class="lbl"><span class="dot" id="conn" style="background:var(--t3)"></span><span id="connlbl">connecting</span></span>
 </div>
 
@@ -176,15 +179,15 @@ a{color:var(--blu);text-decoration:none}
 </div><!-- /tcol left -->
 <div class="tcol" style="min-width:0">
 
-<!-- ═══ ENGINE LEDGER (running totals). PROMOTION TRACKER removed 2026-07-06 (operator: useless). ═══ -->
+)OMEGAD0"
+R"OMEGAD1(<!-- ═══ ENGINE LEDGER (running totals). PROMOTION TRACKER removed 2026-07-06 (operator: useless). ═══ -->
 <div class="grid" style="grid-template-columns:1fr">
   <div class="pan">
     <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:5px">
       <span class="lbl">ENGINE LEDGER — running total, ALL TIME (what makes / loses money)</span>
       <span id="ledgern" class="lbl" style="margin-left:auto"></span>
     </div>
-)OMEGAD0"
-R"OMEGAD1(    <div style="max-height:200px;overflow-y:auto">
+    <div style="max-height:200px;overflow-y:auto">
       <table id="ledger"><tr><td class="l d">loading…</td></tr></table>
     </div>
   </div>
@@ -385,12 +388,12 @@ function __healthBeep(){ if(__healthMute) return; try{
 function __healthNotify(t,b){ if(!('Notification' in window)) return;
   if(Notification.permission==='granted') new Notification(t,{body:b});
   else if(Notification.permission!=='denied') Notification.requestPermission(); }
-document.addEventListener('click',function(){ if('Notification' in window && Notification.permission==='default') Notification.requestPermission(); },{once:true});
+)OMEGAD1"
+R"OMEGAD2(document.addEventListener('click',function(){ if('Notification' in window && Notification.permission==='default') Notification.requestPermission(); },{once:true});
 (function(){ var hb=document.getElementById('healthBadge'); if(hb) hb.addEventListener('click',function(){ __healthMute=!__healthMute; hb.style.opacity=__healthMute?'0.45':'1'; }); })();
 async function pollHealth(){
   var b=document.getElementById('healthBadge'); if(!b) return;
-)OMEGAD1"
-R"OMEGAD2(  // S-2026-07-09: a health-fetch TIMEOUT/error is NOT a FAIL -- treat it as UNKNOWN so a busy
+  // S-2026-07-09: a health-fetch TIMEOUT/error is NOT a FAIL -- treat it as UNKNOWN so a busy
   // VPS / slow /api/health does NOT beep. The "random sounds, nothing alarming" was this: a
   // transient timeout hit catch -> overall='FAIL' -> transition-into-FAIL -> beep, then the next
   // poll recovered. Only a REAL API-returned FAIL beeps now. UNKNOWN shows a dim badge, does not
@@ -549,13 +552,13 @@ var CTKS=[['BTC','BTCUSDT'],['ETH','ETHUSDT'],['SOL','SOLUSDT'],['BNB','BNBUSDT'
  /* S-2026-07-17: roster grew to 26 coins; ATOM/LTC TRADED on josgp1 with no tile
     (display-truth [SYMBOL-COV] RED). Add both -> full traded set tiled. */
  ['ATOM','ATOMUSDT'],['LTC','LTCUSDT'],
- /* S-2026-07-18i: XSEC-universe remainder — live pilot allowlist widened to 41 (operator:
+)OMEGAD2"
+R"OMEGAD3( /* S-2026-07-18i: XSEC-universe remainder — live pilot allowlist widened to 41 (operator:
     all viable coins tradeable); these 9 rank in the live-routed XSEC top-3 basket, so
     display-truth [SYMBOL-COV] wants tiles before their first live pick. */
  ['FIL','FILUSDT'],['ICP','ICPUSDT'],['SAND','SANDUSDT'],['MANA','MANAUSDT'],
  ['CRV','CRVUSDT'],['COMP','COMPUSDT'],['ETC','ETCUSDT'],['VET','VETUSDT'],['RUNE','RUNEUSDT']];
-)OMEGAD2"
-R"OMEGAD3(/* last-close SEED — baked from the Tick daily files at desk build time (Fri 2026-07-03 closes).
+/* last-close SEED — baked from the Tick daily files at desk build time (Fri 2026-07-03 closes).
    Floor UNDER the localStorage last-tick cache so a COLD browser over a weekend shows a dimmed
    last-close instead of '—' (operator 2026-07-04: 57cb0ed0 was localStorage-only and failed on a
    server that booted post-Friday-close, so the cache was never warmed). Live weekday ticks override
@@ -720,13 +723,13 @@ function compSubLeg(engine,symbol,entry,colspan,dup){
 var lastJ=null;
 function render(J){lastJ=J;
  var shadowMode=(J.mode||'').toUpperCase()!=='LIVE';
- var m=el('mode');m.textContent=shadowMode?'SHADOW — 0 live engines':'LIVE';
+)OMEGAD3"
+R"OMEGAD4( var m=el('mode');m.textContent=shadowMode?'SHADOW — 0 live engines':'LIVE';
  m.style.background=shadowMode?'var(--ambD)':'var(--grnD)';m.style.color=shadowMode?'var(--ambB)':'var(--grnB)';
  function dot(id,ok){el(id).style.background=ok?'var(--grn)':'var(--red)';}
  dot('fixq',(J.fix_quote_status||'').indexOf('CONNECT')>=0||(J.fix_quote_status||'').indexOf('UP')>=0||J.quote_msg_rate>0);
  dot('fixt',(J.fix_trade_status||'').indexOf('CONNECT')>=0||(J.fix_trade_status||'').indexOf('UP')>=0);
-)OMEGAD3"
-R"OMEGAD4( dot('l2d',safe(J.ctrader_l2_live)>0);dot('domd',safe(J.gold_l2_real)>0);
+ dot('l2d',safe(J.ctrader_l2_live)>0);dot('domd',safe(J.gold_l2_real)>0);
  var up=safe(J.uptime_sec);el('uptime').textContent='up '+Math.floor(up/86400)+'d'+Math.floor(up%86400/3600)+'h'+Math.floor(up%3600/60)+'m';
  el('build').textContent=(J.build_version||'').slice(0,12);
  /* S-2026-07-08c sound-on-restart (operator: "ensure we have sound on when Omega restarts"):
@@ -805,6 +808,13 @@ R"OMEGAD4( dot('l2d',safe(J.ctrader_l2_live)>0);dot('domd',safe(J.gold_l2_real)>
  /* MICROSTRUCTURE + BROKER + SIGNAL TAPE populators removed 2026-07-04 (panels deleted, operator: irrelevant). */
 
  var lts=J.live_trades||[];window._lastLts=lts;/* tile trigger-marker reads this */
+ /* neon TRADING beacon: open live trade(s) => bright #39ff14 pulsing glow (unmissable);
+    flat => dim IDLE. Driven by live_trades only -- shadow/paper books never light it. */
+ (function(){var d=el('trdot'),l=el('trdlbl');if(!d||!l)return;
+  if(lts.length){d.style.background='#39ff14';d.style.boxShadow='0 0 4px #39ff14,0 0 10px #39ff14,0 0 20px #39ff14';d.style.animation='neonPulse 1.2s ease-in-out infinite';
+   l.textContent='TRADING ×'+lts.length;l.style.color='#39ff14';l.style.textShadow='0 0 8px #39ff14';}
+  else{d.style.background='var(--t3)';d.style.boxShadow='none';d.style.animation='none';
+   l.textContent='IDLE';l.style.color='';l.style.textShadow='';}})();
  /* entry bell -- identity-based (engine|symbol|side|entry), NOT count-based.
     Count-based rang on restarts + source flicker (2026-06-11 phantom-bell bug).
     Guards: first render baselines silently; uptime drop (restart) re-baselines
@@ -882,7 +892,8 @@ function pollComp(){fetch('/api/companion').then(function(r){return r.json();}).
  var ob=(j.by_book&&j.by_book.OMEGA)||{},cbk=(j.by_book&&j.by_book.CRYPTO)||{};
  var om=safe(ob.realized),cr=safe(cbk.realized),rt=safe(j.realized_total),be=document.getElementById('compbank');
  if(be){be.innerHTML=fmt$(rt)+' <span style="font-size:10px;color:var(--t3)">(&#937; '+fmt$(om)+' &middot; &#8383; '+fmt$(cr)+')</span>';
-  be.style.color=rt>0?'var(--grn)':(rt<0?'var(--red)':'var(--t2)');
+)OMEGAD4"
+R"OMEGAD5(  be.style.color=rt>0?'var(--grn)':(rt<0?'var(--red)':'var(--t2)');
   var obr=ob.by_reason||{},cbr=cbk.by_reason||{};
   var tip='COMP-BANK '+fmt$(rt)+' (paper, accounting-only)\nOMEGA '+fmt$(om)+':';
   Object.keys(obr).forEach(function(k){tip+='\n  '+k+': '+fmt$(safe(obr[k]));});
@@ -897,8 +908,7 @@ function pollComp(){fetch('/api/companion').then(function(r){return r.json();}).
  if(typeof updDayPnl==='function')updDayPnl();
  if(typeof drawEquity==='function')drawEquity();
  /* GOLD COMPANIONS panel feed: per-engine rollup + open detail (OMEGA book, gold engines only),
-)OMEGAD4"
-R"OMEGAD5(    so each gold trend engine's live companion trade-count + paper bank render always-on (the nested
+    so each gold trend engine's live companion trade-count + paper bank render always-on (the nested
     per-trade overlay only shows while a position is OPEN -> invisible on a flat/weekend book). */
  window._gcPer=j.per_engine||{};
  window._gcPerBooks=j.per_engine_books||{};
@@ -1057,7 +1067,8 @@ setInterval(pollRdagent,5000);pollRdagent();
    STANDALONE additive books — never vs-WIDE. */
 /* bp→$ (operator 2026-07-04, pool-confirmed): bank_bp = basis points of the crypto strategy
    pool (POOL_USD, live=$10,000 per shadow_refresh_intraday.cpp). $ = bp × POOL/10000. At $10k
-   pool this is 1:1 (1 bp = $1). Change CRYPTO_POOL_USD if the live pool ever moves. */
+)OMEGAD5"
+R"OMEGAD6(   pool this is 1:1 (1 bp = $1). Change CRYPTO_POOL_USD if the live pool ever moves. */
 var CRYPTO_POOL_USD=10000;
 function bpUsd(bp){return (safe(bp)||0)*CRYPTO_POOL_USD/10000.0;}
 /* S-2026-07-17q (operator order, third ask — the LDO 260-vs-65 split): ONE $ convention
@@ -1070,8 +1081,7 @@ function ccWbp(s){var w=(s&&s.bank_bp_real_w!==undefined)?safe(s.bank_bp_real_w)
 function ccMult(s){return (s&&s.mult!==undefined)?safe(s.mult):1;}
 /* Row model (dynamic): group served legs by coin — coin summary line, then one nested
    `↳` row per BOOK (tag) with its type/state/peak/clips/bank, then open cascade sublegs
-)OMEGAD5"
-R"OMEGAD6(   nested one level deeper. Banks Σ over ALL served legs -> _cctot fold (unchanged shape). */
+   nested one level deeper. Banks Σ over ALL served legs -> _cctot fold (unchanged shape). */
 function ccState(s){
  if(s.retired)return '<span style="color:var(--red);font-weight:600">RETIRED</span>';
  var n=(s.sublegs&&s.sublegs.length)||0;
@@ -1232,7 +1242,8 @@ function drawGold(){var j=window._gold||null;
    (xag_companion_state.json, written in-binary by omega::xag_befloor_companion). REAL FORWARD
    TRADES ONLY. desk_usd = the real forward book ($0 until the first live clip closes). Two
    runners/dir (banker r20 + runner r150). Same schema as gold. RETIRED S-2026-07-07e (real-fill: every
-   grid cell negative incl the silver squeeze, registry §5) — panel folds the REAL columns; no new arms. */
+)OMEGAD6"
+R"OMEGAD7(   grid cell negative incl the silver squeeze, registry §5) — panel folds the REAL columns; no new arms. */
 function drawXag(){var j=window._xag||null;
  var h='<tr><td class="l lbl">book</td><td class="l lbl">dir</td><td class="lbl">tier</td><td class="lbl">gb bp</td>'
       +'<td class="lbl">clips</td><td class="lbl">wins</td><td class="lbl">pts real</td><td class="lbl">forward($ real)</td></tr>';
@@ -1242,8 +1253,7 @@ function drawXag(){var j=window._xag||null;
   var runs=fl.runners||[];var rs=runs.length||1;var first=true;
   runs.forEach(function(r){var u=safe(r.usd_real!==undefined?r.usd_real:r.usd);/* REAL column (S-2026-07-07e): model usd is a max(0,.) clamp */
    h+='<tr>';
-)OMEGAD6"
-R"OMEGAD7(   if(first){h+='<td class="l" rowspan="'+rs+'" style="font-weight:600">'+esc(fl.name)+'</td>'
+   if(first){h+='<td class="l" rowspan="'+rs+'" style="font-weight:600">'+esc(fl.name)+'</td>'
                +'<td class="l" rowspan="'+rs+'">'+esc(fl.dir)+'</td>';}
    h+='<td class="l">'+esc(r.tier)+'</td><td class="num">'+safe(r.gb_bp)+'</td>'
      +'<td class="num">'+safe(r.clips)+'</td><td class="num">'+safe(r.wins)+'</td>'
@@ -1401,7 +1411,8 @@ function drawStockMover(){var j=window._sm||null;
   var wtxt=act?('<span style="color:var(--grn)">bar '+safe(w.bar)+(w.exit_pending?' · exit next close':'')+'</span>'):(w.pending?'<span style="color:#e2c044">enters next close</span>':'—');
   rows+='<tr><td class="l" style="font-weight:700">'+esc(p.sym)+(nopen?' <span style="color:var(--grn)">●</span>':'')+'</td>'
     +'<td class="num">'+wtxt+'</td><td class="num">'+(act?safe(w.spawned):0)+'</td>'
-    +'<td class="num">'+clips+'</td><td class="num">'+wins+'</td>'
+)OMEGAD7"
+R"OMEGAD8(    +'<td class="num">'+clips+'</td><td class="num">'+wins+'</td>'
     +'<td class="num" style="font-weight:600;color:'+tcol+'">'+fmt$(tot)+'</td></tr>';
  });
  if(!nact)rows='<tr><td class="l d" colspan="6">all '+nidle+' names idle (deploy-forward · $0 until first forward clip closes · a +3% day opens a window)</td></tr>';
@@ -1414,8 +1425,7 @@ function drawStockMover(){var j=window._sm||null;
  renderCompanionOpenTrades('sm',allOpen,allTrades,2);
 }
 function pollStockMover(){fetch('/api/stockladder_companion').then(function(r){return r.json();}).then(function(j){
-)OMEGAD7"
-R"OMEGAD8( if(j&&(j.names||[]).length)window._sm=j;
+ if(j&&(j.names||[]).length)window._sm=j;
  window._smtot=(((window._sm||{}).names)||[]).reduce(function(s,p){return s+safe(p.usd_real);},0);/* S-2026-07-10: ALL-TIME folds REALIZED forward clips ONLY (usd_real). Open-leg unrealized MTM removed from the header -- shadow bigcap-mover ladder legs marking red dragged ALL-TIME as a phantom drop; per-panel DESK still shows uPnL. */
  drawStockMover();
  if(typeof updDayPnl==='function')updDayPnl();if(typeof drawLedger==='function')drawLedger();
@@ -1572,14 +1582,14 @@ function updDayPnl(){var cut=Math.floor(Date.now()/86400000)*86400;var n=0,p=0,t
     are display-only — panels/ledger sub-rows show them labelled paper, but TODAY/ALL-TIME/
     CRYPTO chip/eqtot fold REAL cash only (._clivetot, Binance fills incl fees). This is the
     S-18r "correct loss number" rule taken to its conclusion once the system went LIVE: a
-    shadow clip is not money. (mimic_pnl_completeness_gate: ._cctot ._chimtot referenced here
+)OMEGAD8"
+R"OMEGAD9(    shadow clip is not money. (mimic_pnl_completeness_gate: ._cctot ._chimtot referenced here
     as DOCUMENTED-EXCLUDED, not orphaned.) */
  var ccAll=bpUsd(safe(window._cctot));/* crypto ladder companion all-time bank, $ (PAPER — display-only, NOT folded) */
  var fxAll=safe(window._fxtot),gbAll=safe(window._goldtot),ixAll=safe(window._idxtot),xgAll=safe(window._xagtot),uoAll=safe(window._usoiltot),smAll=safe(window._smtot),flAll=safe(window._fxladtot),ilAll=safe(window._ixladtot);/* FX + gold + xag + usoil + stockmover/fx/index-ladder forward books, $ (additive, all-time; forward-only banks -> fold into ALL-TIME, not today) */
  var rdaAll=safe(window._rdatot);/* S-2026-07-11: rdagent stock basket paper P&L, $ (additive, all-time -- the META-type picks now fold into the desk headline like crypto) */
  var bc2All=safe(window._bc2tot);/* S-2026-07-11: BigCap2pct impulse companion REALIZED bank, $ (additive, all-time). Endpoint existed but was orphaned from the fold -> mimic_pnl_completeness_gate now enforces it. */
-)OMEGAD8"
-R"OMEGAD9( var chimAll=safe(window._chimtot);/* S-2026-07-12b: chimera EDGE realized, $ (additive, all-time; engine!~CLIP so no _cctot overlap). Was folded into cls.crypto + eqtot only -- pnl_completeness gate caught the missing updDayPnl term. */
+ var chimAll=safe(window._chimtot);/* S-2026-07-12b: chimera EDGE realized, $ (additive, all-time; engine!~CLIP so no _cctot overlap). Was folded into cls.crypto + eqtot only -- pnl_completeness gate caught the missing updDayPnl term. */
  var sdAll=safe(window._sdtot);/* S-2026-07-15m: StockDip/StockTurtle single-name book REALIZED bank, $ (additive, all-time). Book was persisted+servable but never folded -> real stock winners (MU/DELL) showed $0. Routes to STOCK class below. */
  var h52All=safe(window._hi52tot);/* S-2026-07-17m: BigCapHi52 portfolio paper P&L (deploy-forward, rdagent-class fold). Routes to STOCK class below. */
  var clvAll=safe(window._clivetot);/* S-2026-07-18r: LIVE mimic mirror REAL Binance realized (cash truth incl fees; live_realized.json). Operator order: the correct live loss number in the PnL. Routes to CRYPTO class below. */
@@ -1710,7 +1720,8 @@ function drawLedger(){var t=el('ledger');var cc=bpUsd(safe(window._cctot));/* cr
    +'<td class="l d">'+esc(e.sym)+'</td><td class="num d">'+e.n+'</td>'
    +'<td class="num d">'+Math.round(100*e.w/e.n)+'%</td>'
    +'<td class="num '+c+'">'+fmt$(e.pnl)+'</td>'
-   +'<td style="width:90px"><span class="bar" style="display:block"><i style="width:'+w+'%;background:'+(e.pnl>=0?'var(--grn)':'var(--red)')+'"></i></span></td>'
+)OMEGAD9"
+R"OMEGAD10(   +'<td style="width:90px"><span class="bar" style="display:block"><i style="width:'+w+'%;background:'+(e.pnl>=0?'var(--grn)':'var(--red)')+'"></i></span></td>'
    +'<td class="num '+(e.pnl>=0?'g':'r')+'">'+fmt$(e.pnl/e.n)+'/t</td></tr>'
    +ledgerCompRow(k,seenComp,e.sym);}).join('');
  t.innerHTML='<tr><th class="l">engine</th><th class="l">sym</th><th>n</th><th>WR</th><th>net</th><th></th><th>avg</th></tr>'+rows+cryptoLedgerRows()+compClipRows();
@@ -1727,8 +1738,7 @@ function drawLedger(){var t=el('ledger');var cc=bpUsd(safe(window._cctot));/* cr
    +(smc?' · stk '+fmt$(smc):'')
    +(flc?' · fxlad '+fmt$(flc):'')
    +(ilc?' · ixlad '+fmt$(ilc):'')
-)OMEGAD9"
-R"OMEGAD10(   +((omc||cc||fxc||gbc||ixc||xgc||uoc||smc||flc||ilc)?' · Σ '+fmt$(tot):'');}
+   +((omc||cc||fxc||gbc||ixc||xgc||uoc||smc||flc||ilc)?' · Σ '+fmt$(tot):'');}
 
 function drawEquity(){var cv=el("eqc");if(!cv)return;/* SHADOW EQUITY panel removed 2026-07-06 (operator: useless) */var H=110,ctx=prep(cv,H);
  var W=cv.clientWidth;ctx.clearRect(0,0,W,H);
@@ -1881,7 +1891,8 @@ var PRD=null,PRSYM=localStorage.getItem('omega_prsym')||'XAUUSD',PRTF=localStora
 var PRSYMS=['XAUUSD','US500','USTEC','EURUSD','GBPUSD','USDJPY','AUDUSD','NZDUSD','USDCAD'],PRTFS=[['m5','5m'],['m15','15m'],['h1','1H']];
 function prBtns(){
  el('prsyms').innerHTML=PRSYMS.map(function(x){return '<button class="'+(x===PRSYM?'on':'')+'" data-s="'+x+'">'+x.replace('USD','')+'</button>';}).join('');
- el('prtfs').innerHTML=PRTFS.map(function(t){return '<button class="'+(t[0]===PRTF?'on':'')+'" data-t="'+t[0]+'">'+t[1]+'</button>';}).join('');
+)OMEGAD10"
+R"OMEGAD11( el('prtfs').innerHTML=PRTFS.map(function(t){return '<button class="'+(t[0]===PRTF?'on':'')+'" data-t="'+t[0]+'">'+t[1]+'</button>';}).join('');
  Array.prototype.forEach.call(el('prsyms').children,function(b){b.onclick=function(){PRSYM=b.getAttribute('data-s');localStorage.setItem('omega_prsym',PRSYM);prBtns();drawPR();};});
  Array.prototype.forEach.call(el('prtfs').children,function(b){b.onclick=function(){PRTF=b.getAttribute('data-t');localStorage.setItem('omega_prtf',PRTF);prBtns();drawPR();};});}
 prBtns();
@@ -1895,8 +1906,7 @@ function drawPR(){var cv=el("prc");
    if(tg&&tg.children.length>1){
      var rightH=tg.children[1].offsetHeight;
      var lt=el('ltpan');var ltH=lt?lt.offsetHeight:0;
-)OMEGAD10"
-R"OMEGAD11(     var pan=cv.parentElement;var nonCanvas=pan.offsetHeight-cv.offsetHeight;
+     var pan=cv.parentElement;var nonCanvas=pan.offsetHeight-cv.offsetHeight;
      var want=Math.round(rightH-ltH-nonCanvas-8);
      if(want>160&&want<620)H=want;
    }}catch(e){}
@@ -2087,7 +2097,8 @@ function prTip(m,cx,cy){var tip=el('prtip');
  var dpp=r.epx<10?4:2;
  var isPart=/^PARTIAL/.test(r.reason||'');
  tip.innerHTML='<span class="w">'+esc((r.eng||'').replace(/Engine$/,''))+'</span> · <span class="'+(r.side==='LONG'?'g':'r')+'">'+esc(r.side)+'</span> '+esc(r.sym)
-  +(isPart?' <span class="chip" style="background:var(--ambD);color:var(--ambB)">PARTIAL</span>':'')
+)OMEGAD11"
+R"OMEGAD12(  +(isPart?' <span class="chip" style="background:var(--ambD);color:var(--ambB)">PARTIAL</span>':'')
   +'<br>in <span class="num w">'+fmt2(r.epx,dpp)+'</span> → out <span class="num w">'+fmt2(r.xpx,dpp)+'</span> · <span class="num w">'+lots(r.size)+'</span> lots'
   +'<br><span class="num" style="color:'+c+';font-weight:600">'+fmt$(r.pnl)+'</span> · '+hold+' · <span class="d">'+esc(r.reason||'')+'</span>'
   +(isPart?'<br><span class="d">partial bank — rest of position closed separately / may still be open</span>':'');
@@ -2103,8 +2114,7 @@ function prTip(m,cx,cy){var tip=el('prtip');
    if(d2<best){best=d2;hit=m;}});
   PRHOVER=hit;prTip(hit,e.clientX,e.clientY);});
  cvp.addEventListener('mouseleave',function(){PRMOUSE=null;PRHOVER=null;prTip(null);drawPR();});})();
-)OMEGAD11"
-R"OMEGAD12(/* ~30fps redraw only while hovering, or while the newest exit (<10 min) pulses;
+/* ~30fps redraw only while hovering, or while the newest exit (<10 min) pulses;
    paused when the tab is hidden. Static otherwise — zero idle cost. */
 (function prAnim(){requestAnimationFrame(prAnim);
  if(document.hidden)return;

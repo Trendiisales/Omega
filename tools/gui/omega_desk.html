@@ -53,6 +53,8 @@ button.on{border-color:var(--grn);color:var(--grnB)}
 select{background:var(--pan2);color:var(--t);border:1px solid var(--bd2);border-radius:3px;font:11px 'IBM Plex Mono',monospace;padding:2px 6px}
 a{color:var(--blu);text-decoration:none}
 .dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:4px;vertical-align:0}
+/* neon TRADING beacon (operator 2026-07-18: "much brighter neon green symbol when it is trading") */
+@keyframes neonPulse{0%,100%{opacity:1}50%{opacity:.55}}
 /* heat tiles halved 2026-07-08 (operator: panel unnecessary at full size) — one-line row tile */
 .tile{border-radius:3px;height:13px;display:flex;flex-direction:row;align-items:center;gap:5px;padding:1px 5px;overflow:hidden}
 .tile b{font-size:8.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -98,6 +100,7 @@ a{color:var(--blu);text-decoration:none}
   <button id="almbtn" title="alarm log — every audible alert with its cause (click to open)" style="position:relative">🔔<span id="almct" class="num" style="margin-left:3px;color:var(--t2)">0</span></button>
   <button id="killall" title="PANIC: market-close ALL open positions in THIS book (sends live opposing MKT orders)" style="background:#3a0d0d;color:#ff5a5a;border:1px solid #ff5a5a;font-weight:700;letter-spacing:.5px" onclick="killAll(this)">KILL ALL</button>
   <span class="num" id="clk" style="color:var(--w)">--:--:-- UTC</span>
+  <span class="lbl"><span class="dot" id="trdot" style="background:var(--t3);width:10px;height:10px"></span><span id="trdlbl" style="font-weight:700;letter-spacing:.5px">IDLE</span></span>
   <span class="lbl"><span class="dot" id="conn" style="background:var(--t3)"></span><span id="connlbl">connecting</span></span>
 </div>
 
@@ -795,6 +798,13 @@ function render(J){lastJ=J;
  /* MICROSTRUCTURE + BROKER + SIGNAL TAPE populators removed 2026-07-04 (panels deleted, operator: irrelevant). */
 
  var lts=J.live_trades||[];window._lastLts=lts;/* tile trigger-marker reads this */
+ /* neon TRADING beacon: open live trade(s) => bright #39ff14 pulsing glow (unmissable);
+    flat => dim IDLE. Driven by live_trades only -- shadow/paper books never light it. */
+ (function(){var d=el('trdot'),l=el('trdlbl');if(!d||!l)return;
+  if(lts.length){d.style.background='#39ff14';d.style.boxShadow='0 0 4px #39ff14,0 0 10px #39ff14,0 0 20px #39ff14';d.style.animation='neonPulse 1.2s ease-in-out infinite';
+   l.textContent='TRADING ×'+lts.length;l.style.color='#39ff14';l.style.textShadow='0 0 8px #39ff14';}
+  else{d.style.background='var(--t3)';d.style.boxShadow='none';d.style.animation='none';
+   l.textContent='IDLE';l.style.color='';l.style.textShadow='';}})();
  /* entry bell -- identity-based (engine|symbol|side|entry), NOT count-based.
     Count-based rang on restarts + source flicker (2026-06-11 phantom-bell bug).
     Guards: first render baselines silently; uptime drop (restart) re-baselines
