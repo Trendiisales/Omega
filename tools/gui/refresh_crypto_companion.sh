@@ -53,6 +53,29 @@ else
   echo "[$TS] chimera trades: no source file yet (no closes since exporter shipped) — skipped"
 fi
 
+# ── HOP 3 (S-2026-07-18r): LIVE REALIZED cash-truth PnL ──────────────────────
+#   josgp1 data/live_realized.json holds the REAL Binance realized PnL of the
+#   live mimic mirror (per-trade rows + total_usd, fees included — cash truth,
+#   seeded from the 2026-07-18 pilot flatten: -$3.545). The desk :7779
+#   GET /api/crypto_live_pnl serves it and the GUI folds total_usd into the
+#   ALL-TIME headline (operator order: the correct loss number in the PnL).
+LR_SRC="chimera-direct:/home/jo/ChimeraCrypto/data/live_realized.json"
+LR_TMP="/tmp/live_realized.json"
+LR_DST="omega-new:C:/Omega/live_realized.json"
+if scp -q "$LR_SRC" "$LR_TMP" 2>/dev/null; then
+  if [ -s "$LR_TMP" ] && grep -q '"total_usd"' "$LR_TMP"; then
+    if scp -q "$LR_TMP" "$LR_DST" 2>/dev/null; then
+      echo "[$TS] live realized: pushed $(wc -c < "$LR_TMP" | tr -d ' ') bytes -> VPS"
+    else
+      echo "[$TS] live realized: push FAILED -> VPS (will retry next interval)"
+    fi
+  else
+    echo "[$TS] live realized: pulled file missing/invalid — not pushing"
+  fi
+else
+  echo "[$TS] live realized: no source file on josgp1 — skipped"
+fi
+
 # ── HOP 2: companion live-state json (original job, unchanged) ───────────────
 SRC="chimera-direct:/home/jo/ChimeraCrypto/data/crypto_companion_state.json"
 TMP="/tmp/crypto_companion_state.json"

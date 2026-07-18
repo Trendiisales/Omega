@@ -1309,6 +1309,11 @@ void OmegaTelemetryServer::run(int port)
         else if (strstr(buf, "GET /api/daily"))       { ct = "application/json"; body = buildDailySummaryJson(); }
         else if (strstr(buf, "GET /api/companion"))   { ct = "application/json"; body = loadCompanionStateAtomic(); if (body.empty()) body = "{\"open_companions\":0,\"open_detail\":[]}"; }
         else if (strstr(buf, "GET /api/crypto_companion")) { ct = "application/json"; body = loadFile("crypto_companion_state.json"); if (body.empty()) body = "{\"ts\":0,\"legs\":[]}"; }
+        // S-2026-07-18r LIVE REALIZED cash truth: real Binance fills' realized PnL (fees
+        // included), written on josgp1 (data/live_realized.json), relayed by
+        // refresh_crypto_companion.sh HOP 3. GUI folds total_usd into ALL-TIME (operator
+        // order: the correct live loss number in the PnL — real forward fills, never shadow).
+        else if (strstr(buf, "GET /api/crypto_live_pnl")) { ct = "application/json"; body = loadFile("live_realized.json"); if (body.empty()) body = "{\"ts\":0,\"total_usd\":0,\"trades\":[]}"; }
         // rdagent stock basket (S-2026-07-11): pushed from the Mac so the META-type picks show ON
         // the desk instead of the Mac-only :7799 page. book = paper P&L/orders; rank = model ranking.
         else if (strstr(buf, "GET /api/rdagent_book")) { ct = "application/json"; body = loadFile("data/rdagent/rda_basket.json"); if (body.empty()) body = "{\"mode\":\"none\",\"n_names\":0,\"orders\":[]}"; }

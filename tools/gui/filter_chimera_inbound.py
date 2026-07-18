@@ -63,7 +63,13 @@ def main() -> int:
         # OPERATOR RULE (S-2026-07-16, hard): there are NO negative crypto trades on the desk,
         # end of story. Drop EVERY net<0 row regardless of engine/reason (crypto is long-only
         # spot + floored). CLIP_REASONS retained only to tag WHY in the log.
-        if net < 0:
+        #
+        # EXCEPTION (S-2026-07-18r, operator order "put the correct loss number in the PnL"):
+        # rows whose reason starts with "LIVE-" are REAL Binance cash fills (live mimic mirror /
+        # operator-ordered flatten), NOT shadow-book rows. The 07-16 rule was written for floored
+        # SHADOW books where a negative row is always a stale/artifact/bug row; a real live
+        # fill's realized loss is cash truth and MUST reach the desk. Never drop it.
+        if net < 0 and not f[i_reason].startswith("LIVE-"):
             dropped.append((f[i_strat], f[i_reason], net))
             continue
         kept.append(ln)
