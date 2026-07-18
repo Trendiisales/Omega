@@ -101,6 +101,11 @@ a{color:var(--blu);text-decoration:none}
   <button id="killall" title="PANIC: market-close ALL open positions in THIS book (sends live opposing MKT orders)" style="background:#3a0d0d;color:#ff5a5a;border:1px solid #ff5a5a;font-weight:700;letter-spacing:.5px" onclick="killAll(this)">KILL ALL</button>
   <span class="num" id="clk" style="color:var(--w)">--:--:-- UTC</span>
   <span class="lbl"><span class="dot" id="trdot" style="background:var(--t3);width:10px;height:10px"></span><span id="trdlbl" style="font-weight:700;letter-spacing:.5px">IDLE</span></span>
+  <!-- CC truth chip (S-2026-07-18af, operator: "see IMMEDIATELY correct software loaded"): chimera
+       executor verified state — Mac watch probes josgp1 every 1min, relay pushes /api/chimera_health.
+       GREEN only when build==repo HEAD && mode LIVE && no restart-loop && config consistent && feed
+       fresh. STALE/RED = NOT verified — do not trust that the crypto engine is trading. -->
+  <span class="lbl" title="chimera (josgp1 crypto executor) verified-truth chip: build==repo HEAD, RUNTIME MODE LIVE, no restart-loop (>3 starts/30min), no config mode-conflict, watch+relay fresh. RED/STALE = executor NOT verified live — check chimera-direct."><span class="dot" id="ccdot" style="background:var(--t3);width:10px;height:10px"></span><span id="cclbl" style="font-weight:700;letter-spacing:.5px">CC …</span></span>
   <span class="lbl"><span class="dot" id="conn" style="background:var(--t3)"></span><span id="connlbl">connecting</span></span>
 </div>
 
@@ -1166,6 +1171,28 @@ function pollCC(){fetch('/api/crypto_companion').then(function(r){return r.json(
  if(Object.keys(m).length)window._cc=m;
  drawCC();}).catch(function(){drawCC();});}
 setInterval(pollCC,1000);pollCC();/* S-2026-07-13 operator: crypto updates >=1Hz (prices are WS-push already; this is the companion/mimic state) */
+
+/* ── CC truth chip (S-2026-07-18af): chimera executor VERIFIED state on the header.
+   Feed: Mac chimera_executor_watch.sh (1min probe of josgp1: build==HEAD, mode LIVE,
+   restart-loop, config-conflict) -> relay HOP 4 -> /api/chimera_health. Fail-closed:
+   missing feed, stale ts (>6min: watch 1min + relay 120s + margin) or ok=0 all render
+   RED — a dead watch/relay must NEVER read as green (the 07-18 93-restart loop hid
+   behind exactly that). Health chip, not PnL — no-backtest-in-live-GUI rule untouched. */
+function pollCH(){fetch('/api/chimera_health').then(function(r){return r.json();}).then(function(j){
+ var d=el('ccdot'),l=el('cclbl');if(!d||!l)return;
+ function red(t,tip){d.style.background='var(--red)';d.style.boxShadow='0 0 4px var(--red),0 0 10px var(--red)';
+  d.style.animation='neonPulse 1.2s ease-in-out infinite';l.textContent=t;l.style.color='var(--red)';
+  l.style.textShadow='0 0 8px var(--red)';if(tip)l.title=tip;}
+ if(!j||!safe(j.ts)){red('CC NO-DATA','chimera health feed absent — watch/relay never delivered');return;}
+ var age=Date.now()/1000-safe(j.ts);
+ if(age>360){red('CC STALE '+Math.round(age/60)+'m','chimera health feed stale — Mac watch or relay dead; executor state UNKNOWN');return;}
+ if(!safe(j.ok)){red('CC RED: '+String(j.reason||'?').slice(0,70),String(j.reason||''));return;}
+ var us=safe(j.uptime_s),uh=Math.floor(us/3600),um=Math.floor(us%3600/60);
+ d.style.background='#39ff14';d.style.boxShadow='0 0 4px #39ff14,0 0 8px #39ff14';d.style.animation='none';
+ l.textContent='CC '+(j.build||'?')+' '+(j.mode||'?')+' up='+(uh>0?uh+'h'+um+'m':um+'m')+' ✓';
+ l.style.color='#39ff14';l.style.textShadow='0 0 6px #39ff14';l.title='chimera VERIFIED: build '+(j.build||'?')+' == josgp1 HEAD '+(j.headsha||'?')+', mode '+(j.mode||'?')+', starts30='+safe(j.starts30)+', probe age '+Math.round(age)+'s';
+}).catch(function(){var l=el('cclbl');if(l){l.textContent='CC ?';l.style.color='var(--amb)';}});}
+setInterval(pollCH,15000);pollCH();
 
 /* ── shared: render a companion's OPEN-NOW legs + closed-TRADES log into the panel's sub-tables.
    REAL TRADES ONLY — there is no backtest/replay row anywhere in these panels anymore. An open leg

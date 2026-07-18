@@ -76,6 +76,25 @@ else
   echo "[$TS] live realized: no source file on josgp1 — skipped"
 fi
 
+# ── HOP 4 (S-2026-07-18af): chimera health truth-chip feed ───────────────────
+#   /tmp/chimera_health.json is written every 1min by chimera_executor_watch.sh
+#   (build/mode/restart-loop/config verdict at probe truth). Pushed to the VPS
+#   where :7779 /api/chimera_health serves it for the desk header CC chip.
+#   Only push a FRESH file (<10min): a dead watch must surface as a STALE ts on
+#   the GUI (RED), not as an endlessly re-pushed last-known-good.
+CH_HEALTH=/tmp/chimera_health.json
+CH_HDST="omega-new:C:/Omega/chimera_health.json"
+if [ -s "$CH_HEALTH" ] && grep -q '"ts"' "$CH_HEALTH" \
+   && [ $(( $(date +%s) - $(stat -f %m "$CH_HEALTH" 2>/dev/null || echo 0) )) -lt 600 ]; then
+  if scp -q "$CH_HEALTH" "$CH_HDST" 2>/dev/null; then
+    echo "[$TS] chimera health: pushed -> VPS"
+  else
+    echo "[$TS] chimera health: push FAILED -> VPS (will retry next interval)"
+  fi
+else
+  echo "[$TS] chimera health: missing/stale local file — not pushing (GUI chip will show STALE)"
+fi
+
 # ── HOP 2: companion live-state json (original job, unchanged) ───────────────
 SRC="chimera-direct:/home/jo/ChimeraCrypto/data/crypto_companion_state.json"
 TMP="/tmp/crypto_companion_state.json"

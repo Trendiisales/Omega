@@ -1314,6 +1314,13 @@ void OmegaTelemetryServer::run(int port)
         // refresh_crypto_companion.sh HOP 3. GUI folds total_usd into ALL-TIME (operator
         // order: the correct live loss number in the PnL — real forward fills, never shadow).
         else if (strstr(buf, "GET /api/crypto_live_pnl")) { ct = "application/json"; body = loadFile("live_realized.json"); if (body.empty()) body = "{\"ts\":0,\"total_usd\":0,\"trades\":[]}"; }
+        // S-2026-07-18af CHIMERA HEALTH truth chip (operator: "see IMMEDIATELY that the
+        // correct software is loaded" — banners missed during the 07-18 93-restart loop).
+        // Mac chimera_executor_watch.sh probes josgp1 every 1min (build==repo HEAD, mode
+        // LIVE, restart-loop, config-conflict), writes /tmp/chimera_health.json, relayed
+        // by refresh_crypto_companion.sh HOP 4. GUI header CC chip renders it; a stale ts
+        // (dead watch/relay) reads RED = NOT-VERIFIED, never silently green.
+        else if (strstr(buf, "GET /api/chimera_health")) { ct = "application/json"; body = loadFile("chimera_health.json"); if (body.empty()) body = "{\"ts\":0}"; }
         // rdagent stock basket (S-2026-07-11): pushed from the Mac so the META-type picks show ON
         // the desk instead of the Mac-only :7799 page. book = paper P&L/orders; rank = model ranking.
         else if (strstr(buf, "GET /api/rdagent_book")) { ct = "application/json"; body = loadFile("data/rdagent/rda_basket.json"); if (body.empty()) body = "{\"mode\":\"none\",\"n_names\":0,\"orders\":[]}"; }

@@ -25,17 +25,41 @@
 #     * CONFIG MODE-CONFLICT: live_config.json shadow_mode/mode disagrees with
 #       binance_credentials.json shadow_mode — the exact FATAL-crash-loop
 #       precondition, caught at the FILE level so it alarms even between boots.
-# One failed check is ignored (restart window / ssh blip); 2 consecutive fails
-# (10 min apart via cron) => RED + banner. Re-notifies every 6h while RED;
-# single "recovered" banner on green. ssh-unreachable is logged, not alarmed.
+# Two failed checks are ignored (restart window / ssh blip); 3 consecutive fails
+# (1 min apart via cron, ibkr_login_watch 18z precedent) => RED + banner ~3min
+# after true failure. Re-notifies every 6h while RED; single "recovered" banner
+# on green. ssh-unreachable is logged, not alarmed.
+#
+# S-2026-07-18af "BETTER CHECK" (operator ultimatum after the 02:40Z banner was
+# missed): every run ALSO writes /tmp/chimera_health.json {ts,ok,reason,build,
+# headsha,mode,uptime_s,starts30,...} — relayed to omega-new by
+# refresh_crypto_companion.sh HOP 4 and rendered as the always-on CC truth chip
+# on the desk header (GUI treats stale ts as RED: a dead watch/relay counts as
+# NOT-VERIFIED, never silently green). Cadence 10min -> 1min same session;
+# overlap lock dir so a hung ssh cannot pile processes
+# (the VPS RAM-RED ssh-pileup reaper precedent).
 #
 # Cron install: tools/install_chimera_executor_watch_cron.sh  (marker-line, idempotent)
 # State: /tmp/chimera_executor_watch.state   Log: /tmp/chimera_executor_watch.log
 
 STATE=/tmp/chimera_executor_watch.state
 LOG=/tmp/chimera_executor_watch.log
+HEALTH=/tmp/chimera_health.json
 RENOTIFY_S=$((6*3600))
 now_e=$(date +%s)
+
+# overlap lock: at 1-min cadence a hung ssh must not pile processes. Stale lock
+# (>10 min: holder died without cleanup) is reaped, else this run just skips.
+LOCKDIR=/tmp/chimera_executor_watch.lock
+if ! mkdir "$LOCKDIR" 2>/dev/null; then
+  lock_age=$(( now_e - $(stat -f %m "$LOCKDIR" 2>/dev/null || echo "$now_e") ))
+  if [ "$lock_age" -gt 600 ]; then
+    rm -rf "$LOCKDIR"; mkdir "$LOCKDIR" 2>/dev/null || exit 0
+  else
+    exit 0
+  fi
+fi
+trap 'rmdir "$LOCKDIR" 2>/dev/null' EXIT
 ts() { date -u '+%Y-%m-%d %H:%MZ'; }
 notify() {  # $1 title  $2 body
   /usr/bin/osascript -e "display notification \"$2\" with title \"$1\" sound name \"Basso\"" 2>/dev/null
@@ -59,7 +83,11 @@ PROBE=$(ssh -o ConnectTimeout=25 -o BatchMode=yes chimera-direct '
   crs=$(grep -o "\"shadow_mode\"[[:space:]]*:[[:space:]]*[a-z]*" /home/jo/ChimeraCrypto/config/binance_credentials.json 2>/dev/null | head -1 | grep -o "[a-z]*$")
   build=$(grep -F "Tier-2 Edge Engines" "$logf" 2>/dev/null | tail -1 | grep -o "build=[a-f0-9]*" | cut -d= -f2)
   headsha=$(cd /home/jo/ChimeraCrypto && git rev-parse --short=7 HEAD 2>/dev/null)
-  printf "ACT=%s\nMODE=%s\nEXEC=%s\nHALTS=%s\nSTARTS30=%s\nLCSHADOW=%s\nLCMODE=%s\nCRSHADOW=%s\nBUILD=%s\nHEADSHA=%s\n" "$act" "$mode" "$execl" "$halts" "$starts30" "$lcs" "$lcm" "$crs" "$build" "$headsha"
+  upts=$(systemctl show chimera -p ActiveEnterTimestamp --value 2>/dev/null)
+  upe=""; [ -n "$upts" ] && upe=$(date -d "$upts" +%s 2>/dev/null)
+  nowb=$(date +%s); ups=""
+  case "$upe" in (*[0-9]) ups=$((nowb-upe));; esac
+  printf "ACT=%s\nMODE=%s\nEXEC=%s\nHALTS=%s\nSTARTS30=%s\nLCSHADOW=%s\nLCMODE=%s\nCRSHADOW=%s\nBUILD=%s\nHEADSHA=%s\nUPTIME=%s\n" "$act" "$mode" "$execl" "$halts" "$starts30" "$lcs" "$lcm" "$crs" "$build" "$headsha" "$ups"
 ' 2>/dev/null)
 SSH_RC=$?
 
@@ -79,6 +107,7 @@ LCMODE=$(printf '%s\n' "$PROBE" | sed -n 's/^LCMODE=//p')
 CRSHADOW=$(printf '%s\n' "$PROBE" | sed -n 's/^CRSHADOW=//p')
 BUILD=$(printf '%s\n' "$PROBE" | sed -n 's/^BUILD=//p')
 HEADSHA=$(printf '%s\n' "$PROBE" | sed -n 's/^HEADSHA=//p')
+UPTIME_S=$(printf '%s\n' "$PROBE" | sed -n 's/^UPTIME=//p'); UPTIME_S=${UPTIME_S:-0}
 
 REASON=""
 [ "$ACT" != "active" ]                                   && REASON="chimera.service not active ($ACT)"
@@ -113,7 +142,19 @@ fi
                                                           && REASON="executor not LIVE: ${EXECL:-<no line>}"
 [ -z "$REASON" ] && [ "$HALTS" -gt 0 ]                    && REASON="$HALTS executor-halt/credential-failure line(s) since boot"
 
-# read state: "<phase> <last_notify_epoch>"  phase in ok|fail1|red
+# ── S-2026-07-18af health JSON (the GUI truth chip's feed) — written EVERY run,
+#    green or red, at PROBE truth (no strike debounce: the chip shows raw state;
+#    the banner keeps the 3-strike grace). ssh-unreachable exits above WITHOUT
+#    touching this file, so the chip goes STALE->RED by ts age — a dead probe is
+#    NOT-VERIFIED, never silently green. Atomic tmp+mv (relay may scp mid-write).
+MODEW=$(printf '%s' "$MODE" | grep -o 'RUNTIME MODE = [A-Z]*' | awk '{print $NF}')
+OK=1; [ -n "$REASON" ] && OK=0
+RSAFE=$(printf '%s' "$REASON" | tr -d '"\\')
+printf '{"ts":%s,"ok":%s,"reason":"%s","build":"%s","headsha":"%s","mode":"%s","act":"%s","uptime_s":%s,"starts30":%s,"halts":%s}\n' \
+  "$now_e" "$OK" "$RSAFE" "$BUILD" "$HEADSHA" "${MODEW:-?}" "$ACT" "$UPTIME_S" "$STARTS30" "$HALTS" > "$HEALTH.tmp" \
+  && mv "$HEALTH.tmp" "$HEALTH"
+
+# read state: "<phase> <last_notify_epoch>"  phase in ok|fail1|fail2|red
 read -r phase last_n 2>/dev/null < "$STATE" || true
 phase=${phase:-ok}; last_n=${last_n:-0}
 
@@ -131,7 +172,11 @@ case "$phase" in
     echo "fail1 0" > "$STATE"
     echo "[$(ts)] FAIL-1 (grace): $REASON" >> "$LOG"
     ;;
-  fail1|red)
+  fail1)
+    echo "fail2 0" > "$STATE"
+    echo "[$(ts)] FAIL-2 (grace): $REASON" >> "$LOG"
+    ;;
+  fail2|red)
     if [ "$phase" != "red" ] || [ $((now_e - last_n)) -ge $RENOTIFY_S ]; then
       notify "CRYPTO EXECUTOR NOT LIVE" "$REASON — live crypto orders are NOT routing. Check chimera-direct creds/log."
       echo "red $now_e" > "$STATE"
