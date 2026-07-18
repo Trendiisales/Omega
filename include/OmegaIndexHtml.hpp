@@ -1690,13 +1690,18 @@ function updDayPnl(){var cut=Math.floor(Date.now()/86400000)*86400;var n=0,p=0,t
     as DOCUMENTED-EXCLUDED, not orphaned.) */
  var ccAll=bpUsd(safe(window._cctot));/* crypto ladder companion all-time bank, $ (PAPER — display-only, NOT folded) */
  var fxAll=safe(window._fxtot),gbAll=safe(window._goldtot),ixAll=safe(window._idxtot),xgAll=safe(window._xagtot),uoAll=safe(window._usoiltot),smAll=safe(window._smtot),flAll=safe(window._fxladtot),ilAll=safe(window._ixladtot);/* FX + gold + xag + usoil + stockmover/fx/index-ladder forward books, $ (additive, all-time; forward-only banks -> fold into ALL-TIME, not today) */
- var rdaAll=safe(window._rdatot);/* S-2026-07-11: rdagent stock basket paper P&L, $ (additive, all-time -- the META-type picks now fold into the desk headline like crypto) */
+ /* S-2026-07-19g operator ("why didn't you fix ALL of these"): rdaAll (rdagent stock basket) and
+    h52All (BigCapHi52) are labelled "paper P&L" in their own declarations below yet were still
+    folded into totT/cls.stock -- same bug class as the crypto ccAll/chimAll fold S-18w already
+    excluded. Paper $ does not belong in the live headline. Kept referenced (not deleted) so
+    mimic_pnl_completeness_gate still sees them, same pattern as ccAll/chimAll. */
+ var rdaAll=safe(window._rdatot);/* S-2026-07-11: rdagent stock basket paper P&L, $ (PAPER — display-only, NOT folded S-19g) */
  var bc2All=safe(window._bc2tot);/* S-2026-07-11: BigCap2pct impulse companion REALIZED bank, $ (additive, all-time). Endpoint existed but was orphaned from the fold -> mimic_pnl_completeness_gate now enforces it. */
  var chimAll=safe(window._chimtot);/* S-2026-07-12b: chimera EDGE realized, $ (additive, all-time; engine!~CLIP so no _cctot overlap). Was folded into cls.crypto + eqtot only -- pnl_completeness gate caught the missing updDayPnl term. */
  var sdAll=safe(window._sdtot);/* S-2026-07-15m: StockDip/StockTurtle single-name book REALIZED bank, $ (additive, all-time). Book was persisted+servable but never folded -> real stock winners (MU/DELL) showed $0. Routes to STOCK class below. */
- var h52All=safe(window._hi52tot);/* S-2026-07-17m: BigCapHi52 portfolio paper P&L (deploy-forward, rdagent-class fold). Routes to STOCK class below. */
+ var h52All=safe(window._hi52tot);/* S-2026-07-17m: BigCapHi52 portfolio paper P&L (deploy-forward, rdagent-class fold) (PAPER — display-only, NOT folded S-19g). */
  var clvAll=safe(window._clivetot);/* S-2026-07-18r: LIVE mimic mirror REAL Binance realized (cash truth incl fees; live_realized.json). Operator order: the correct live loss number in the PnL. Routes to CRYPTO class below. */
- var pT=p+cToday,totT=tot+cAll+fxAll+gbAll+ixAll+xgAll+uoAll+smAll+flAll+ilAll+rdaAll+bc2All+sdAll+h52All+clvAll;/* ccAll+chimAll (crypto paper) EXCLUDED S-18w */
+ var pT=p+cToday,totT=tot+cAll+fxAll+gbAll+ixAll+xgAll+uoAll+smAll+flAll+ilAll+bc2All+sdAll+clvAll;/* ccAll+chimAll+rdaAll+h52All (paper) EXCLUDED S-18w/S-19g */
  tweenNum('daypnl',pT,fmt$);el('daypnl').style.color=pT>=0?'var(--grn)':'var(--red)';
  el('daypnln').textContent=n+' closes today (UTC)'+(cToday?' · incl '+fmt$(cToday)+' paper':'');
  tweenNum('totpnl',totT,fmt$);el('totpnl').style.color=totT>=0?'var(--grn)':'var(--red)';
@@ -1708,8 +1713,9 @@ function updDayPnl(){var cut=Math.floor(Date.now()/86400000)*86400;var n=0,p=0,t
  ROWS.forEach(function(r){var c=classOf(r.eng,r.sym);if(cls[c]!==undefined)cls[c]+=r.pnl;});
  /* 2. class-pure forward/paper book globals (each already realized-only per the 07-10 fold rule) */
  /* S-18w: cls.crypto = REAL cash only. ccAll (paper banks) + _chimtot (shadow closes) excluded. */
+ /* S-19g: cls.stock = REAL cash only too. rdaAll (rdagent) + h52All (BigCapHi52) are paper, excluded. */
  cls.crypto+=clvAll;                      /* LIVE mirror real Binance realized (S-2026-07-18r; cash truth, fees incl) */
- cls.stock +=smAll+rdaAll+bc2All+ilAll+ixAll+sdAll+h52All; /* bigcap ladder + rdagent basket + bigcap2pct + index ladder + index befloor($0) + stockdip/turtle single-name book + bigcap hi52 portfolio */
+ cls.stock +=smAll+bc2All+ilAll+ixAll+sdAll; /* bigcap ladder + bigcap2pct + index ladder + index befloor($0) + stockdip/turtle single-name book */
  cls.fx    +=flAll+fxAll;                  /* fx ladder + fx befloor($0) */
  cls.gold  +=gbAll+xgAll+uoAll;            /* gold+xag+usoil befloor ($0) */
  /* 3. OMEGA stall-clip (cAll, gold+index only) — split per-engine via window._gcPer.
@@ -1737,15 +1743,15 @@ function updDayPnl(){var cut=Math.floor(Date.now()/86400000)*86400;var n=0,p=0,t
    Operator 2026-07-04: "companion engines displayed underneath their respective engines they
    mimic." Each companion (stall-clip) book mimics ONE parent engine and is keyed in
    /api/companion per_engine by that parent's name (LondonFixMomentum / XauTrendFollow4h /
-   QndxSqfTrend). The ledger keys are the shadow-ledger engine tags (e.g.
+)OMEGAD9"
+R"OMEGAD10(   QndxSqfTrend). The ledger keys are the shadow-ledger engine tags (e.g.
    XauTrendFollow4h_Donchian_N20_sl1.5tp3.0) -> match by base-name prefix. When a ledger engine
    HAS a companion, render its book indented directly beneath the engine row. Separate additive
    book -- NEVER compared to riding WIDE ([[CompanionDominanceError]]); shown STANDALONE. */
 function gcMatch(k){var per=window._gcPer||{};var kb=(k||'').replace(/Engine$/,'');
  if(per[k])return {key:k,e:per[k]};
  for(var ck in per){var cb=ck.replace(/Engine$/,'');
-)OMEGAD9"
-R"OMEGAD10(  if(kb===cb||kb.indexOf(cb)===0||cb.indexOf(kb)===0)return {key:ck,e:per[ck]};}
+  if(kb===cb||kb.indexOf(cb)===0||cb.indexOf(kb)===0)return {key:ck,e:per[ck]};}
  return null;}
 function ledgerCompRow(k,seen,sym){var m=gcMatch(k);if(!m)return '';
  /* one family companion book (per_engine keyed by FAMILY) can match MULTIPLE ledger variant
@@ -1895,14 +1901,14 @@ function drawMM(){var cv=el('mmc');if(!cv)return;var H=190,ctx=prep(cv,H);
  var sym=el('mmsym').value;var rs=winRows().filter(function(r){return r.sym===sym;}).slice(-400);
  if(!rs.length){ctx.fillStyle='#6B7785';ctx.font='11px IBM Plex Mono';ctx.fillText('no trades for '+sym,10,20);return;}
  var xs=rs.map(function(r){return r.mae;}),ys=rs.map(function(r){return r.mfe;});
- function pct(a,p){var b=a.slice().sort(function(x,y){return x-y;});return b[Math.min(b.length-1,Math.floor(p*b.length))];}
+)OMEGAD10"
+R"OMEGAD11( function pct(a,p){var b=a.slice().sort(function(x,y){return x-y;});return b[Math.min(b.length-1,Math.floor(p*b.length))];}
  var mx=Math.max(pct(xs,0.97),0.1),my=Math.max(pct(ys,0.97),0.1);
  function X(v){return 26+(W-34)*Math.min(1,v/mx);}function Y(v){return H-18-(H-30)*Math.min(1,v/my);}
  ctx.strokeStyle='rgba(255,255,255,0.07)';ctx.strokeRect(26,12,W-34,H-30);
  ctx.fillStyle='#6B7785';ctx.font='9px IBM Plex Mono';
  ctx.fillText('MAE '+fmt2(mx,1),W-60,H-4);ctx.fillText('MFE',2,14);ctx.fillText(fmt2(my,1),2,24);
-)OMEGAD10"
-R"OMEGAD11( rs.forEach(function(r){ctx.fillStyle=r.pnl>0?'rgba(46,189,133,0.75)':'rgba(226,72,77,0.75)';
+ rs.forEach(function(r){ctx.fillStyle=r.pnl>0?'rgba(46,189,133,0.75)':'rgba(226,72,77,0.75)';
   ctx.beginPath();ctx.arc(X(r.mae),Y(r.mfe),2.2,0,6.3);ctx.fill();});}
 
 var DAYS=['Su','Mo','Tu','We','Th','Fr','Sa'];
@@ -2090,7 +2096,8 @@ function drawPR(){var cv=el("prc");
     gr2.addColorStop(0,win?'rgba(46,189,133,0.18)':'rgba(226,72,77,0.18)');
     gr2.addColorStop(1,win?'rgba(46,189,133,0.8)':'rgba(226,72,77,0.8)');
     ctx.strokeStyle=gr2;ctx.lineWidth=hov?2:1.3;ctx.setLineDash([5,3]);
-    ctx.beginPath();ctx.moveTo(xe,ye);ctx.lineTo(xx,yx);ctx.stroke();ctx.setLineDash([]);}
+)OMEGAD11"
+R"OMEGAD12(    ctx.beginPath();ctx.moveTo(xe,ye);ctx.lineTo(xx,yx);ctx.stroke();ctx.setLineDash([]);}
    if(r.ets>=t0){var s=hov?8:6;   /* entry: glow triangle, up=LONG / down=SHORT */
     ctx.save();ctx.shadowColor=c;ctx.shadowBlur=hov?12:7;
     ctx.beginPath();
@@ -2098,8 +2105,7 @@ function drawPR(){var cv=el("prc");
     else{ctx.moveTo(xe,ye+s);ctx.lineTo(xe-s*0.85,ye-s*0.6);ctx.lineTo(xe+s*0.85,ye-s*0.6);}
     ctx.closePath();ctx.fillStyle=c;ctx.fill();ctx.restore();
     ctx.strokeStyle='#0B0F14';ctx.lineWidth=1;ctx.stroke();
-)OMEGAD11"
-R"OMEGAD12(    PRMK.push({x:xe,y:ye,t:r});}
+    PRMK.push({x:xe,y:ye,t:r});}
    if(r.ts<=t1){   /* exit: glow ring + core dot */
     ctx.save();ctx.shadowColor=c;ctx.shadowBlur=hov?12:7;
     ctx.beginPath();ctx.arc(xx,yx,hov?5:4,0,6.3);

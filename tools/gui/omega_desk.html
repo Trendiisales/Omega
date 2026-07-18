@@ -1675,13 +1675,18 @@ function updDayPnl(){var cut=Math.floor(Date.now()/86400000)*86400;var n=0,p=0,t
     as DOCUMENTED-EXCLUDED, not orphaned.) */
  var ccAll=bpUsd(safe(window._cctot));/* crypto ladder companion all-time bank, $ (PAPER — display-only, NOT folded) */
  var fxAll=safe(window._fxtot),gbAll=safe(window._goldtot),ixAll=safe(window._idxtot),xgAll=safe(window._xagtot),uoAll=safe(window._usoiltot),smAll=safe(window._smtot),flAll=safe(window._fxladtot),ilAll=safe(window._ixladtot);/* FX + gold + xag + usoil + stockmover/fx/index-ladder forward books, $ (additive, all-time; forward-only banks -> fold into ALL-TIME, not today) */
- var rdaAll=safe(window._rdatot);/* S-2026-07-11: rdagent stock basket paper P&L, $ (additive, all-time -- the META-type picks now fold into the desk headline like crypto) */
+ /* S-2026-07-19g operator ("why didn't you fix ALL of these"): rdaAll (rdagent stock basket) and
+    h52All (BigCapHi52) are labelled "paper P&L" in their own declarations below yet were still
+    folded into totT/cls.stock -- same bug class as the crypto ccAll/chimAll fold S-18w already
+    excluded. Paper $ does not belong in the live headline. Kept referenced (not deleted) so
+    mimic_pnl_completeness_gate still sees them, same pattern as ccAll/chimAll. */
+ var rdaAll=safe(window._rdatot);/* S-2026-07-11: rdagent stock basket paper P&L, $ (PAPER — display-only, NOT folded S-19g) */
  var bc2All=safe(window._bc2tot);/* S-2026-07-11: BigCap2pct impulse companion REALIZED bank, $ (additive, all-time). Endpoint existed but was orphaned from the fold -> mimic_pnl_completeness_gate now enforces it. */
  var chimAll=safe(window._chimtot);/* S-2026-07-12b: chimera EDGE realized, $ (additive, all-time; engine!~CLIP so no _cctot overlap). Was folded into cls.crypto + eqtot only -- pnl_completeness gate caught the missing updDayPnl term. */
  var sdAll=safe(window._sdtot);/* S-2026-07-15m: StockDip/StockTurtle single-name book REALIZED bank, $ (additive, all-time). Book was persisted+servable but never folded -> real stock winners (MU/DELL) showed $0. Routes to STOCK class below. */
- var h52All=safe(window._hi52tot);/* S-2026-07-17m: BigCapHi52 portfolio paper P&L (deploy-forward, rdagent-class fold). Routes to STOCK class below. */
+ var h52All=safe(window._hi52tot);/* S-2026-07-17m: BigCapHi52 portfolio paper P&L (deploy-forward, rdagent-class fold) (PAPER — display-only, NOT folded S-19g). */
  var clvAll=safe(window._clivetot);/* S-2026-07-18r: LIVE mimic mirror REAL Binance realized (cash truth incl fees; live_realized.json). Operator order: the correct live loss number in the PnL. Routes to CRYPTO class below. */
- var pT=p+cToday,totT=tot+cAll+fxAll+gbAll+ixAll+xgAll+uoAll+smAll+flAll+ilAll+rdaAll+bc2All+sdAll+h52All+clvAll;/* ccAll+chimAll (crypto paper) EXCLUDED S-18w */
+ var pT=p+cToday,totT=tot+cAll+fxAll+gbAll+ixAll+xgAll+uoAll+smAll+flAll+ilAll+bc2All+sdAll+clvAll;/* ccAll+chimAll+rdaAll+h52All (paper) EXCLUDED S-18w/S-19g */
  tweenNum('daypnl',pT,fmt$);el('daypnl').style.color=pT>=0?'var(--grn)':'var(--red)';
  el('daypnln').textContent=n+' closes today (UTC)'+(cToday?' · incl '+fmt$(cToday)+' paper':'');
  tweenNum('totpnl',totT,fmt$);el('totpnl').style.color=totT>=0?'var(--grn)':'var(--red)';
@@ -1693,8 +1698,9 @@ function updDayPnl(){var cut=Math.floor(Date.now()/86400000)*86400;var n=0,p=0,t
  ROWS.forEach(function(r){var c=classOf(r.eng,r.sym);if(cls[c]!==undefined)cls[c]+=r.pnl;});
  /* 2. class-pure forward/paper book globals (each already realized-only per the 07-10 fold rule) */
  /* S-18w: cls.crypto = REAL cash only. ccAll (paper banks) + _chimtot (shadow closes) excluded. */
+ /* S-19g: cls.stock = REAL cash only too. rdaAll (rdagent) + h52All (BigCapHi52) are paper, excluded. */
  cls.crypto+=clvAll;                      /* LIVE mirror real Binance realized (S-2026-07-18r; cash truth, fees incl) */
- cls.stock +=smAll+rdaAll+bc2All+ilAll+ixAll+sdAll+h52All; /* bigcap ladder + rdagent basket + bigcap2pct + index ladder + index befloor($0) + stockdip/turtle single-name book + bigcap hi52 portfolio */
+ cls.stock +=smAll+bc2All+ilAll+ixAll+sdAll; /* bigcap ladder + bigcap2pct + index ladder + index befloor($0) + stockdip/turtle single-name book */
  cls.fx    +=flAll+fxAll;                  /* fx ladder + fx befloor($0) */
  cls.gold  +=gbAll+xgAll+uoAll;            /* gold+xag+usoil befloor ($0) */
  /* 3. OMEGA stall-clip (cAll, gold+index only) — split per-engine via window._gcPer.
