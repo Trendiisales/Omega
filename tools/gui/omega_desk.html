@@ -36,7 +36,11 @@ body{background:var(--bg);color:var(--t);font:11px 'IBM Plex Mono',Menlo,Consola
 .compcols>.cstack{flex:1;min-width:0;margin:0}
 .cstack>.pan{margin:0 0 6px;display:block;width:100%}
 .cstack>.pan:last-child{margin-bottom:0}
-@media(max-width:1500px){.compcols{columns:2}}
+/* S-2026-07-19j: NOT columns:2 -- that's the exact masonry behavior rejected above (S-07-11
+   comment) for dumping both cstacks into the left column + splitting panel content mid-table.
+   flex-direction:column stacks the two cstacks full-width, one after another -- no split risk
+   at any content height. */
+@media(max-width:1500px){.compcols{flex-direction:column}}
 .chip{display:inline-block;font-size:10.5px;padding:1px 8px;border-radius:3px}
 .g{color:var(--grn)}.r{color:var(--red)}.a{color:var(--ambB)}.d{color:var(--t2)}.w{color:var(--w)}
 table{width:100%;border-collapse:collapse}
@@ -67,7 +71,7 @@ a{color:var(--blu);text-decoration:none}
 #prtip{position:fixed;display:none;z-index:50;pointer-events:none;background:rgba(14,20,27,.96);border:1px solid var(--bd2);border-radius:5px;padding:6px 9px;font-size:11px;line-height:1.55;box-shadow:0 8px 24px rgba(0,0,0,.55)}
 #prc{cursor:crosshair}
 @media(max-width:1180px){.deskmain,.topgrid{grid-template-columns:1fr !important}}
-@media(max-width:980px){.g2,.g3,.deskmain{grid-template-columns:1fr !important}.compcols{columns:1}}
+@media(max-width:980px){.g2,.g3,.deskmain{grid-template-columns:1fr !important}}
 </style>
 </head>
 <body>

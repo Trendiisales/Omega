@@ -42,7 +42,11 @@ body{background:var(--bg);color:var(--t);font:11px 'IBM Plex Mono',Menlo,Consola
 .compcols>.cstack{flex:1;min-width:0;margin:0}
 .cstack>.pan{margin:0 0 6px;display:block;width:100%}
 .cstack>.pan:last-child{margin-bottom:0}
-@media(max-width:1500px){.compcols{columns:2}}
+/* S-2026-07-19j: NOT columns:2 -- that's the exact masonry behavior rejected above (S-07-11
+   comment) for dumping both cstacks into the left column + splitting panel content mid-table.
+   flex-direction:column stacks the two cstacks full-width, one after another -- no split risk
+   at any content height. */
+@media(max-width:1500px){.compcols{flex-direction:column}}
 .chip{display:inline-block;font-size:10.5px;padding:1px 8px;border-radius:3px}
 .g{color:var(--grn)}.r{color:var(--red)}.a{color:var(--ambB)}.d{color:var(--t2)}.w{color:var(--w)}
 table{width:100%;border-collapse:collapse}
@@ -73,7 +77,7 @@ a{color:var(--blu);text-decoration:none}
 #prtip{position:fixed;display:none;z-index:50;pointer-events:none;background:rgba(14,20,27,.96);border:1px solid var(--bd2);border-radius:5px;padding:6px 9px;font-size:11px;line-height:1.55;box-shadow:0 8px 24px rgba(0,0,0,.55)}
 #prc{cursor:crosshair}
 @media(max-width:1180px){.deskmain,.topgrid{grid-template-columns:1fr !important}}
-@media(max-width:980px){.g2,.g3,.deskmain{grid-template-columns:1fr !important}.compcols{columns:1}}
+@media(max-width:980px){.g2,.g3,.deskmain{grid-template-columns:1fr !important}}
 </style>
 </head>
 <body>
@@ -163,14 +167,14 @@ a{color:var(--blu);text-decoration:none}
     <span id="prinfo" class="lbl num"></span>
     <span style="margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <span id="prlast" class="num" style="font-size:13px;color:var(--w)"></span>
-      <span id="prtrend" class="chip" style="background:var(--pan2)"></span>
+)OMEGAD0"
+R"OMEGAD1(      <span id="prtrend" class="chip" style="background:var(--pan2)"></span>
       <span id="prsyms" style="display:flex;gap:4px"></span>
       <span id="prtfs" style="display:flex;gap:4px"></span>
     </span>
   </div>
   <canvas id="prc" height="300" style="margin-top:4px"></canvas>
-)OMEGAD0"
-R"OMEGAD1(  <div class="lbl" style="margin-top:4px">
+  <div class="lbl" style="margin-top:4px">
     <span style="color:var(--blu)">━ PR average</span> ·
     <span style="color:var(--redB)">━ R2  /  ┄ R1 resistance</span> ·
     <span style="color:var(--grnB)">━ S2  /  ┄ S1 support</span> ·
@@ -379,13 +383,13 @@ function tweenNum(id,val,fmtFn){var e=el(id);if(!e)return;
  if(prev===undefined||!window.gsap||Math.abs(val-prev)<0.5){_tw[id]=val;e.textContent=fmtFn(val);return;}
  if(prev===val)return;
  _tw[id]=val;var st={v:prev};
- gsap.to(st,{v:val,duration:0.6,ease:'power2.out',overwrite:true,
+)OMEGAD1"
+R"OMEGAD2( gsap.to(st,{v:val,duration:0.6,ease:'power2.out',overwrite:true,
   onUpdate:function(){e.textContent=fmtFn(st.v);},
   onComplete:function(){e.textContent=fmtFn(val);}});}
 function flashPan(id){var p=el(id);if(!p)return;p.classList.remove('flashg');void p.offsetWidth;p.classList.add('flashg');}
 
-)OMEGAD1"
-R"OMEGAD2(/* ── clock ── */
+/* ── clock ── */
 function tickClk(){var d=new Date();el('clk').textContent=
  String(d.getUTCHours()).padStart(2,'0')+':'+String(d.getUTCMinutes()).padStart(2,'0')+':'+String(d.getUTCSeconds()).padStart(2,'0')+' UTC';
  var mk=el('sessmk');if(mk)mk.style.left=(((d.getUTCHours()+d.getUTCMinutes()/60)/24)*100)+'%';}
@@ -552,11 +556,11 @@ setInterval(pollFires,5000);
    three once-listeners share it, so only the first gesture rings. */
 /* S-2026-07-08c: attempt TRUE autoplay at load -- works when the operator allowlists
    the site (Chrome > Site settings > Sound > Allow). Blocked contexts reject resume()
-   and the first-gesture listeners below remain the fallback. */
+)OMEGAD2"
+R"OMEGAD3(   and the first-gesture listeners below remain the fallback. */
 (function(){if(!SND)return;ensureCtx();if(!ACTX)return;
  var boot=function(){if(!window._bootChimed){window._bootChimed=true;almRing('session-start chime (sound armed — not an alarm)','info',function(){chime([[0,660,0.35],[0.14,880,0.3],[0.28,1320,0.3]]);});}};
-)OMEGAD2"
-R"OMEGAD3( if(ACTX.state==='suspended'){ACTX.resume().then(boot).catch(function(){});} else boot();})();
+ if(ACTX.state==='suspended'){ACTX.resume().then(boot).catch(function(){});} else boot();})();
 ['click','keydown','touchstart'].forEach(function(ev){
  document.addEventListener(ev,function(){if(SND){ensureCtx();
   if(!window._bootChimed){window._bootChimed=true;almRing('session-start chime (sound armed — not an alarm)','info',function(){chime([[0,660,0.35],[0.14,880,0.3],[0.28,1320,0.3]]);});}}},{once:true,capture:true});});
@@ -729,14 +733,14 @@ cxRestPoll(); /* instant first paint while the socket connects */
 
 /* ── position registry fallback (read-API :7781, CORS-open) ── */
 var REGPOS=[];
-function pollReg(){fetch('http://'+location.hostname+':7781/api/v1/omega/positions')
+)OMEGAD3"
+R"OMEGAD4(function pollReg(){fetch('http://'+location.hostname+':7781/api/v1/omega/positions')
  .then(function(r){return r.json();})
  .then(function(j){REGPOS=Array.isArray(j)?j:[];if(lastJ)render(lastJ);})
  .catch(function(){});}
 setInterval(pollReg,30000);pollReg();
 /* S-2026-07-13 operator: tile symbol goes GREEN when TRIGGERED — classic tiles when any
-)OMEGAD3"
-R"OMEGAD4(   engine holds an OPEN position on the symbol (live feed or weekend registry); crypto tiles
+   engine holds an OPEN position on the symbol (live feed or weekend registry); crypto tiles
    when any companion cell for the coin is ARMED / has open sublegs. Reverts when flat. */
 var TK_SYM2KEY={XAUUSD:'gold',US500:'sp','US500.F':'sp',USTEC:'nq','USTEC.F':'nq',NAS100:'nq','DJ30':'dj','DJ30.F':'dj',GER40:'ger30',UK100:'uk100',USOIL:'cl','USOIL.F':'cl',XAGUSD:'xag',EURUSD:'eurusd',GBPUSD:'gbpusd',USDJPY:'usdjpy',AUDUSD:'audusd',NZDUSD:'nzdusd',USDCAD:'usdcad'};
 function markTiles(){
@@ -909,12 +913,12 @@ function render(J){lastJ=J;
   return '<span class="chip" style="background:'+bg+';color:'+fg+'">'+p[0]+' '+t+'</span>';}).join('');
 
  var bids=J.gold_bids||[],asks=J.gold_asks||[];
- var mx=1;bids.concat(asks).forEach(function(l){if(l.s>mx)mx=l.s;});
+)OMEGAD4"
+R"OMEGAD5( var mx=1;bids.concat(asks).forEach(function(l){if(l.s>mx)mx=l.s;});
  var dh='<div style="display:grid;grid-template-columns:1fr 70px 1fr;gap:1px;font-size:11px">';
  for(var i=Math.min(4,asks.length-1);i>=0;i--){var l=asks[i];
   dh+='<span></span><span style="text-align:right;color:var(--redB);padding:0 4px">'+fmt2(l.p)+'</span>'
-)OMEGAD4"
-R"OMEGAD5(   +'<span style="position:relative"><i style="position:absolute;left:0;top:2px;bottom:2px;width:'+(l.s/mx*100)+'%;background:rgba(226,72,77,.25);border-radius:1px"></i><i style="position:relative;color:var(--redB);padding-left:4px;font-style:normal">'+fmt2(l.s,1)+'</i></span>';}
+   +'<span style="position:relative"><i style="position:absolute;left:0;top:2px;bottom:2px;width:'+(l.s/mx*100)+'%;background:rgba(226,72,77,.25);border-radius:1px"></i><i style="position:relative;color:var(--redB);padding-left:4px;font-style:normal">'+fmt2(l.s,1)+'</i></span>';}
  var spd=(asks[0]&&bids[0])?(asks[0].p-bids[0].p):0;
  dh+='<span></span><span style="text-align:right;color:var(--t2);border-top:1px solid var(--bd2);border-bottom:1px solid var(--bd2);padding:1px 4px">'+fmt2(spd)+'</span><span style="border-top:1px solid var(--bd2);border-bottom:1px solid var(--bd2)"></span>';
  for(var i=0;i<Math.min(5,bids.length);i++){var l=bids[i];
@@ -1076,11 +1080,11 @@ function pollTrades(){
         price:safe(t.entry),exitPrice:safe(t.exit),net_pnl:safe(t.realized_usd),exitReason:t.reason||'',
         entryTs:safe(t.entry_ts),exitTs:safe(t.exit_ts)};});
     /* S-19c(2) (operator "STILL THERE FFS" -- bp/PAPER labeling wasn't enough, the ask was REMOVE):
-       companion CLIP rows are already fully itemized per-coin/per-book in CRYPTO MIMIC BOOKS
+)OMEGAD5"
+R"OMEGAD6(       companion CLIP rows are already fully itemized per-coin/per-book in CRYPTO MIMIC BOOKS
        (#cctab, drawCC) -- showing them AGAIN here duplicates that panel inside what reads as the
        real trade-history log. Drop them from LAST-15 entirely; MIMIC-LIVE (real Binance cash) and
-)OMEGAD5"
-R"OMEGAD6(       EDGE (real forward $, isPaperClip()=false for both) still show. */
+       EDGE (real forward $, isPaperClip()=false for both) still show. */
     var cryptoDisp=(res[1]||[]).filter(function(t){return !isPaperClip(t);});
     var all=(res[0]||[]).concat(cryptoDisp).concat(sd).concat(live);
     /* S-2026-07-12 operator: fold the CHIMERA EDGE realized (e.g. TIA-TSMOM +7.65) into the
@@ -1252,14 +1256,14 @@ function drawCC(){
     purely so nothing downstream (drawLedger/drawEquity/updDayPnl/mimic_pnl_completeness_gate)
     silently breaks on a now-undefined global. No DOM element for this panel exists any more. */
  var live=window._cc||{},totbank=0;
- Object.keys(live).forEach(function(t){var s=live[t];if(s)totbank+=ccWbp(s);});
+)OMEGAD6"
+R"OMEGAD7( Object.keys(live).forEach(function(t){var s=live[t];if(s)totbank+=ccWbp(s);});
  window._cctot=totbank;
  if(typeof drawLedger==='function')drawLedger();
  if(typeof drawEquity==='function')drawEquity();
  if(typeof updDayPnl==='function')updDayPnl();/* header ALL-TIME folds crypto too (full pnl) */
 }
-)OMEGAD6"
-R"OMEGAD7(/* per-leg unrealized $ for a real live_mirror hold, marked at the live WS price. null = no
+/* per-leg unrealized $ for a real live_mirror hold, marked at the live WS price. null = no
    price yet (render '—', not $0.00) -- same convention as mirPnl's per-coin sum. */
 function ccrLegPnl(h){
  var px=(window._cpx||{})[h&&h.coin];
@@ -1433,13 +1437,13 @@ function drawXag(){var j=window._xag||null;
    h+='<td class="l">'+esc(r.tier)+'</td><td class="num">'+safe(r.gb_bp)+'</td>'
      +'<td class="num">'+safe(r.clips)+'</td><td class="num">'+safe(r.wins)+'</td>'
      +'<td class="num">'+fmt2(safe(r.pts_real!==undefined?r.pts_real:r.pts),2)+'</td>'
-     +'<td class="num" style="font-weight:600;color:'+(u>0?'var(--grn)':(u<0?'var(--red)':'var(--t2)'))+'">'+fmt$(u)+'</td></tr>';
+)OMEGAD7"
+R"OMEGAD8(     +'<td class="num" style="font-weight:600;color:'+(u>0?'var(--grn)':(u<0?'var(--red)':'var(--t2)'))+'">'+fmt$(u)+'</td></tr>';
    first=false;
   });
  });
  el('xctab').innerHTML=h;
-)OMEGAD7"
-R"OMEGAD8( var tot=safe(j.desk_usd_real!==undefined?j.desk_usd_real:j.desk_usd)+(j.open||[]).reduce(function(s,o){return s+safe(o.upnl_usd_real!==undefined?o.upnl_usd_real:o.upnl_usd);},0);/* REAL column only (S-2026-07-07e); NO backtest number folded in */
+ var tot=safe(j.desk_usd_real!==undefined?j.desk_usd_real:j.desk_usd)+(j.open||[]).reduce(function(s,o){return s+safe(o.upnl_usd_real!==undefined?o.upnl_usd_real:o.upnl_usd);},0);/* REAL column only (S-2026-07-07e); NO backtest number folded in */
  var dcol=(tot>0?'var(--grn)':(tot<0?'var(--red)':'var(--t2)'));
  var open=(j.open||[]),trades=(j.trades||[]);
  var openTxt=open.length?(' · <span style="color:var(--grn)">'+open.length+' open now</span>'):'';
@@ -1602,12 +1606,12 @@ function pollStockMover(){fetch('/api/stockladder_companion').then(function(r){r
  if(j&&(j.names||[]).length)window._sm=j;
  window._smtot=(((window._sm||{}).names)||[]).reduce(function(s,p){return s+safe(p.usd_real);},0);/* S-2026-07-10: ALL-TIME folds REALIZED forward clips ONLY (usd_real). Open-leg unrealized MTM removed from the header -- shadow bigcap-mover ladder legs marking red dragged ALL-TIME as a phantom drop; per-panel DESK still shows uPnL. */
  drawStockMover();
- if(typeof updDayPnl==='function')updDayPnl();if(typeof drawLedger==='function')drawLedger();
+)OMEGAD8"
+R"OMEGAD9( if(typeof updDayPnl==='function')updDayPnl();if(typeof drawLedger==='function')drawLedger();
  }).catch(function(){drawStockMover();});}
 setInterval(pollStockMover,15000);pollStockMover();
 
-)OMEGAD8"
-R"OMEGAD9(/* ── STOCK DIP/TURTLE single-name daily-close LONG book (native C++ · shadow · additive · STANDALONE) ──
+/* ── STOCK DIP/TURTLE single-name daily-close LONG book (native C++ · shadow · additive · STANDALONE) ──
    S-2026-07-15m: stockdipturtle_state.json (total_usd_real, books:[{sym,usd_real,..}]) was persisted +
    servable but NEVER folded into the desk headline nor given a poller/endpoint -> real banked stock
    winners (MU +$484 real, DELL ~$705) displayed as $0 STOCK. Surface it like every other companion book:
@@ -1768,9 +1772,9 @@ function updDayPnl(){var cut=Math.floor(Date.now()/86400000)*86400;var n=0,p=0,t
     mimic_pnl_completeness_gate still sees them, same pattern as ccAll/chimAll. */
  var rdaAll=safe(window._rdatot);/* S-2026-07-11: rdagent stock basket paper P&L, $ (PAPER — display-only, NOT folded S-19g) */
  var bc2All=safe(window._bc2tot);/* S-2026-07-11: BigCap2pct impulse companion REALIZED bank, $ (additive, all-time). Endpoint existed but was orphaned from the fold -> mimic_pnl_completeness_gate now enforces it. */
- var chimAll=safe(window._chimtot);/* S-2026-07-12b: chimera EDGE realized, $ (additive, all-time; engine!~CLIP so no _cctot overlap). Was folded into cls.crypto + eqtot only -- pnl_completeness gate caught the missing updDayPnl term. */
 )OMEGAD9"
-R"OMEGAD10( var sdAll=safe(window._sdtot);/* S-2026-07-15m: StockDip/StockTurtle single-name book REALIZED bank, $ (additive, all-time). Book was persisted+servable but never folded -> real stock winners (MU/DELL) showed $0. Routes to STOCK class below. */
+R"OMEGAD10( var chimAll=safe(window._chimtot);/* S-2026-07-12b: chimera EDGE realized, $ (additive, all-time; engine!~CLIP so no _cctot overlap). Was folded into cls.crypto + eqtot only -- pnl_completeness gate caught the missing updDayPnl term. */
+ var sdAll=safe(window._sdtot);/* S-2026-07-15m: StockDip/StockTurtle single-name book REALIZED bank, $ (additive, all-time). Book was persisted+servable but never folded -> real stock winners (MU/DELL) showed $0. Routes to STOCK class below. */
  var h52All=safe(window._hi52tot);/* S-2026-07-17m: BigCapHi52 portfolio paper P&L (deploy-forward, rdagent-class fold) (PAPER — display-only, NOT folded S-19g). */
  var clvAll=safe(window._clivetot);/* S-2026-07-18r: LIVE mimic mirror REAL Binance realized (cash truth incl fees; live_realized.json). Operator order: the correct live loss number in the PnL. Routes to CRYPTO class below. */
  var pT=p+cToday,totT=tot+cAll+fxAll+gbAll+ixAll+xgAll+uoAll+smAll+flAll+ilAll+bc2All+sdAll+clvAll;/* ccAll+chimAll+rdaAll+h52All (paper) EXCLUDED S-18w/S-19g */
@@ -1919,11 +1923,11 @@ function drawEquity(){var cv=el("eqc");if(!cv)return;/* SHADOW EQUITY panel remo
  ctx.fillStyle=gr;ctx.fill();
  /* glowing equity line + live endpoint dot */
  ctx.save();ctx.shadowColor='#2EBD85';ctx.shadowBlur=6;
- ctx.beginPath();cum.forEach(function(v,i){i?ctx.lineTo(X(i),Y(v)):ctx.moveTo(X(0),Y(v));});
+)OMEGAD10"
+R"OMEGAD11( ctx.beginPath();cum.forEach(function(v,i){i?ctx.lineTo(X(i),Y(v)):ctx.moveTo(X(0),Y(v));});
  ctx.strokeStyle='#2EBD85';ctx.lineWidth=1.6;ctx.lineJoin='round';ctx.stroke();ctx.restore();
  var ex=X(cum.length-1),ey=Y(cum[cum.length-1]);
-)OMEGAD10"
-R"OMEGAD11( ctx.beginPath();ctx.arc(ex,ey,3,0,6.3);ctx.fillStyle='#2EBD85';ctx.fill();
+ ctx.beginPath();ctx.arc(ex,ey,3,0,6.3);ctx.fillStyle='#2EBD85';ctx.fill();
  ctx.beginPath();ctx.arc(ex,ey,6,0,6.3);ctx.strokeStyle='rgba(46,189,133,0.35)';ctx.lineWidth=1.5;ctx.stroke();
  var p2=0;ctx.beginPath();cum.forEach(function(v,i){p2=Math.max(p2,v);var d=v-p2;i?ctx.lineTo(X(i),Y(d)):ctx.moveTo(X(0),Y(d));});
  ctx.strokeStyle='#E2484D';ctx.setLineDash([4,3]);ctx.lineWidth=1;ctx.stroke();ctx.setLineDash([]);
@@ -2097,11 +2101,11 @@ function drawPR(){var cv=el("prc");
   if(v<=0){p.push(null);continue;}
   if(i>0&&bars[i-1][fi]>0&&bars[i-1][fi]!==v)p.push([X(i),Y(bars[i-1][fi])]);
   p.push([X(i),Y(v)]);}return p;}
- function strokeSteps(p,col,wd,dash){ctx.beginPath();var pen=false;p.forEach(function(q){
+)OMEGAD11"
+R"OMEGAD12( function strokeSteps(p,col,wd,dash){ctx.beginPath();var pen=false;p.forEach(function(q){
    if(!q){pen=false;return;}if(pen)ctx.lineTo(q[0],q[1]);else ctx.moveTo(q[0],q[1]);pen=true;});
   ctx.strokeStyle=col;ctx.lineWidth=wd;ctx.setLineDash(dash||[]);ctx.stroke();ctx.setLineDash([]);}
-)OMEGAD11"
-R"OMEGAD12( function cloud(fa,fb,col){var A=spts(fa).filter(Boolean),B=spts(fb).filter(Boolean);
+ function cloud(fa,fb,col){var A=spts(fa).filter(Boolean),B=spts(fb).filter(Boolean);
   if(A.length<2||B.length<2)return;ctx.beginPath();
   A.forEach(function(q,i){i?ctx.lineTo(q[0],q[1]):ctx.moveTo(q[0],q[1]);});
   for(var i=B.length-1;i>=0;i--)ctx.lineTo(B[i][0],B[i][1]);
