@@ -1042,13 +1042,22 @@ function pollTrades(){
       sd.push({book:'stock',engine:b.engine||('StockDip_'+(b.sym||'')),symbol:b.sym||'',side:'long',
         price:safe(t.entry),exitPrice:safe(t.exit),net_pnl:safe(t.usd_real),exitReason:t.reason||'',
         entryTs:safe(t.entry_ts),exitTs:safe(t.exit_ts)});});});
+    /* S-2026-07-19h fix: the comment below always claimed "MIMIC-LIVE (real Binance cash) ...
+       still show" but no code ever turned res[3].trades (the REAL Binance-fill rows from
+       /api/crypto_live_pnl) into LAST-15 rows -- only their total_usd was folded into the header
+       above. Net effect: the ONE real-money book on the whole desk had zero row-level visibility.
+       Flatten them in now, same shape as the other book arrays. */
+    var live=(((res[3]||{}).trades)||[]).map(function(t){
+      return {book:'chimera',engine:'MIMIC-LIVE',symbol:t.sym||'',side:'long',
+        price:safe(t.entry),exitPrice:safe(t.exit),net_pnl:safe(t.realized_usd),exitReason:t.reason||'',
+        entryTs:safe(t.entry_ts),exitTs:safe(t.exit_ts)};});
     /* S-19c(2) (operator "STILL THERE FFS" -- bp/PAPER labeling wasn't enough, the ask was REMOVE):
        companion CLIP rows are already fully itemized per-coin/per-book in CRYPTO MIMIC BOOKS
        (#cctab, drawCC) -- showing them AGAIN here duplicates that panel inside what reads as the
        real trade-history log. Drop them from LAST-15 entirely; MIMIC-LIVE (real Binance cash) and
        EDGE (real forward $, isPaperClip()=false for both) still show. */
     var cryptoDisp=(res[1]||[]).filter(function(t){return !isPaperClip(t);});
-    var all=(res[0]||[]).concat(cryptoDisp).concat(sd);
+    var all=(res[0]||[]).concat(cryptoDisp).concat(sd).concat(live);
     /* S-2026-07-12 operator: fold the CHIMERA EDGE realized (e.g. TIA-TSMOM +7.65) into the
        crypto PnL — it was showing in LAST-15 but never in the total. EDGE trades only
        (engine !~ CLIP) so it's additive to _cctot (the companion-clip book), no double-count.
@@ -1414,9 +1423,8 @@ function drawUsoil(){var j=window._usoil||null;
 function pollFx(){fetch('/api/fx_companion').then(function(r){return r.json();}).then(function(j){
  if(j&&(j.pairs||[]).length)window._fx=j;
  window._fxtot=(((window._fx||{}).pairs)||[]).reduce(function(s,p){return s+safe(p.usd);},0);/* S-2026-07-10: ALL-TIME folds REALIZED forward clips ONLY. Open-leg unrealized MTM removed from the header total -- on shadow ladder books it bounced red/green each mark and read as a phantom "continuous drop" in ALL-TIME (operator: "artifacts showing up / fix the pnl"). Per-panel DESK below still shows live uPnL for monitoring. Supersedes the 2026-07-06 MTM-in-header choice. */
- drawFx();
  if(typeof updDayPnl==='function')updDayPnl();if(typeof drawLedger==='function')drawLedger();
- }).catch(function(){drawFx();});}
+ }).catch(function(){});}
 setInterval(pollFx,15000);pollFx();
 
 /* ── INDEX COMPANIONS (per-symbol <SYM>Pos/<SYM>Neg BE-floor · native C++ · additive, STANDALONE) ──
