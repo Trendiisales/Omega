@@ -1415,8 +1415,8 @@ void OmegaTelemetryServer::run(int port)
                     char* trims[2] = { up, tok };
                     for (int ti = 0; ti < 2; ++ti) {
                         char* s = trims[ti];
-                        size_t n = strlen(s);
-                        while (n && (s[n-1]=='\n' || s[n-1]=='\r' || s[n-1]==' ')) s[--n] = 0;
+                        size_t sl = strlen(s);   // not 'n': hides the L1268 local -> MSVC /WX C4456
+                        while (sl && (s[sl-1]=='\n' || s[sl-1]=='\r' || s[sl-1]==' ')) s[--sl] = 0;
                     }
                     if (up[0] && tok[0]) {
                         char cmd[640];
