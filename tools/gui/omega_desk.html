@@ -1234,9 +1234,13 @@ function drawCC(){var live=window._cc||{};var tags=Object.keys(live);
      S-2026-07-17q: fold is WEIGHTED (ccWbp) — one $ convention with LAST-15/ledger. */
   books.forEach(function(s){coinbank+=ccWbp(s);if(s.armed||(s.sublegs&&s.sublegs.length))coinact++;});
   if(coinact)ntrading++;
-  /* S-19c(3) (operator "it still shows 130 ffs" -- repeated 4x same session, correctly-bp-labelled
-     wasn't enough): no bank NUMBER anywhere in this panel any more, just whether it's banked. */
-  var cb=(coinbank!==0)?'<span class="d" style="font-size:9px">banked</span>':'<span class="d">&mdash;</span>';
+  /* S-19c(3) had hidden this to a word-only "banked" flag (operator "it still shows 130 ffs",
+     4x same session) -- REVERSED same-day (operator: "what does banked mean if it is an amount
+     then we need to put this in"): show the bp figure again, bp-labelled ("NOT dollars" caption
+     lives on ccinfo below), just no raw/mult breakdown (ccMult was retired, one weighted figure). */
+  var cb=(coinbank!==0)
+   ?'<span style="color:'+(coinbank>0?'var(--grn)':'var(--red)')+'">'+fmt2(coinbank,1)+' bp</span>'
+   :'<span class="d">0.0 bp</span>';
   h+='<tr><td class="l" style="font-weight:600">'+esc(sy)+'</td>'
     +'<td class="l d" style="font-size:9px">'+books.length+' book'+(books.length>1?'s':'')+'</td>'
     +'<td class="l">'+(coinact?'<span class="g" style="font-weight:600">'+coinact+' TRADING</span>':'<span class="d">idle</span>')+'</td>'
@@ -1245,8 +1249,8 @@ function drawCC(){var live=window._cc||{};var tags=Object.keys(live);
    nbooks++;totclips+=safe(s.clips);totbank+=ccWbp(s);if(s.armed)narm++;/* BE-floor: no mimic leg counts negative (see above); WEIGHTED fold (S-17q one-convention) */
    var act=!!(s.armed||(s.sublegs&&s.sublegs.length));
    var pk=s.peak_mfe_pct===undefined?'<span class="d">—</span>':fmt2(s.peak_mfe_pct,2);
-   var bkv=ccWbp(s);/* WEIGHTED desk bank, BE-floor clamped — folded into totals only, never RENDERED (S-19c(3)) */
-   var bk=bkv!==0?'<span class="d" style="font-size:9px">banked</span>':'<span class="d">&mdash;</span>';
+   var bkv=ccWbp(s);/* WEIGHTED desk bank, BE-floor clamped — same $ as this book's LAST-15 rows */
+   var bk='<span style="color:'+(bkv>0?'var(--grn)':(bkv<0?'var(--red)':'var(--t2)'))+'">'+fmt2(bkv,1)+' bp</span>';
    h+='<tr'+(act?'':' style="opacity:.75"')+'><td class="l d" style="border-left:2px solid '+(act?'var(--grn)':'var(--t2)')+';padding-left:10px">&#8627; '+esc(s.tag||'?')+'</td>'
      +'<td class="l d" style="font-size:9px">'+ccKind(s)+'</td>'
      +'<td class="l">'+ccState(s)+'</td><td class="num">'+pk+'</td>'
