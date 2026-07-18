@@ -500,7 +500,11 @@ function pollFires(){var now=Date.now();
     nothing. Same seen-key + closed-count pattern, keyed off _cc's tag->{sublegs,clips}. */
  var cc=window._cc||{};
  for(var ct in cc){var p=cc[ct];if(!p)continue;
-  (p.sublegs||[]).forEach(function(sl){var k='crypto|'+ct+'|'+(sl.id||'leg');
+  /* S-18aj FIX: key on ARMED, not subleg existence — idle books ALWAYS emit their subleg
+     rows, so every key baselined at page load and an idle->ARMED transition created no new
+     key -> COMP's 5-leg fire rang NOTHING. Armed = open BE-floored book = the entry event. */
+  (p.sublegs||[]).forEach(function(sl){if(!sl.armed&&!p.armed)return;
+   var k='crypto|'+ct+'|'+(sl.id||'leg')+'|armed';
    if(!(k in window._seenComp)||(now-window._seenComp[k])>90000){if(!window._compBase)openWhy.push('crypto '+(p.sym||'')+' '+String(p.cell||ct));}
    window._seenComp[k]=now;});
   var cn=safe(p.clips),cp=window._compClosedN['crypto|'+ct];
@@ -589,7 +593,7 @@ var SEED_LAST={gold:4187.30,sp:7483.24,nq:29329.21,nas:29329.21,dj:52900.07,ger3
  /* crypto legs flow into the SAME wrapping strip right after the classic tiles */
  var h2='<div style="padding:6px 10px;border-right:1px solid var(--bd);display:flex;align-items:center;color:var(--amb);font-size:11px;font-weight:600;min-width:34px">₿</div>';
  CTKS.forEach(function(t){
- h2+='<div style="padding:6px 12px;border-right:1px solid var(--bd);min-width:104px">'
+ h2+='<div id="ctkbox_'+t[0]+'" style="padding:6px 12px;border-right:1px solid var(--bd);min-width:104px">'
   +'<div class="lbl" id="ctkl_'+t[0]+'">'+t[0]+'</div><div class="num" id="ctk_'+t[0]+'" style="font-size:13px;color:var(--w)">—</div>'
   +'<div class="lbl num" id="ctkp_'+t[0]+'"></div>'
   +'<div class="bar" style="height:4px;margin-top:3px"><i id="ctkr_'+t[0]+'" style="background:var(--blu);width:0"></i></div>'
@@ -621,9 +625,18 @@ function cxApply(sym,px,chg,hi,lo){var t=CTKS.find(function(x){return x[1]===sym
 window._proxHas={};
 function ccProx(){var live=window._cc||{},best={};
  Object.keys(live).forEach(function(tg){var p=live[tg];
-  if(!p||!p.sym||!p.prox_valid||p.retired)return;
+  if(!p||!p.sym||p.retired)return;
+  /* S-18aj: TRADING outranks everything — an armed leg is an OPEN BE-floored book; the tile
+     must show the BOOK state, not a proximity ratio or the 24h% (COMP fired 5 legs while its
+     tile sat on a red 24h number). */
+  if(p.armed){var b0=best[p.sym];
+   if(b0&&b0.trading){b0.n++;b0.pk=Math.max(b0.pk,safe(p.peak_mfe_pct));}
+   else best[p.sym]={trading:true,n:1,pk:safe(p.peak_mfe_pct)};
+   return;}
+  if(!p.prox_valid)return;
   var thr=safe(p.det_thr_pct);if(!(thr>0))return;
   var j=safe(p.win_move_pct),b=best[p.sym];
+  if(b&&b.trading)return;
   if(p.win_open){
    if(!b||!b.open||j>b.j)best[p.sym]={open:true,j:j,thr:thr,conf:safe(p.confirm_dist_bp)};
   }else if(!b||(!b.open&&j/thr>b.j/b.thr)){
@@ -631,11 +644,21 @@ function ccProx(){var live=window._cc||{},best={};
   }});
  return best;}
 function drawProx(){var best=ccProx();var has={};
- CTKS.forEach(function(t){var b=best[t[0]],pe=el('ctkp_'+t[0]),r=el('ctkr_'+t[0]);
+ CTKS.forEach(function(t){var b=best[t[0]],pe=el('ctkp_'+t[0]),r=el('ctkr_'+t[0]),bx=el('ctkbox_'+t[0]);
   if(!pe||!r)return;
+  /* S-18aj: tile box lights per state (operator: "why is it not lit up better") — reset first */
+  if(bx){bx.style.outline='';bx.style.outlineOffset='';bx.style.background='';bx.style.boxShadow='';}
   if(!b)return;/* no self-detect cell -> 24h% fallback keeps the slot */
   has[t[0]]=1;
+  if(b.trading){
+   if(bx){bx.style.outline='1px solid var(--grnB)';bx.style.outlineOffset='-1px';
+    bx.style.background='rgba(46,204,113,.12)';
+    bx.style.boxShadow='inset 0 0 12px rgba(46,204,113,.45), 0 0 10px rgba(46,204,113,.35)';}
+   pe.innerHTML='<span style="color:var(--grnB);font-weight:700">&#9679; TRADING '+b.n+' &nbsp;pk +'+fmt2(b.pk,2)+'%</span>';
+   r.style.width='100%';r.style.background='var(--grnB)';return;}
   if(b.open){
+   if(bx){bx.style.outline='1px solid var(--amb)';bx.style.outlineOffset='-1px';
+    bx.style.background='rgba(240,180,41,.08)';}
    pe.innerHTML='<span style="color:var(--grn);font-weight:600">WIN +'+fmt2(b.j,2)+'%</span>'
     +(b.conf>0?'<span style="color:var(--amb)"> conf&minus;'+fmt2(b.conf,0)+'bp</span>':'');
    r.style.width='100%';r.style.background='var(--grn)';return;}
