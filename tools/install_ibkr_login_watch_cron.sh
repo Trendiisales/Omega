@@ -1,10 +1,12 @@
 #!/bin/bash
 # install_ibkr_login_watch_cron.sh — idempotent marker-line crontab install for
-# tools/ibkr_login_watch.sh (every 10 min). Pattern per feedback-crontab-edit-via-script:
+# tools/ibkr_login_watch.sh (EVERY 1 MIN since S-2026-07-18z: operator requires <=3-min
+# detection; 3-strike in the watch keeps the false-alarm behavior of the old 10-min/2-strike).
+# Pattern per feedback-crontab-edit-via-script:
 # backup first, marker-managed line, rerun-safe. Remove: `$0 remove`.
 set -euo pipefail
 MARKER="# OMEGA-IBKR-LOGIN-WATCH"
-LINE="*/10 * * * * /bin/bash /Users/jo/Omega/tools/ibkr_login_watch.sh >> /tmp/ibkr_login_watch_cron.log 2>&1 $MARKER"
+LINE="* * * * * /bin/bash /Users/jo/Omega/tools/ibkr_login_watch.sh >> /tmp/ibkr_login_watch_cron.log 2>&1 $MARKER"
 BAK="/tmp/ct.bak.$(date +%s)"
 crontab -l 2>/dev/null > "$BAK" || true
 echo "[install] crontab backed up to $BAK"
