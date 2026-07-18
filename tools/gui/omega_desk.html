@@ -498,14 +498,15 @@ function pollFires(){var now=Date.now();
     the ONE family MISSING from this watcher — __compBooks covers gold/idx/fx/xag/usoil/stk
     but never _cc (josgp1 companion state), so a crypto mimic leg OPEN or banked clip rang
     nothing. Same seen-key + closed-count pattern, keyed off _cc's tag->{sublegs,clips}. */
- var cc=window._cc||{};
+ var cc=window._cc||{};var loadArmed={};
  for(var ct in cc){var p=cc[ct];if(!p)continue;
   /* S-18aj FIX: key on ARMED, not subleg existence — idle books ALWAYS emit their subleg
      rows, so every key baselined at page load and an idle->ARMED transition created no new
      key -> COMP's 5-leg fire rang NOTHING. Armed = open BE-floored book = the entry event. */
   (p.sublegs||[]).forEach(function(sl){if(!sl.armed&&!p.armed)return;
    var k='crypto|'+ct+'|'+(sl.id||'leg')+'|armed';
-   if(!(k in window._seenComp)||(now-window._seenComp[k])>90000){if(!window._compBase)openWhy.push('crypto '+(p.sym||'')+' '+String(p.cell||ct));}
+   if(!(k in window._seenComp)||(now-window._seenComp[k])>90000){if(!window._compBase)openWhy.push('crypto '+(p.sym||'')+' '+String(p.cell||ct));
+    else loadArmed[p.sym||'?']=(loadArmed[p.sym||'?']||0)+1;}
    window._seenComp[k]=now;});
   var cn=safe(p.clips),cp=window._compClosedN['crypto|'+ct];
   if(cp!==undefined&&cn>cp&&!window._compBase)bankWhy.push('crypto '+(p.sym||'')+' +'+(cn-cp)+' clip(s)');
@@ -514,6 +515,11 @@ function pollFires(){var now=Date.now();
  if(!window._compBase){
   if(openWhy.length)almRing('companion open: '+openWhy.slice(0,4).join(', ')+(openWhy.length>4?' +'+(openWhy.length-4):''),'open',entryBell);
   else if(bankWhy.length)almRing('companion clip banked: '+bankWhy.join(', '),'win',winBell);}
+ /* S-18ak (operator: "there was no sound"): a fire that happens BEFORE page load was baselined
+    SILENTLY — reload after a fire never rang. One-shot announce at load when books are already
+    TRADING, so opening the desk mid-trade is audible + logged. */
+ else{var la=Object.keys(loadArmed);
+  if(la.length)almRing('TRADING at page load: '+la.map(function(s){return s+' ×'+loadArmed[s];}).join(', '),'open',entryBell);}
  window._compBase=false;}
 setInterval(pollFires,5000);
 /* S-2026-07-08c pollCloseBells REMOVED S-2026-07-18c: it read window._compClosed as an ARRAY
@@ -647,15 +653,19 @@ function drawProx(){var best=ccProx();var has={};
  CTKS.forEach(function(t){var b=best[t[0]],pe=el('ctkp_'+t[0]),r=el('ctkr_'+t[0]),bx=el('ctkbox_'+t[0]);
   if(!pe||!r)return;
   /* S-18aj: tile box lights per state (operator: "why is it not lit up better") — reset first */
-  if(bx){bx.style.outline='';bx.style.outlineOffset='';bx.style.background='';bx.style.boxShadow='';}
+  if(bx){bx.style.outline='';bx.style.outlineOffset='';bx.style.background='';bx.style.boxShadow='';bx.style.animation='';}
   if(!b)return;/* no self-detect cell -> 24h% fallback keeps the slot */
   has[t[0]]=1;
   if(b.trading){
-   if(bx){bx.style.outline='1px solid var(--grnB)';bx.style.outlineOffset='-1px';
-    bx.style.background='rgba(46,204,113,.12)';
-    bx.style.boxShadow='inset 0 0 12px rgba(46,204,113,.45), 0 0 10px rgba(46,204,113,.35)';}
-   pe.innerHTML='<span style="color:var(--grnB);font-weight:700">&#9679; TRADING '+b.n+' &nbsp;pk +'+fmt2(b.pk,2)+'%</span>';
-   r.style.width='100%';r.style.background='var(--grnB)';return;}
+   /* S-18ak: TRUE NEON (operator: aj's 1px green outline drowned among ~20 amber WIN tiles —
+      "still do not see the neon highlight"). Same #39ff14 + neonPulse as the header beacon. */
+   if(bx){bx.style.outline='2px solid #39ff14';bx.style.outlineOffset='-2px';
+    bx.style.background='rgba(57,255,20,.14)';
+    bx.style.boxShadow='inset 0 0 14px rgba(57,255,20,.5), 0 0 12px #39ff14, 0 0 26px rgba(57,255,20,.55)';
+    bx.style.animation='neonPulse 1.2s ease-in-out infinite';}
+   /* label neon owned by markTiles (single owner — both run at 1s, dual writers flicker) */
+   pe.innerHTML='<span style="color:#39ff14;font-weight:700;text-shadow:0 0 8px #39ff14">&#9679; TRADING '+b.n+' &nbsp;pk +'+fmt2(b.pk,2)+'%</span>';
+   r.style.width='100%';r.style.background='#39ff14';return;}
   if(b.open){
    if(bx){bx.style.outline='1px solid var(--amb)';bx.style.outlineOffset='-1px';
     bx.style.background='rgba(240,180,41,.08)';}
@@ -700,8 +710,12 @@ function markTiles(){
  (REGPOS||[]).forEach(function(t){var k=TK_SYM2KEY[String(t.symbol||'').toUpperCase()];if(k)act[k]=1;});
  TKS.forEach(function(t){var e=el('tkl_'+t[0]);if(e){e.style.color=act[t[0]]?'var(--grn)':'';e.style.fontWeight=act[t[0]]?'700':'';}});
  var ca={},live=window._cc||{};
- Object.keys(live).forEach(function(tag){var p=live[tag];if(p&&p.sym&&(p.armed||(p.sublegs&&p.sublegs.length>0)))ca[p.sym]=1;});
- CTKS.forEach(function(t){var e=el('ctkl_'+t[0]);if(e){e.style.color=ca[t[0]]?'var(--grn)':'';e.style.fontWeight=ca[t[0]]?'700':'';}});
+ /* S-18ak: ARMED only (idle books can emit subleg rows — subleg existence lit idle coins);
+    armed = open BE-floored book = TRADING. Label goes NEON to match the drawProx box glow. */
+ Object.keys(live).forEach(function(tag){var p=live[tag];
+  if(p&&p.sym&&(p.armed||(p.sublegs||[]).some(function(s){return s.armed;})))ca[p.sym]=1;});
+ CTKS.forEach(function(t){var e=el('ctkl_'+t[0]);if(e){e.style.color=ca[t[0]]?'#39ff14':'';
+  e.style.textShadow=ca[t[0]]?'0 0 8px #39ff14':'';e.style.fontWeight=ca[t[0]]?'700':'';}});
 }
 setInterval(markTiles,1000);
 
