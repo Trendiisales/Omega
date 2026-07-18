@@ -18,7 +18,7 @@ Exit codes:  0 = all fresh   1 = a LIVE feed stale (critical)   2 = only researc
 Run:  python3 tools/feeds_selftest.py   [--quiet]
 """
 from __future__ import annotations
-import base64, csv, datetime as dt, json, os, subprocess, sys
+import base64, csv, datetime as dt, json, os, re, subprocess, sys
 from pathlib import Path
 
 HOME = Path.home()
@@ -66,6 +66,32 @@ TASK_RESULT_PASS_CODES = {0, 267009}
 # NextRunTime may legitimately sit slightly in the past between the trigger firing and the
 # scheduler recomputing it, or while a run is in flight — allow this much slack before RED.
 TASK_OVERDUE_SLACK_MIN = 120
+
+# S-2026-07-18ah: WATCHDOG RELAUNCH-LOOP detector (operator ask after the 07-18 incident:
+# gateway_watchdog probed paper port 4002 while the gateway ran LIVE on 4001, so every
+# 5-min tick relaunched IBC against a healthy session for ~20min with NO alarm — the
+# operator saw it via the RDP window, not a banner). Class rule (chimera restart-loop
+# S-18ad precedent): any watchdog/task that retries N× consecutively must ALARM, not just
+# log. Healthy watchdog ticks log NOTHING, so a dead loop's WARN burst sits at the log
+# tail forever — detection therefore needs BOTH density AND recency: >= loop_n alarm
+# lines inside window_min AND the newest one <= active_min old (2-3 tick intervals)
+# => loop STILL RUNNING => RED. An old burst (e.g. the fixed 06:1x-06:3xZ spam) stays
+# PASS with a note. The watchdog task's own LastTaskResult is checked on the same row
+# (during a loop every tick exits 1; MISSING task = watchdog not installed = RED).
+# All time math vs the VPS's OWN UtcNow fetched in the same ssh call (skew-free).
+# Extend this manifest for any future *_watchdog that logs alarm lines with a leading
+# ISO-8601 UTC stamp (yyyy-MM-ddTHH:mm:ssZ).
+WATCHDOG_LOOP_CHECKS = [
+    {
+        "task": "IbkrGateway",
+        "log": r"C:\Omega\bracket-bot\logs\gateway_watchdog.log",
+        # WARN: relaunched but port never came up; ERROR: IBC missing / launch failed.
+        "alarm_re": r"\b(?:WARN|ERROR):",
+        "loop_n": 3,        # >= this many alarm ticks ...
+        "window_min": 30,   # ... inside this window = loop density
+        "active_min": 12,   # newest alarm at most this old = loop STILL RUNNING
+    },
+]
 
 
 def _easter(year: int) -> dt.date:
@@ -582,6 +608,100 @@ def vps_feed_task_health() -> list[tuple[str, str, str]]:
     return out
 
 
+def vps_watchdog_loop_health() -> list[tuple[str, str, str]]:
+    """ONE `ssh omega-new` call. For each WATCHDOG_LOOP_CHECKS entry, returns
+    (task, status, detail). REDs on:
+      1. watchdog task MISSING — watchdog not installed;
+      2. LastTaskResult nonzero (and not running) — last watchdog tick errored
+         (during a relaunch loop every tick exits 1, so this fires too);
+      3. RELAUNCH LOOP ACTIVE — >= loop_n WARN:/ERROR: lines within window_min
+         AND newest <= active_min old. Density alone is NOT enough: healthy ticks
+         log nothing, so a long-dead loop's burst sits at the tail forever — the
+         recency arm keeps that a PASS (with history note) instead of a stuck RED.
+    Ages computed against the VPS's own UtcNow from the same ssh call."""
+    ps = "$u=[DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ');Write-Output ('NOW'+[char]9+$u);"
+    for c in WATCHDOG_LOOP_CHECKS:
+        t = c["task"]
+        ps += (
+            f"$t=Get-ScheduledTask -TaskName '{t}' -ErrorAction SilentlyContinue;"
+            f"if($null-eq$t){{Write-Output ('TASK'+[char]9+'{t}'+[char]9+'MISSING')}}"
+            f"else{{$i=Get-ScheduledTaskInfo -TaskName '{t}' -ErrorAction SilentlyContinue;"
+            f"Write-Output ('TASK'+[char]9+'{t}'+[char]9+[string]$i.LastTaskResult)}};"
+            f"Get-Content '{c['log']}' -Tail 40 -ErrorAction SilentlyContinue|"
+            f"ForEach-Object {{Write-Output ('LOG'+[char]9+'{t}'+[char]9+$_)}};"
+        )
+    # rc must reflect ssh transport only -- a suppressed cmdlet error must not mask
+    # the parsed output (missing task/log verdicts come from the TASK/LOG lines).
+    ps += "exit 0;"
+    # -EncodedCommand (UTF-16LE base64): the log-relay ForEach uses | pipes that
+    # ssh->cmd.exe would otherwise split out of the powershell string (rc=255).
+    enc = base64.b64encode(ps.encode("utf-16-le")).decode()
+    try:
+        r = subprocess.run(
+            ["ssh", VPS_HOST, "powershell", "-NoProfile", "-EncodedCommand", enc],
+            capture_output=True, text=True, timeout=45,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return [("watchdog-loops", "RED", f"ssh {VPS_HOST} failed -- watchdog loop states unverifiable")]
+    if r.returncode != 0:
+        return [("watchdog-loops", "RED", f"ssh {VPS_HOST} rc={r.returncode} -- watchdog loop states unverifiable")]
+    vps_now: dt.datetime | None = None
+    task_rc: dict[str, str] = {}
+    log_lines: dict[str, list[str]] = {}
+    for ln in r.stdout.splitlines():
+        parts = ln.rstrip("\r\n").split("\t", 2)
+        if parts[0] == "NOW" and len(parts) >= 2:
+            try:
+                vps_now = dt.datetime.strptime(parts[1].strip(), "%Y-%m-%dT%H:%M:%SZ")
+            except ValueError:
+                pass
+        elif parts[0] == "TASK" and len(parts) >= 3:
+            task_rc[parts[1]] = parts[2].strip()
+        elif parts[0] == "LOG" and len(parts) >= 3:
+            log_lines.setdefault(parts[1], []).append(parts[2])
+    out: list[tuple[str, str, str]] = []
+    for c in WATCHDOG_LOOP_CHECKS:
+        t = c["task"]
+        rc_s = task_rc.get(t)
+        if rc_s is None:
+            out.append((t, "RED", "no task state returned -- watchdog unverifiable"))
+            continue
+        if rc_s == "MISSING":
+            out.append((t, "RED", f"watchdog task MISSING on {VPS_HOST} -- nothing keeps the gateway alive"))
+            continue
+        try:
+            rc = int(rc_s)
+        except ValueError:
+            rc = 0
+        if rc not in TASK_RESULT_PASS_CODES:
+            out.append((t, "RED", f"watchdog last tick FAILED (LastTaskResult={rc_s}) -- relaunch loop or broken watchdog; read {c['log']}"))
+            continue
+        if vps_now is None:
+            out.append((t, "RED", "VPS clock line unparseable -- loop recency unverifiable"))
+            continue
+        alarm_re = re.compile(c["alarm_re"])
+        alarms: list[dt.datetime] = []
+        for line in log_lines.get(t, []):
+            if not alarm_re.search(line):
+                continue
+            try:
+                ts = dt.datetime.strptime(line[:20], "%Y-%m-%dT%H:%M:%SZ")
+            except ValueError:
+                continue
+            alarms.append(ts)
+        if not alarms:
+            out.append((t, "PASS", f"rc={rc_s}, log tail clean (no WARN/ERROR)"))
+            continue
+        newest = max(alarms)
+        newest_age = (vps_now - newest).total_seconds() / 60.0
+        in_window = [a for a in alarms if (vps_now - a).total_seconds() / 60.0 <= c["window_min"]]
+        if len(in_window) >= c["loop_n"] and newest_age <= c["active_min"]:
+            out.append((t, "RED", f"RELAUNCH LOOP ACTIVE: {len(in_window)} alarm ticks in {c['window_min']}min, newest {newest_age:.0f}min ago -- watchdog is fighting a healthy/broken service; read {c['log']}"))
+        else:
+            out.append((t, "PASS", f"rc={rc_s}, no active loop (last alarm {newest_age/60:.1f}h ago, {len(in_window)} in {c['window_min']}min window)"))
+    return out
+
+
 def main() -> int:
     quiet = "--quiet" in sys.argv
     today = dt.date.today()
@@ -657,6 +777,13 @@ def main() -> int:
         if _tstat != "PASS":
             live_red += 1
 
+    # ── Watchdog relaunch-loop detector (S-2026-07-18ah, operator ask) ─────────────
+    # Runs every day incl. weekend: the 07-18 IBC relaunch loop fired on a Saturday.
+    wdog_rows = vps_watchdog_loop_health()
+    for _wname, _wstat, _wd in wdog_rows:
+        if _wstat != "PASS":
+            live_red += 1
+
     if not quiet:
         verdict = "RED — LIVE FEED STALE" if live_red else ("AMBER — research stale" if res_red else "GREEN — all feeds fresh")
         mark = {"GREEN": "GREEN", "AMBER": "AMBER", "RED": "RED"}
@@ -675,6 +802,8 @@ def main() -> int:
         print(f"  {stock_row[0]:7} [vps-stock] {'stock_daily_book':24} {stock_row[1]}")
         for tname, tstat, tdetail in task_rows:
             print(f"  {tstat:7} [vps-task ] {tname:24} {tdetail}")
+        for wname, wstat, wdetail in wdog_rows:
+            print(f"  {wstat:7} [vps-wdog ] {wname:24} {wdetail}")
         if live_red:
             print("  -> A LIVE feed is stale: fix the feeder BEFORE trusting any signal/telemetry.")
         elif res_red:
