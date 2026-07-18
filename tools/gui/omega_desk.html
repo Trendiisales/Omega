@@ -489,6 +489,18 @@ function pollFires(){var now=Date.now();
   var nc=__compClosed(j),pc=window._compClosedN[bk[0]];
   if(pc!==undefined&&nc>pc&&!window._compBase)bankWhy.push(bk[0]+' +'+(nc-pc)+' clip(s)');
   window._compClosedN[bk[0]]=nc;});
+ /* S-2026-07-18ac (operator: "confirm sound is on for trades entering?"): crypto books were
+    the ONE family MISSING from this watcher — __compBooks covers gold/idx/fx/xag/usoil/stk
+    but never _cc (josgp1 companion state), so a crypto mimic leg OPEN or banked clip rang
+    nothing. Same seen-key + closed-count pattern, keyed off _cc's tag->{sublegs,clips}. */
+ var cc=window._cc||{};
+ for(var ct in cc){var p=cc[ct];if(!p)continue;
+  (p.sublegs||[]).forEach(function(sl){var k='crypto|'+ct+'|'+(sl.id||'leg');
+   if(!(k in window._seenComp)||(now-window._seenComp[k])>90000){if(!window._compBase)openWhy.push('crypto '+(p.sym||'')+' '+String(p.cell||ct));}
+   window._seenComp[k]=now;});
+  var cn=safe(p.clips),cp=window._compClosedN['crypto|'+ct];
+  if(cp!==undefined&&cn>cp&&!window._compBase)bankWhy.push('crypto '+(p.sym||'')+' +'+(cn-cp)+' clip(s)');
+  window._compClosedN['crypto|'+ct]=cn;}
  for(var k in window._seenComp){if(now-window._seenComp[k]>600000)delete window._seenComp[k];}
  if(!window._compBase){
   if(openWhy.length)almRing('companion open: '+openWhy.slice(0,4).join(', ')+(openWhy.length>4?' +'+(openWhy.length-4):''),'open',entryBell);
