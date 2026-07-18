@@ -1056,6 +1056,13 @@ function pollTrades(){
        REVERSAL_CLIP/FLOOR_TRAIL_CLIP/PREBE_CUT/REVERSAL_CUT/ENGINE_EXIT). EDGE reasons
        (TP/SL/TIMEOUT/TRAIL/CORE_EXIT/REBAL...) match neither, so EDGE rows still count. */
     window._chimtot=(res[1]||[]).reduce(function(s,t){var e=(t.engine||''),xr=(t.exitReason||'');return (/CLIP|MIMIC-LIVE/i.test(e)||/-[TSLJ]\d+$/.test(e)||/CLIP|CUT|ENGINE_EXIT/i.test(xr))?s:s+safe(t.net_pnl!=null?t.net_pnl:t.pnl);},0);/* MIMIC-LIVE rows excluded: their cash realized folds via _clivetot (S-2026-07-18r), rows here are display-only */
+    /* S-19c (operator "COMP-COMP...36.35" recurrence #3): companion CLIP rows (banked in _cctot as
+       PAPER bp, S-19a/19b) render a bare number in this table with no unit -- reads as real $ next to
+       genuine $ rows (OMEGA/stock/EDGE/MIMIC-LIVE). isPaperClip() flags them for a 'bp' + PAPER suffix
+       in the pnl cell below. MIMIC-LIVE is excluded here -- that's real Binance cash (_clivetot), not PAPER. */
+    function isPaperClip(t){var e=(t.engine||''),xr=(t.exitReason||'');
+      if(/MIMIC-LIVE/i.test(e))return false;
+      return /CLIP/i.test(e)||/-[TSLJ]\d+$/.test(e)||/CLIP|CUT|ENGINE_EXIT/i.test(xr);}
     if(typeof updDayPnl==='function')updDayPnl();
     all.forEach(function(t){ if(!t.exitTs && t.exit_ts_utc){ var d=Date.parse((t.exit_ts_utc||'').replace(' UTC','Z').replace(' ','T')); if(!isNaN(d))t.exitTs=d/1000; } });
     all.sort(function(a,b){return (b.exitTs||0)-(a.exitTs||0);});
@@ -1073,6 +1080,7 @@ function pollTrades(){
     var rows=top.map(function(t){
       var p=safe(t.net_pnl!=null?t.net_pnl:t.pnl);
       var col=p>0?'var(--grn)':(p<0?'var(--red)':'var(--t2)');
+      var paper=(t.book==='crypto'||t.book==='chimera')&&isPaperClip(t);
       var when=t.exit_ts_utc?String(t.exit_ts_utc).replace(' UTC',''):fmtTs(t.exitTs);
       var isMim=/mimic/i.test(t.engine||'');
       /* S-2026-07-15s (operator "shown in the correct box"): name the ACTUAL stock sub-book, not a
@@ -1088,7 +1096,7 @@ function pollTrades(){
       var bk=ind+tag+esc(t.engine||'')+(isMim?' <span class="d" style="font-size:9px">mimic</span>':'');
       return '<tr><td class="l">'+esc(when)+'</td><td class="l">'+bk+'</td><td class="l">'+esc(t.symbol||'')+'</td><td>'+esc(t.side||'')+
         '</td><td class="num">'+fmt2(safe(t.price),4)+'</td><td class="num">'+fmt2(safe(t.exitPrice),4)+
-        '</td><td class="num" style="color:'+col+'">'+fmt2(p,2)+'</td><td class="l d">'+esc(t.exitReason||'')+'</td></tr>';
+        '</td><td class="num" style="color:'+col+'">'+fmt2(p,2)+(paper?'<span class="d" style="font-size:9px"> bp PAPER</span>':'')+'</td><td class="l d">'+esc(t.exitReason||'')+'</td></tr>';
     }).join('');
     el.innerHTML=hdr+rows;
   }).catch(function(){});
@@ -1801,46 +1809,17 @@ function compClipRows(){var cl=window._compClosed||[];if(!cl.length)return '';
    +'<td class="l d" colspan="2" style="font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:170px" title="'+esc((d.eng||'')+' '+(d.side||'')+' @ '+(d.entry||''))+'">'+esc((d.eng||'').replace(/Engine$/,''))+' · '+esc(d.reason||'')+'</td>'
    +'<td class="num '+c+'" style="font-size:10px">'+fmt$(p)+'</td><td colspan="2" class="l d" style="font-size:10px">'+esc(d.book||'')+'</td></tr>';}).join('');
  return '<tr><td class="l d" colspan="7" style="padding-top:6px">companion clips — recent closes (paper, additive; why COMP-BANK moved)</td></tr>'+rows;}
-/* ── crypto companion per-symbol itemization for the ENGINE LEDGER (S-2026-07-17p, q) ──
-   Operator: every crypto symbol with mimic/companion books appears in the ledger — a
-   SYMBOL row with that symbol's TOTAL, then one ↳ sub-row per book named mimic1, mimic2, ...
-   (count PER SYMBOL, operator S-17q order; tag kept as a dim label so identity survives).
-   DISPLAY-ONLY itemization: the totals already fold ONCE via _cctot (the "crypto" term in
-   the footer + ALL-TIME headline) — these rows explain that fold, they do NOT add to it.
-   Per-book $ reuses the drawCC fold math EXACTLY — bpUsd(ccWbp) = WEIGHTED bank_bp_real_w,
-   BE-floor clamp included — so Σ(sub-rows) == Σ(symbol rows) == the CRYPTO companion total
-   == this book's LAST-15 desk-$ (one convention; the 260-vs-65 split is dead). Books with
-   0 clips still render (operator wants visibility). Real forward banks only — the state
-   file is forward-only, no backtest/replay rows ([[feedback-no-backtest-in-live-gui]]).
-   Reads window._cc (sticky pollCC overlay); drawCC re-triggers drawLedger, stays in lockstep. */
-function cryptoLedgerRows(){var live=window._cc||{};var tags=Object.keys(live);if(!tags.length)return '';
- var bySym={};tags.forEach(function(t){var p=live[t];if(!p)return;
-  var sy=p.sym||String(p.tag||t).split('-')[0]||'?';(bySym[sy]=bySym[sy]||[]).push(p);});
- var syms=Object.keys(bySym);if(!syms.length)return '';
- /* S-19b: bp-only, NOT bpUsd -- a "$" figure here (COMP +$36/+$130 class) read as real money to the
-    operator even PAPER-labelled; see ccinfo comment above. */
- var tot={};syms.forEach(function(sy){var s=0;bySym[sy].forEach(function(p){s+=ccWbp(p);});tot[sy]=s;});
- syms.sort(function(a,b){return Math.abs(tot[b])-Math.abs(tot[a])||a.localeCompare(b);});/* |total| desc */
- var h='<tr><td class="l d" colspan="7" style="padding-top:6px">crypto companion/mimic books — per symbol (PAPER shadow bp, display-only — NOT $, NOT in PnL/Σ, S-18w)</td></tr>';
- syms.forEach(function(sy){var books=bySym[sy].sort(function(a,b){return String(a.tag).localeCompare(String(b.tag));});
-  var tc=tot[sy]>0?'g':'d';
-  h+='<tr><td class="l" style="font-weight:600">'+esc(sy)+'</td>'
-    +'<td class="l d" style="font-size:9px">'+books.length+' book'+(books.length>1?'s':'')+'</td>'
-    +'<td colspan="2"></td><td class="num '+tc+'">'+fmt2(tot[sy],1)+'bp</td><td colspan="2"></td></tr>';
-  books.forEach(function(s,bi){var bkv=ccWbp(s);var bm=ccMult(s);/* EXACT fold math — see header comment */
-   h+='<tr style="opacity:.85"><td class="l d" colspan="4" style="border-left:2px solid '+(s.retired?'var(--red)':'var(--grn)')+';padding-left:10px;font-size:10px">&#8627; mimic'+(bi+1)
-     +' <span class="d" style="font-size:9px">'+esc(s.tag||'?')+(bm!==1?' &times;'+fmt2(bm,2):'')+'</span>'
-     +(s.retired?' <span style="color:var(--red)">RETIRED</span>':'')
-     +(s.clips!==undefined?' · '+s.clips+' clip'+(safe(s.clips)===1?'':'s'):'')+'</td>'
-     +'<td class="num '+(bkv>0?'g':'d')+'" style="font-size:10px">'+fmt2(bkv,1)+'bp</td><td colspan="2"></td></tr>';
-  });
- });
- return h;}
-function drawLedger(){var t=el('ledger');/* S-19b: dropped the local "cc" $ var entirely -- crypto companion PAPER
-    bank never renders as a dollar figure anywhere in this function; bp detail lives in cryptoLedgerRows() */
+/* S-19c (operator "WHY IS THE COMP LEDGER STILL THERE" -- S-19b only fixed the Σ line's units,
+   not location): the per-symbol/per-book crypto companion breakdown formerly rendered here
+   (cryptoLedgerRows()) was a pure DUPLICATE of what drawCC() already renders into #cctab under
+   CRYPTO MIMIC BOOKS -- same per-coin rows, same per-book bp figures, same PAPER caption. Removed
+   the duplicate injection into ENGINE LEDGER entirely rather than relocating it; the real thing
+   already lives in the right panel. */
+function drawLedger(){var t=el('ledger');/* S-19b/19c: crypto companion PAPER bank never renders
+    anywhere in this function -- its bp detail lives ONLY in #cctab (CRYPTO MIMIC BOOKS, drawCC) */
  var omc=safe((window._comptot||{}).all);/* OMEGA (XAU stall-clip) companion all-time bank, $ (additive) -- same bucket the header ALL-TIME folds */
  var fxc=safe(window._fxtot),gbc=safe(window._goldtot),ixc=safe(window._idxtot),xgc=safe(window._xagtot),uoc=safe(window._usoiltot),smc=safe(window._smtot),flc=safe(window._fxladtot),ilc=safe(window._ixladtot);/* FX + gold + xag + usoil + stockmover/fx/index-ladder forward books, $ (additive, all-time) */
- if(!ROWS.length){var z=omc+fxc+gbc+ixc+xgc+uoc+smc+flc+ilc;/* crypto PAPER NOT in Σ, S-18w */t.innerHTML='<tr><td class="l d" colspan="7">no closes in ledger</td></tr>'+cryptoLedgerRows()+compClipRows();el('ledgern').textContent=z?((omc?'companion '+fmt$(omc):'')+(fxc?' · fx '+fmt$(fxc):'')+(gbc?' · gold '+fmt$(gbc):'')+(ixc?' · idx '+fmt$(ixc):'')+(xgc?' · xag '+fmt$(xgc):'')+(uoc?' · usoil '+fmt$(uoc):'')+(smc?' · stk '+fmt$(smc):'')+(flc?' · fxlad '+fmt$(flc):'')+(ilc?' · ixlad '+fmt$(ilc):'')+' · Σ '+fmt$(z)):'';return;}
+ if(!ROWS.length){var z=omc+fxc+gbc+ixc+xgc+uoc+smc+flc+ilc;/* crypto PAPER NOT in Σ, S-18w */t.innerHTML='<tr><td class="l d" colspan="7">no closes in ledger</td></tr>'+compClipRows();el('ledgern').textContent=z?((omc?'companion '+fmt$(omc):'')+(fxc?' · fx '+fmt$(fxc):'')+(gbc?' · gold '+fmt$(gbc):'')+(ixc?' · idx '+fmt$(ixc):'')+(xgc?' · xag '+fmt$(xgc):'')+(uoc?' · usoil '+fmt$(uoc):'')+(smc?' · stk '+fmt$(smc):'')+(flc?' · fxlad '+fmt$(flc):'')+(ilc?' · ixlad '+fmt$(ilc):'')+' · Σ '+fmt$(z)):'';return;}
  var by={};
  ROWS.forEach(function(r){var k=r.eng||'?';if(!by[k])by[k]={n:0,pnl:0,w:0,sym:r.sym,last:0};
   var e=by[k];e.n++;e.pnl+=r.pnl;if(r.pnl>0)e.w++;if(r.ts>e.last){e.last=r.ts;e.sym=r.sym;}});
@@ -1856,7 +1835,7 @@ function drawLedger(){var t=el('ledger');/* S-19b: dropped the local "cc" $ var 
    +'<td style="width:90px"><span class="bar" style="display:block"><i style="width:'+w+'%;background:'+(e.pnl>=0?'var(--grn)':'var(--red)')+'"></i></span></td>'
    +'<td class="num '+(e.pnl>=0?'g':'r')+'">'+fmt$(e.pnl/e.n)+'/t</td></tr>'
    +ledgerCompRow(k,seenComp,e.sym);}).join('');
- t.innerHTML='<tr><th class="l">engine</th><th class="l">sym</th><th>n</th><th>WR</th><th>net</th><th></th><th>avg</th></tr>'+rows+cryptoLedgerRows()+compClipRows();
+ t.innerHTML='<tr><th class="l">engine</th><th class="l">sym</th><th>n</th><th>WR</th><th>net</th><th></th><th>avg</th></tr>'+rows+compClipRows();
  var net=0;ks.forEach(function(k){net+=by[k].pnl;});
  var tot=net+omc+fxc+gbc+ixc+xgc+uoc+smc+flc+ilc;   /* fold companion books into the all-time total -- matches header ALL-TIME; cc (crypto PAPER) labelled but EXCLUDED S-18w */
  el('ledgern').textContent=ks.length+' engines · net '+fmt$(net)
