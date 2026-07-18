@@ -1396,8 +1396,51 @@ void OmegaTelemetryServer::run(int port)
             g_flatten_all_request.store(true);
             printf("[KILL-ALL] panic flatten REQUESTED via desk button -- "
                    "trading thread will flatten all open positions on next tick\n");
+            // S-2026-07-18t KILL-ALL fan-out (LiveMirrorIncident20260718 follow-up):
+            // this button only ever flattened THIS box -- the crypto system (josgp1)
+            // kept its armed companion legs and, when live, the LiveMimicMirror's
+            // REAL Binance holdings (operator hit KILL ALL 2026-07-18 and the crypto
+            // panel kept trading). Fan out to chimera's full /api/kill (sleeves +
+            // 132 companions + mirror flatten_all) through the nginx control path.
+            // Auth file (NOT in git): C:\Omega\config\chimera_kill.auth, line 1 =
+            // nginx basic-auth user:pass, line 2 = chimera control token. Missing
+            // file = loud warn, local flatten still proceeds. Detached curl.exe so
+            // this HTTP thread never blocks on the WAN.
+            {
+                FILE* af = fopen("C:\\Omega\\config\\chimera_kill.auth", "rb");
+                if (af) {
+                    char up[128] = {}, tok[128] = {};
+                    if (fgets(up, sizeof(up), af)) fgets(tok, sizeof(tok), af);
+                    fclose(af);
+                    char* trims[2] = { up, tok };
+                    for (int ti = 0; ti < 2; ++ti) {
+                        char* s = trims[ti];
+                        size_t n = strlen(s);
+                        while (n && (s[n-1]=='\n' || s[n-1]=='\r' || s[n-1]==' ')) s[--n] = 0;
+                    }
+                    if (up[0] && tok[0]) {
+                        char cmd[640];
+                        snprintf(cmd, sizeof(cmd),
+                            "start /b curl.exe -k -s -m 10 -X POST -u %s "
+                            "-H \"X-Auth-Token: %s\" "
+                            "https://143.198.89.54:9443/api/kill "
+                            ">> C:\\Omega\\logs\\chimera_kill_fanout.log 2>&1",
+                            up, tok);
+                        system(cmd);
+                        printf("[KILL-ALL] fan-out to chimera /api/kill dispatched "
+                               "(result -> logs\\chimera_kill_fanout.log)\n");
+                    } else {
+                        printf("[KILL-ALL] WARN chimera_kill.auth malformed -- "
+                               "crypto box NOT killed by this button\n");
+                    }
+                } else {
+                    printf("[KILL-ALL] WARN no C:\\Omega\\config\\chimera_kill.auth -- "
+                           "crypto box NOT killed by this button\n");
+                }
+            }
             fflush(stdout);
-            body = "{\"ok\":true,\"msg\":\"flatten queued -- closing all open positions\"}";
+            body = "{\"ok\":true,\"msg\":\"flatten queued -- closing all open positions "
+                   "(this box + chimera fan-out)\"}";
         }
         else if (strstr(buf, "GET /api/shadow_csv"))  {
             // Serve the full shadow CSV for remote analysis -- tries all known paths
