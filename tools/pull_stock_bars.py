@@ -15,7 +15,7 @@ def _ts(d):
 
 SYMS = (sys.argv[1] if len(sys.argv) > 1 else
         "NVDA,TSLA,AMD,META,AAPL,MSFT,AMZN,GOOGL,AVGO,PLTR").split(",")
-PORT     = int(sys.argv[2]) if len(sys.argv) > 2 else 4002
+PORT     = int(sys.argv[2]) if len(sys.argv) > 2 else 4001
 DUR_15M  = sys.argv[3] if len(sys.argv) > 3 else "2 Y"
 OUT      = "data/stocks"
 os.makedirs(OUT, exist_ok=True)

@@ -12,7 +12,7 @@ Exit code = the AUDIT result (0 fresh / 1 stale) so the deploy seed-gate still w
 Phases 1+2 NEVER fail the run (a skip just keeps the prior / git-snapshot seed).
 
 Usage:
-  py tools/seed_refresh.py [--port 4002] [--days 30] [--repo .] [--seed-dir DIR]
+  py tools/seed_refresh.py [--port 4001] [--days 30] [--repo .] [--seed-dir DIR]
                            [--logs DIR] [--max-age-days N] [--skip-ibkr]
                            [--only rebuild|ibkr|audit]
 """
@@ -365,7 +365,7 @@ def phase_audit(repo, max_age_days):
 def main():
     dl, do = _default_dirs()
     ap = argparse.ArgumentParser()
-    ap.add_argument("--port", type=int, default=4002)
+    ap.add_argument("--port", type=int, default=4001)
     ap.add_argument("--days", type=int, default=30)
     ap.add_argument("--repo", default=".")
     ap.add_argument("--seed-dir", default=do)

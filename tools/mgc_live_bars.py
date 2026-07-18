@@ -19,7 +19,7 @@ import sys, json, time, os
 from collections import defaultdict
 from ib_async import IB, ContFuture
 
-PORT   = int(sys.argv[1]) if len(sys.argv) > 1 else 4002
+PORT   = int(sys.argv[1]) if len(sys.argv) > 1 else 4001
 PERIOD = int(sys.argv[2]) if len(sys.argv) > 2 else 300
 HVN    = "data/mgc_hvn.json"
 BINS   = 30

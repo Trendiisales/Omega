@@ -7,7 +7,7 @@
 # unclearable, see memory feedback-ibkr-gateway-restart-caution). Operator asked
 # (2026-07-18) for a notification when manual login is REQUIRED, nothing else.
 #
-# Detection: API port 4002 not LISTENING on omega-new. One failed check is
+# Detection: API port 4001 not LISTENING on omega-new. One failed check is
 # ignored (nightly 23:45 London auto-restart window, transient ssh hiccup);
 # 2 consecutive fails (checks are 10 min apart via cron) => RED + banner.
 # Re-notifies every 6h while RED; single "recovered" banner on green.
@@ -27,7 +27,7 @@ notify() {  # $1 title  $2 body
 }
 
 LISTEN=$(ssh -o ConnectTimeout=25 -o BatchMode=yes omega-new \
-  "netstat -an | findstr :4002 | findstr LISTENING" 2>/dev/null | head -1)
+  "netstat -an | findstr :4001 | findstr LISTENING" 2>/dev/null | head -1)
 SSH_RC=$?
 
 # read state: "<phase> <last_notify_epoch>"  phase in ok|fail1|red
@@ -36,7 +36,7 @@ phase=${phase:-ok}; last_n=${last_n:-0}
 
 if [ -n "$LISTEN" ]; then
   if [ "$phase" = "red" ]; then
-    notify "IBKR Gateway RECOVERED" "4002 listening again — exec watchdog will self-heal within 15s."
+    notify "IBKR Gateway RECOVERED" "4001 listening again — exec watchdog will self-heal within 15s."
     echo "[$(ts)] RECOVERED (was red)" >> "$LOG"
   fi
   echo "ok 0" > "$STATE"
@@ -52,11 +52,11 @@ fi
 case "$phase" in
   ok)
     echo "fail1 0" > "$STATE"
-    echo "[$(ts)] fail1 — 4002 not listening (waiting for 2nd confirm)" >> "$LOG"
+    echo "[$(ts)] fail1 — 4001 not listening (waiting for 2nd confirm)" >> "$LOG"
     ;;
   fail1|red)
     if [ "$phase" = "fail1" ] || [ $((now_e - last_n)) -ge $RENOTIFY_S ]; then
-      notify "IBKR LOGIN REQUIRED" "Gateway 4002 down 10+ min on omega-new — login/2FA dialog or process down. Complete login on IBKR app / VPS screen. Orders blocked until then."
+      notify "IBKR LOGIN REQUIRED" "Gateway 4001 down 10+ min on omega-new — login/2FA dialog or process down. Complete login on IBKR app / VPS screen. Orders blocked until then."
       echo "red $now_e" > "$STATE"
       echo "[$(ts)] RED — notified operator" >> "$LOG"
     else

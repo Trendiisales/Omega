@@ -79,7 +79,7 @@ def pull(app, sym, dur):
     return out if app.done else {}
 
 def main():
-    ap=argparse.ArgumentParser(); ap.add_argument('--tickers',default='bigcap'); ap.add_argument('--port',type=int,default=4002)
+    ap=argparse.ArgumentParser(); ap.add_argument('--tickers',default='bigcap'); ap.add_argument('--port',type=int,default=4001)
     ap.add_argument('--cid',type=int,default=1402); ap.add_argument('--dur',default='1 Y'); a=ap.parse_args()
     if a.tickers=='full' and os.path.exists(f"{DATA}/sp500_tickers.txt"):
         syms=open(f"{DATA}/sp500_tickers.txt").read().split()

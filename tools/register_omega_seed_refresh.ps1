@@ -18,7 +18,7 @@ $ErrorActionPreference = 'Stop'
 $TaskName = 'OmegaSeedRefresh'
 $Py       = 'C:\Program Files\Python312\python.exe'
 $Script   = 'C:\Omega\tools\seed_refresh.py'
-$Port     = 4002        # IB Gateway paper. Live = 4001.
+$Port     = 4001        # IB Gateway LIVE (2026-07-18 fresh live login on default 4001).
 
 if (-not (Test-Path $Py))     { Write-Error "python not at $Py";    exit 1 }
 if (-not (Test-Path $Script)) { Write-Error "refresher not at $Script"; exit 1 }

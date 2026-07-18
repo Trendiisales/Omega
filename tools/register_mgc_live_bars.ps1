@@ -26,7 +26,7 @@ $ErrorActionPreference = 'Stop'
 $TaskName = 'OmegaMgcLiveBars'
 $Py       = 'C:\Omega\bracket-bot\.venv\Scripts\pythonw.exe'  # has ib_async
 $Script   = 'C:\Omega\tools\mgc_live_bars.py'
-$Port     = 4002        # IB Gateway paper. Live = 4001.
+$Port     = 4001        # IB Gateway LIVE (2026-07-18 fresh live login on default 4001).
 $Period   = 300         # seconds between polls
 
 if (-not (Test-Path $Py))     { Write-Error "Python venv not at $Py";   exit 1 }

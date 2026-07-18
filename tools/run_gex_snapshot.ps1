@@ -21,4 +21,4 @@ if($dow -eq "Saturday" -or $dow -eq "Sunday"){
   exit 0
 }
 Add-Content "C:\Omega\logs\gex_snapshot.log" "[$ts] snapshot start"
-foreach($ix in "SPX","NDX"){ & $py "C:\Omega\ibkr\gex_chain.py" --index $ix --port 4002 --expiries 1 --strikes-pct 2 --append $h --ts $ts *>> "C:\Omega\logs\gex_snapshot.log" }
+foreach($ix in "SPX","NDX"){ & $py "C:\Omega\ibkr\gex_chain.py" --index $ix --port 4001 --expiries 1 --strikes-pct 2 --append $h --ts $ts *>> "C:\Omega\logs\gex_snapshot.log" }

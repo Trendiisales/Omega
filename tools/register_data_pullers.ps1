@@ -37,9 +37,9 @@ function Register-Puller($name, $script, $argline, $hourUtc) {
 }
 
 # stocks (BigCapMomo/Luke) — 30-name mega-cap universe, port 4002, 2Y of 15m+d1
-Register-Puller 'OmegaPullStockBars' 'tools\pull_stock_bars.py' 'NVDA,TSLA,AMD,META,AAPL,MSFT,AMZN,GOOGL,AVGO,PLTR,ORCL,CRM,ADBE,NFLX,MU,COIN,MSTR,SMCI,UBER,ABNB,SHOP,ARM,DELL,NOW,SNOW,PANW,CRWD,DLTR,LRCX,AMAT 4002' 21
+Register-Puller 'OmegaPullStockBars' 'tools\pull_stock_bars.py' 'NVDA,TSLA,AMD,META,AAPL,MSFT,AMZN,GOOGL,AVGO,PLTR,ORCL,CRM,ADBE,NFLX,MU,COIN,MSTR,SMCI,UBER,ABNB,SHOP,ARM,DELL,NOW,SNOW,PANW,CRWD,DLTR,LRCX,AMAT 4001' 21
 # NDX cash intraday (ConnorsNas / index) — port 4002, 2Y
-Register-Puller 'OmegaPullNasCash'   'tools\pull_nas_cash.py'   '4002' 21
+Register-Puller 'OmegaPullNasCash'   'tools\pull_nas_cash.py'   '4001' 21
 
 Write-Host ""
 Write-Host "DONE. Verify after first run: Get-ChildItem C:\Omega\data\stocks\*_15m.csv | Sort LastWriteTime -Desc | Select -First 3"

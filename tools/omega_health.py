@@ -112,12 +112,12 @@ def chk_gateway():
     # feeds fresh. That false RED wrote HEALTH_RED.flag; when this daemon then died (15min task
     # ExecutionTimeLimit) the flag orphaned and the GUI/alarm showed RED forever (2026-07-15
     # recurring HEALTH RED root cause). The listener is the correct, migration-proof signal and
-    # matches omega_health_alarm.ps1 ($gwUp=listener) + healthcheck.ps1 ib.port_4002. Operator
+    # matches omega_health_alarm.ps1 ($gwUp=listener) + healthcheck.ps1 ib.port_4001. Operator
     # mandate 2026-07-01: "alarm on the LISTENER, not the process."
-    listen=_port(4002)
-    if listen: return (GREEN,":4002 listening -- IBKR API up")
-    if not _fx_open(): return (AMBER,":4002 down -- broker closed (weekend), expected")
-    return (RED,":4002 NOT listening -- IBKR API down, all IBKR feeds blind")
+    listen=_port(4001)
+    if listen: return (GREEN,":4001 listening -- IBKR API up")
+    if not _fx_open(): return (AMBER,":4001 down -- broker closed (weekend), expected")
+    return (RED,":4001 NOT listening -- IBKR API down, all IBKR feeds blind")
 
 def chk_fix_feed():
     last=None

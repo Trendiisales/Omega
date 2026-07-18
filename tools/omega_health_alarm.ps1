@@ -92,7 +92,7 @@ foreach ($s in $byScript.Keys) { if ($byScript[$s] -gt 2) { $overall = 'RED'; $r
 # alarm); infra faults (disk/RAM/process-down/leak/deploy-hang) stay RED any day.
 $nowU_ = [DateTime]::UtcNow; $dow_ = $nowU_.DayOfWeek; $h_ = $nowU_.Hour
 $marketClosed = ($dow_ -eq 'Saturday') -or ($dow_ -eq 'Friday' -and $h_ -ge 21) -or ($dow_ -eq 'Sunday' -and $h_ -lt 22)
-$gwPort = 4002
+$gwPort = 4001
 $gwListen = Get-NetTCPConnection -State Listen -LocalPort $gwPort -ErrorAction SilentlyContinue
 $gwProc = Get-Process ibgateway -ErrorAction SilentlyContinue
 $gwUp = [bool]$gwListen
