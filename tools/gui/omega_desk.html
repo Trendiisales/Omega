@@ -1044,7 +1044,13 @@ function pollTrades(){
       sd.push({book:'stock',engine:b.engine||('StockDip_'+(b.sym||'')),symbol:b.sym||'',side:'long',
         price:safe(t.entry),exitPrice:safe(t.exit),net_pnl:safe(t.usd_real),exitReason:t.reason||'',
         entryTs:safe(t.entry_ts),exitTs:safe(t.exit_ts)});});});
-    var all=(res[0]||[]).concat(res[1]||[]).concat(sd);
+    /* S-19c(2) (operator "STILL THERE FFS" -- bp/PAPER labeling wasn't enough, the ask was REMOVE):
+       companion CLIP rows are already fully itemized per-coin/per-book in CRYPTO MIMIC BOOKS
+       (#cctab, drawCC) -- showing them AGAIN here duplicates that panel inside what reads as the
+       real trade-history log. Drop them from LAST-15 entirely; MIMIC-LIVE (real Binance cash) and
+       EDGE (real forward $, isPaperClip()=false for both) still show. */
+    var cryptoDisp=(res[1]||[]).filter(function(t){return !isPaperClip(t);});
+    var all=(res[0]||[]).concat(cryptoDisp).concat(sd);
     /* S-2026-07-12 operator: fold the CHIMERA EDGE realized (e.g. TIA-TSMOM +7.65) into the
        crypto PnL — it was showing in LAST-15 but never in the total. EDGE trades only
        (engine !~ CLIP) so it's additive to _cctot (the companion-clip book), no double-count.
@@ -1056,10 +1062,10 @@ function pollTrades(){
        REVERSAL_CLIP/FLOOR_TRAIL_CLIP/PREBE_CUT/REVERSAL_CUT/ENGINE_EXIT). EDGE reasons
        (TP/SL/TIMEOUT/TRAIL/CORE_EXIT/REBAL...) match neither, so EDGE rows still count. */
     window._chimtot=(res[1]||[]).reduce(function(s,t){var e=(t.engine||''),xr=(t.exitReason||'');return (/CLIP|MIMIC-LIVE/i.test(e)||/-[TSLJ]\d+$/.test(e)||/CLIP|CUT|ENGINE_EXIT/i.test(xr))?s:s+safe(t.net_pnl!=null?t.net_pnl:t.pnl);},0);/* MIMIC-LIVE rows excluded: their cash realized folds via _clivetot (S-2026-07-18r), rows here are display-only */
-    /* S-19c (operator "COMP-COMP...36.35" recurrence #3): companion CLIP rows (banked in _cctot as
-       PAPER bp, S-19a/19b) render a bare number in this table with no unit -- reads as real $ next to
-       genuine $ rows (OMEGA/stock/EDGE/MIMIC-LIVE). isPaperClip() flags them for a 'bp' + PAPER suffix
-       in the pnl cell below. MIMIC-LIVE is excluded here -- that's real Binance cash (_clivetot), not PAPER. */
+    /* S-19c (operator "COMP-COMP...36.35" recurrence #3): companion CLIP rows are banked in _cctot
+       as PAPER bp (S-19a/19b) -- isPaperClip() flags them so they're dropped from LAST-15 entirely
+       (see cryptoDisp above), not shown alongside genuine $ rows (OMEGA/stock/EDGE/MIMIC-LIVE).
+       MIMIC-LIVE is excluded here -- that's real Binance cash (_clivetot), not PAPER. */
     function isPaperClip(t){var e=(t.engine||''),xr=(t.exitReason||'');
       if(/MIMIC-LIVE/i.test(e))return false;
       return /CLIP/i.test(e)||/-[TSLJ]\d+$/.test(e)||/CLIP|CUT|ENGINE_EXIT/i.test(xr);}
@@ -1070,7 +1076,7 @@ function pollTrades(){
        we had, i.e. 2 or 4 or 1"): count ALL closed trades across every book, and how many are MIMIC
        engines (*Mimic tag). Shown next to the panel title. */
     var nAll=all.length, nMimic=all.filter(function(t){return /mimic/i.test(t.engine||'');}).length,
-        nStock=sd.length, nCrypto=(res[1]||[]).length;
+        nStock=sd.length, nCrypto=cryptoDisp.length;
     var cn=document.getElementById('alltradesn');
     if(cn)cn.innerHTML='· '+nAll+' total ('+nMimic+' mimic'+(nStock?' · '+nStock+' stock':'')+(nCrypto?' · '+nCrypto+' crypto':'')+')';
     var top=all.slice(0,15);
@@ -1080,7 +1086,6 @@ function pollTrades(){
     var rows=top.map(function(t){
       var p=safe(t.net_pnl!=null?t.net_pnl:t.pnl);
       var col=p>0?'var(--grn)':(p<0?'var(--red)':'var(--t2)');
-      var paper=(t.book==='crypto'||t.book==='chimera')&&isPaperClip(t);
       var when=t.exit_ts_utc?String(t.exit_ts_utc).replace(' UTC',''):fmtTs(t.exitTs);
       var isMim=/mimic/i.test(t.engine||'');
       /* S-2026-07-15s (operator "shown in the correct box"): name the ACTUAL stock sub-book, not a
@@ -1096,7 +1101,7 @@ function pollTrades(){
       var bk=ind+tag+esc(t.engine||'')+(isMim?' <span class="d" style="font-size:9px">mimic</span>':'');
       return '<tr><td class="l">'+esc(when)+'</td><td class="l">'+bk+'</td><td class="l">'+esc(t.symbol||'')+'</td><td>'+esc(t.side||'')+
         '</td><td class="num">'+fmt2(safe(t.price),4)+'</td><td class="num">'+fmt2(safe(t.exitPrice),4)+
-        '</td><td class="num" style="color:'+col+'">'+fmt2(p,2)+(paper?'<span class="d" style="font-size:9px"> bp PAPER</span>':'')+'</td><td class="l d">'+esc(t.exitReason||'')+'</td></tr>';
+        '</td><td class="num" style="color:'+col+'">'+fmt2(p,2)+'</td><td class="l d">'+esc(t.exitReason||'')+'</td></tr>';
     }).join('');
     el.innerHTML=hdr+rows;
   }).catch(function(){});
