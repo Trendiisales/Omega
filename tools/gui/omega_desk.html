@@ -612,7 +612,8 @@ var SEED_LAST={gold:4187.30,sp:7483.24,nq:29329.21,nas:29329.21,dj:52900.07,ger3
    is fine. */
 var _CSYMS='%5B'+encodeURIComponent(CTKS.map(function(t){return '"'+t[1]+'"';}).join(','))+'%5D';
 function cxApply(sym,px,chg,hi,lo){var t=CTKS.find(function(x){return x[1]===sym;});if(!t)return;
- if(px>0)el('ctk_'+t[0]).textContent=px.toLocaleString(undefined,{maximumFractionDigits:px>100?1:px>1?3:5});
+ if(px>0){el('ctk_'+t[0]).textContent=px.toLocaleString(undefined,{maximumFractionDigits:px>100?1:px>1?3:5});
+  (window._cpx=window._cpx||{})[t[0]]=px;/* last live px per coin — mirror-PnL calc in drawProx */}
  /* S-2026-07-18ah trigger-PROXIMITY owns the sub-line + bar when the coin has live
     mimic-cell detector data (operator: "those 24h % mean nothing — show me when it is
     getting close to trading"). 24h% + day-range only remain as fallback for coins with
@@ -629,6 +630,13 @@ function cxApply(sym,px,chg,hi,lo){var t=CTKS.find(function(x){return x[1]===sym
    window open = green "WIN +j%" (+ "conf −Xbp" while the flat book still needs confirm).
    Read-only view of shadow-book detector state — NOT PnL, no-backtest-in-live-GUI clean. */
 window._proxHas={};
+/* real-mirror unrealized $ for a coin: live_mirror holds (real Binance fills, S-18al) marked at
+   the live WS price. null = no real hold OR no price yet (render nothing, not $0.00). */
+function mirPnl(coin){var mir=window._ccMirror;if(!mir||!Array.isArray(mir.holds))return null;
+ var px=(window._cpx||{})[coin];if(!(px>0))return null;
+ var tot=0,got=false;
+ mir.holds.forEach(function(h){if(h&&h.coin===coin&&safe(h.qty)>0&&safe(h.px)>0){tot+=h.qty*(px-h.px);got=true;}});
+ return got?tot:null;}
 function ccProx(){var live=window._cc||{},best={};
  Object.keys(live).forEach(function(tg){var p=live[tg];
   if(!p||!p.sym||p.retired)return;
@@ -664,7 +672,13 @@ function drawProx(){var best=ccProx();var has={};
     bx.style.boxShadow='inset 0 0 14px rgba(57,255,20,.5), 0 0 12px #39ff14, 0 0 26px rgba(57,255,20,.55)';
     bx.style.animation='neonPulse 1.2s ease-in-out infinite';}
    /* label neon owned by markTiles (single owner — both run at 1s, dual writers flicker) */
-   pe.innerHTML='<span style="color:#39ff14;font-weight:700;text-shadow:0 0 8px #39ff14">&#9679; TRADING '+b.n+' &nbsp;pk +'+fmt2(b.pk,2)+'%</span>';
+   /* S-19a running REAL-$ PnL in the box (operator: "these are trading — it would be useful to
+      have a running total pnl inside the symbol box"): Σ qty×(live px − real fill px) over this
+      coin's live_mirror holds (S-18al truth feed) at the WS ticker price. REAL fills only —
+      paper-only trading (no hold routed) shows no $ figure, keeping the no-paper-in-live-GUI rule. */
+   var mp=mirPnl(t[0]);
+   pe.innerHTML='<span style="color:#39ff14;font-weight:700;text-shadow:0 0 8px #39ff14">&#9679; TRADING '+b.n+' &nbsp;pk +'+fmt2(b.pk,2)+'%</span>'
+    +(mp!==null?' <span style="font-weight:700;color:'+(mp>=0?'#fff':'var(--redB)')+'">$'+(mp>=0?'+':'&minus;')+fmt2(Math.abs(mp),2)+'</span>':'');
    r.style.width='100%';r.style.background='#39ff14';return;}
   if(b.open){
    if(bx){bx.style.outline='1px solid var(--amb)';bx.style.outlineOffset='-1px';
@@ -1251,6 +1265,7 @@ function pollCC(){fetch('/api/crypto_companion').then(function(r){return r.json(
  /* key by companion TAG (grid cell identity, S-2026-07-12). Fallback to sym for a not-yet-
     updated producer file (old shape keyed the 4 cells to one sym — the stale-roster bug). */
  var m={};(j.legs||[]).forEach(function(p){if(p&&(p.tag||p.sym))m[p.tag||p.sym]=p;});
+ if(j.live_mirror)window._ccMirror=j.live_mirror;/* S-19a: real holds -> tile running-$ (mirPnl) */
  /* STICKY: only replace the live overlay when the push actually has legs. A transient empty/
     stale frame (file mid-write, momentary 0-leg push) must NOT wipe the last good bank -> that
     was the "-141 disappears then reappears" flicker. Keep the last good frame until a real one lands. */
