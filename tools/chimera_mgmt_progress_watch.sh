@@ -75,35 +75,58 @@ ACT=$(printf '%s\n' "$PROBE"  | sed -n 's/^ACT=//p')
 read -r p_ts p_legs 2>/dev/null < "$SNAP" || true
 printf '%s %s\n' "${TSV:-0}" "${LEGS:-}" > "$SNAP"
 
-REASON=""
+# S-2026-07-18s CADENCE FIX (root-cause session finding): the armed mimic cells are
+# H1 books — (peak, bars_since_high) legitimately change only at BAR CLOSES, so a
+# tuple is expected to sit identical for up to ~60 min between closes. The original
+# ">=2 runs (20 min)" rule assumed 15m bars and would FALSE-RED every mid-hour
+# stretch while any leg is armed. A freeze verdict now requires the identical-tuple
+# span to exceed FREEZE_SPAN_S (75 min > one H1 bar + margin); a real freeze (the
+# incident class) persists for hours and is still caught. The holdings-while-down
+# check stays immediate (2-strike) — it is cadence-independent.
+FREEZE_SPAN_S=$((75*60))
+
+REASON=""; KIND=""
 if [ "$HOLD" -gt 0 ] && [ "$ACT" != "active" ]; then
-  REASON="$HOLD live mirror holding(s) while chimera.service=$ACT"
+  REASON="$HOLD live mirror holding(s) while chimera.service=$ACT"; KIND=hold
 elif [ -n "$LEGS" ] && [ "$LEGS" = "${p_legs:-}" ] && [ "${TSV:-0}" -gt "${p_ts:-0}" ] 2>/dev/null; then
   n=$(printf '%s' "$LEGS" | awk -F';' '{print NF}')
-  REASON="mgmt FROZEN: $n armed leg(s) unchanged >=10min while engine persists (hold=$HOLD)"
+  REASON="mgmt FROZEN: $n armed leg(s) unchanged while engine persists (hold=$HOLD)"; KIND=frozen
 fi
 
-read -r phase last_n 2>/dev/null < "$STATE" || true
-phase=${phase:-ok}; last_n=${last_n:-0}
+read -r phase last_n freeze_since 2>/dev/null < "$STATE" || true
+phase=${phase:-ok}; last_n=${last_n:-0}; freeze_since=${freeze_since:-0}
 
 if [ -z "$REASON" ]; then
   if [ "$phase" = "red" ]; then
     notify "CHIMERA MGMT RECOVERED" "companion leg management advancing again."
     echo "[$(ts)] RECOVERED (was red)" >> "$LOG"
   fi
-  echo "ok 0" > "$STATE"
+  echo "ok 0 0" > "$STATE"
   exit 0
+fi
+
+if [ "$KIND" = "frozen" ]; then
+  [ "$freeze_since" -gt 0 ] 2>/dev/null || freeze_since=$now_e
+  span=$((now_e - freeze_since))
+  if [ $span -lt $FREEZE_SPAN_S ]; then
+    echo "$phase $last_n $freeze_since" | awk '{print ($1=="red"?"red":"ok"), $2, $3}' > "$STATE"
+    echo "[$(ts)] FROZEN-TUPLES ${span}s < ${FREEZE_SPAN_S}s (H1 cadence grace): $REASON" >> "$LOG"
+    exit 0
+  fi
+  REASON="$REASON — identical ${span}s (> $((FREEZE_SPAN_S/60))min, past H1-bar cadence)"
+else
+  freeze_since=0
 fi
 
 case "$phase" in
   ok)
-    echo "fail1 0" > "$STATE"
+    echo "fail1 0 $freeze_since" > "$STATE"
     echo "[$(ts)] FAIL-1 (grace): $REASON" >> "$LOG"
     ;;
   fail1|red)
     if [ "$phase" != "red" ] || [ $((now_e - last_n)) -ge $RENOTIFY_S ]; then
       notify "CHIMERA MGMT FROZEN" "$REASON — floors/trails NOT being evaluated. Check josgp1 NOW."
-      echo "red $now_e" > "$STATE"
+      echo "red $now_e $freeze_since" > "$STATE"
       echo "[$(ts)] RED+NOTIFY: $REASON" >> "$LOG"
     else
       echo "[$(ts)] RED (renotify suppressed): $REASON" >> "$LOG"
