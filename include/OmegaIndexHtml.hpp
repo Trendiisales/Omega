@@ -612,8 +612,48 @@ var SEED_LAST={gold:4187.30,sp:7483.24,nq:29329.21,nas:29329.21,dj:52900.07,ger3
 var _CSYMS='%5B'+encodeURIComponent(CTKS.map(function(t){return '"'+t[1]+'"';}).join(','))+'%5D';
 function cxApply(sym,px,chg,hi,lo){var t=CTKS.find(function(x){return x[1]===sym;});if(!t)return;
  if(px>0)el('ctk_'+t[0]).textContent=px.toLocaleString(undefined,{maximumFractionDigits:px>100?1:px>1?3:5});
+ /* S-2026-07-18ah trigger-PROXIMITY owns the sub-line + bar when the coin has live
+    mimic-cell detector data (operator: "those 24h % mean nothing — show me when it is
+    getting close to trading"). 24h% + day-range only remain as fallback for coins with
+    NO self-detect companion cell (XSEC-only tiles) — never fight drawProx's writes. */
+ if(window._proxHas&&window._proxHas[t[0]])return;
  if(chg!==null){var pe=el('ctkp_'+t[0]);pe.textContent=(chg>=0?'+':'')+fmt2(chg,2)+'%';pe.style.color=chg>=0?'var(--grnB)':'var(--redB)';}
  if(hi>lo&&px>0){var p=Math.max(0,Math.min(1,(px-lo)/(hi-lo)));var r=el('ctkr_'+t[0]);r.style.width=(p*100)+'%';r.style.background=p>0.85||p<0.15?'var(--amb)':'var(--blu)';}}
+/* ── S-2026-07-18ah trigger-PROXIMITY on the crypto symbol boxes ──────────────────────
+   Per coin: the BEST (closest-to-trigger) live self-detect mimic cell — max win_move/thr
+   ratio over that coin's prox_valid books (josgp1 emit_companion_state, 5s throttle ->
+   120s relay -> /api/crypto_companion, fields win_move_pct/det_thr_pct/win_open/
+   confirm_dist_bp). A window-OPEN cell outranks all ratios (already triggered — show it).
+   Tile sub-line: "→0.32/0.50% 64%" + bar fill = ratio, ramp grey->amber(60%)->red(85%);
+   window open = green "WIN +j%" (+ "conf −Xbp" while the flat book still needs confirm).
+   Read-only view of shadow-book detector state — NOT PnL, no-backtest-in-live-GUI clean. */
+window._proxHas={};
+function ccProx(){var live=window._cc||{},best={};
+ Object.keys(live).forEach(function(tg){var p=live[tg];
+  if(!p||!p.sym||!p.prox_valid||p.retired)return;
+  var thr=safe(p.det_thr_pct);if(!(thr>0))return;
+  var j=safe(p.win_move_pct),b=best[p.sym];
+  if(p.win_open){
+   if(!b||!b.open||j>b.j)best[p.sym]={open:true,j:j,thr:thr,conf:safe(p.confirm_dist_bp)};
+  }else if(!b||(!b.open&&j/thr>b.j/b.thr)){
+   best[p.sym]={open:false,j:j,thr:thr,conf:0};
+  }});
+ return best;}
+function drawProx(){var best=ccProx();var has={};
+ CTKS.forEach(function(t){var b=best[t[0]],pe=el('ctkp_'+t[0]),r=el('ctkr_'+t[0]);
+  if(!pe||!r)return;
+  if(!b)return;/* no self-detect cell -> 24h% fallback keeps the slot */
+  has[t[0]]=1;
+  if(b.open){
+   pe.innerHTML='<span style="color:var(--grn);font-weight:600">WIN +'+fmt2(b.j,2)+'%</span>'
+    +(b.conf>0?'<span style="color:var(--amb)"> conf&minus;'+fmt2(b.conf,0)+'bp</span>':'');
+   r.style.width='100%';r.style.background='var(--grn)';return;}
+  var p=Math.max(0,Math.min(1,b.j/b.thr));
+  var col=p>0.85?'var(--redB)':(p>0.6?'var(--amb)':'var(--t2)');
+  pe.innerHTML='<span style="color:'+col+'">&rarr;'+fmt2(b.j,2)+'/'+fmt2(b.thr,1)+'% '+Math.round(p*100)+'%</span>';
+  r.style.width=(p*100)+'%';r.style.background=p>0.85?'var(--redB)':(p>0.6?'var(--amb)':'var(--blu)');});
+ window._proxHas=has;}
+setInterval(drawProx,1000);
 var _cwsOk=false,_cwsRest=null;
 function cxRestPoll(){if(_cwsOk)return;
  fetch('https://api.binance.com/api/v3/ticker/24hr?symbols='+_CSYMS).then(function(r){return r.json();})
@@ -692,7 +732,8 @@ function compSub(engine,symbol,colspan,nLegs){
  if(pe){var bk=safe(pe.realized);
   parts.push('caught <span style="color:'+(bk>0?'var(--grn)':(bk<0?'var(--red)':'var(--t2)'))+'">'+fmt$(bk)+'</span> banked (sum of books below) · '+(pe.closed||0)+' clip'+((pe.closed||0)===1?'':'s')+' · '+bks.length+' book'+(bks.length===1?'':'s'));}
  var html='<tr><td></td><td class="l d" colspan="'+colspan+'" style="border-left:2px solid var(--grn)">&#8627; '+esc(e)+' companions'+legNote+' · '+parts.join(' · ')+'</td></tr>';
- /* per-BOOK breakdown: EVERY companion book listed on its OWN row by UNIQUE name with its
+)OMEGAD3"
+R"OMEGAD4( /* per-BOOK breakdown: EVERY companion book listed on its OWN row by UNIQUE name with its
     OWN pnl + gauge params (operator 2026-07-04j "show all 6, give them unique names"). No
     collapse — every book of the engine renders as a distinct line so all N are visible. Each
     book is a SEPARATE additive standalone engine ([[CompanionDominanceError]]); its $ is its
@@ -723,8 +764,7 @@ function findLeg(engine,entry){
 }
 function compSubLeg(engine,symbol,entry,colspan,dup){
  var e=(engine||'').replace(/Engine$/,'');var eNum=safe(entry);
-)OMEGAD3"
-R"OMEGAD4( if(dup)return '<tr><td></td><td class="l d" colspan="'+colspan+'" style="border-left:2px solid var(--t3);opacity:.45;font-size:10px">&#8627; '+esc(e)+' companion @ '+fmt2(eNum,2)+' · <span class="d">shares entry with leg above (one price-keyed companion)</span></td></tr>';
+ if(dup)return '<tr><td></td><td class="l d" colspan="'+colspan+'" style="border-left:2px solid var(--t3);opacity:.45;font-size:10px">&#8627; '+esc(e)+' companion @ '+fmt2(eNum,2)+' · <span class="d">shares entry with leg above (one price-keyed companion)</span></td></tr>';
  var m=findLeg(engine,entry);
  if(!m)return '<tr><td></td><td class="l d" colspan="'+colspan+'" style="border-left:2px solid var(--t3);opacity:.5;font-size:10px">&#8627; '+esc(e)+' companion @ '+fmt2(eNum,2)+' · <span class="d">no clip on this leg</span></td></tr>';
  var bk=safe(m.realized);var col=(bk>0?'var(--grn)':(bk<0?'var(--red)':'var(--t2)'));
@@ -862,7 +902,8 @@ function render(J){lastJ=J;
     +'<td class="num '+(safe(t.unrealized_pnl)>=0?'g':'r')+'">'+fmt$(safe(t.unrealized_pnl))+'</td></tr>'+cr;}).join('');
    el('lt').innerHTML='<tr><th class="l">sym</th><th class="l">engine</th><th>side</th><th>lots</th><th>entry</th><th>last</th><th>unreal</th></tr>'+rows2;
    el('ltcount').textContent=REGPOS.length+' open · from registry (feed quiet — prices stale)';
-   var cbank2=safe((window._comptot||{}).all);
+)OMEGAD4"
+R"OMEGAD5(   var cbank2=safe((window._comptot||{}).all);
    el('ltpnl').innerHTML=cbank2?('<span style="font-size:11px;color:var(--t3)">+ '+fmt$(cbank2)+' companion (paper, additive)</span>'):'';}
   else{el('lt').innerHTML='<tr><td class="l d">FLAT — no open positions</td></tr>';el('ltpnl').textContent='';el('ltcount').textContent='';}}
  else{el('ltcount').textContent=lts.length+' open';
@@ -890,8 +931,7 @@ function setConn(ok,via){el('conn').style.background=ok?'var(--grn)':'var(--red)
  s.onerror=function(){wsOk=false;};}catch(e){wsOk=false;}})();
 function poll(){if(wsOk)return;fetch('/api/telemetry').then(function(r){return r.json();}).then(function(j){render(j);setConn(true,'http');}).catch(function(){setConn(false);});}
 setInterval(poll,1000);poll();
-)OMEGAD4"
-R"OMEGAD5(/* companion (stall-clip) overlay -- pushed from the Mac stall-accountant to C:\Omega\companion_state.json,
+/* companion (stall-clip) overlay -- pushed from the Mac stall-accountant to C:\Omega\companion_state.json,
    served at /api/companion. Nested as a sub-row under each live trade (OMEGA book). */
 function pollComp(){fetch('/api/companion').then(function(r){return r.json();}).then(function(j){
  /* GUARD (S-2026-07-03): /api/companion transiently returns a PARTIAL aggregation with no OMEGA book
@@ -1032,7 +1072,8 @@ function pollRdagent(){
     }
     var sig=rank.signal||{}, basket=sig.basket||[];
     var el2=el('rdatab'); if(!el2)return;
-    if(!basket.length){ el2.innerHTML='<tr><td class="l d">no ranking yet</td></tr>'; return; }
+)OMEGAD5"
+R"OMEGAD6(    if(!basket.length){ el2.innerHTML='<tr><td class="l d">no ranking yet</td></tr>'; return; }
     /* S-2026-07-14f: per-name paper P&L column (operator ask). Join the held book
        (/api/rdagent_book positions[], avg-cost from the fills ledger) by symbol —
        displayed value comes from the SAME file the paper fills wrote (content-parity). */
@@ -1060,8 +1101,7 @@ function pollRdagent(){
     };
     var traded=[], ctx=[];
     basket.slice(0,23).forEach(function(b){
-)OMEGAD5"
-R"OMEGAD6(      var p=posBy[b.instrument];
+      var p=posBy[b.instrument];
       if(b.action==='BUY'||(p&&p.shares))traded.push(b); else ctx.push(b);
     });
     var div='<tr><td colspan="8" class="d" style="text-align:center;font-size:9px;padding:2px 0;border-top:1px solid rgba(255,255,255,0.10)">▼ ranking context only — NOT traded (BUY/held rows above are the whole book)</td></tr>';
@@ -1104,6 +1144,15 @@ function ccState(s){
  var n=(s.sublegs&&s.sublegs.length)||0;
  if(n)return '<span class="g" style="font-weight:600">OPEN ('+n+' leg'+(n>1?'s':'')+')</span>';
  if(s.armed)return '<span class="g">ARMED</span>';
+ /* S-2026-07-18ah window-state (carried ask #1 + trigger-proximity): a det window OPEN
+    with the book still flat means "jump seen, waiting for confirm-cross" — show it +
+    the bp still needed; an idle self-detect book shows its live j/thr proximity. */
+ if(s.win_open)return '<span style="color:var(--amb);font-weight:600">WINDOW OPEN</span>'
+  +(safe(s.confirm_dist_bp)>0?'<span class="d"> · +'+fmt2(safe(s.confirm_dist_bp),0)+'bp to entry</span>':'');
+ if(s.prox_valid&&safe(s.det_thr_pct)>0){
+  var _pj=safe(s.win_move_pct),_pr=Math.max(0,Math.min(1,_pj/safe(s.det_thr_pct)));
+  return '<span class="d">idle · &rarr;'+fmt2(_pj,2)+'/'+fmt2(safe(s.det_thr_pct),1)+'% ('+Math.round(_pr*100)+'%)</span>';
+ }
  return '<span class="d">idle · awaiting jump</span>';
 }
 function ccKind(s){
@@ -1199,7 +1248,8 @@ function pollCH(){fetch('/api/chimera_health').then(function(r){return r.json();
  var age=Date.now()/1000-safe(j.ts);
  if(age>360){red('CC STALE '+Math.round(age/60)+'m','chimera health feed stale — Mac watch or relay dead; executor state UNKNOWN');return;}
  if(!safe(j.ok)){red('CC RED: '+String(j.reason||'?').slice(0,70),String(j.reason||''));return;}
- var us=safe(j.uptime_s),uh=Math.floor(us/3600),um=Math.floor(us%3600/60);
+)OMEGAD6"
+R"OMEGAD7( var us=safe(j.uptime_s),uh=Math.floor(us/3600),um=Math.floor(us%3600/60);
  d.style.background='#39ff14';d.style.boxShadow='0 0 4px #39ff14,0 0 8px #39ff14';d.style.animation='none';
  l.textContent='CC '+(j.build||'?')+' '+(j.mode||'?')+' up='+(uh>0?uh+'h'+um+'m':um+'m')+' ✓';
  l.style.color='#39ff14';l.style.textShadow='0 0 6px #39ff14';l.title='chimera VERIFIED: build '+(j.build||'?')+' == josgp1 HEAD '+(j.headsha||'?')+', mode '+(j.mode||'?')+', starts30='+safe(j.starts30)+', probe age '+Math.round(age)+'s';
@@ -1237,8 +1287,7 @@ function renderCompanionOpenTrades(pfx, open, trades, pxPrec){
 
 /* ── GOLD COMPANIONS (AUPOS/AUNEG BE-floor · native C++ · additive, judged STANDALONE) ──
    Fed by pollGold() off /api/gold_companion (gold_companion_state.json, written in-binary by
-)OMEGAD6"
-R"OMEGAD7(   omega::gold_befloor_companion). REAL FORWARD TRADES ONLY — the backtest/replay number is GONE
+   omega::gold_befloor_companion). REAL FORWARD TRADES ONLY — the backtest/replay number is GONE
    (operator: if it is not a real trade it does not belong in the live GUI). desk_usd = the real
    forward book ($0 until the first live clip closes). Two runners/dir (banker r20 + runner r150).
    Schema: {ts,lot,dpp,bars,deploy_ts,desk_pts,desk_usd,open:[{flavor,dir,tier,entry,wm,cur,
@@ -1366,7 +1415,8 @@ function pollFx(){fetch('/api/fx_companion').then(function(r){return r.json();})
  drawFx();
  if(typeof updDayPnl==='function')updDayPnl();if(typeof drawLedger==='function')drawLedger();
  }).catch(function(){drawFx();});}
-setInterval(pollFx,15000);pollFx();
+)OMEGAD7"
+R"OMEGAD8(setInterval(pollFx,15000);pollFx();
 
 /* ── INDEX COMPANIONS (per-symbol <SYM>Pos/<SYM>Neg BE-floor · native C++ · additive, STANDALONE) ──
    Fed by pollIndex() off /api/index_companion (index_companion_state.json). REAL FORWARD TRADES ONLY —
@@ -1405,8 +1455,7 @@ function drawIndex(){var j=window._idx||null;
       +'<td class="num">'+safe(c.clips)+'</td><td class="num">'+safe(c.wins)+'</td>'
       +'<td class="num">'+fmt2(safe(c.pts_real!==undefined?c.pts_real:c.pts),2)+'</td>';
     if(first){h+='<td class="num" rowspan="'+rs+'" style="font-weight:600;color:'+bcol+'">'+fmt$(safe(bu))+'</td>';}
-)OMEGAD7"
-R"OMEGAD8(    h+='</tr>';first=false;
+    h+='</tr>';first=false;
    });
   });
  });
@@ -1535,7 +1584,8 @@ function drawLadder(pfx,j,label){
  var dcol=(desk>0?'var(--grn)':(desk<0?'var(--red)':'var(--t2)'));
  var openTxt=allOpen.length?(' · <span style="color:var(--grn)">'+allOpen.length+' open now</span>'):'';
  el(pfx+'info').innerHTML='DESK <span style="color:'+dcol+';font-weight:600">'+fmt$(desk)+'</span> forward · '
-   +allTrades.length+' closed clip'+(allTrades.length===1?'':'s')+openTxt+' · '+pairs.length+' '+label+' ('+nact+' active) · H1 · shadow · BE-floored-on-open';
+)OMEGAD8"
+R"OMEGAD9(   +allTrades.length+' closed clip'+(allTrades.length===1?'':'s')+openTxt+' · '+pairs.length+' '+label+' ('+nact+' active) · H1 · shadow · BE-floored-on-open';
  renderCompanionOpenTrades(pfx,allOpen,allTrades,pfx==='fxlad'?5:1);
 }
 function ladTot(j){return ((j||{}).pairs||[]).reduce(function(s,p){return s+safe(p.usd_real!==undefined?p.usd_real:p.usd);},0);}/* S-2026-07-10: index/FX LADDER totals fold REALIZED forward clips ONLY. Open-leg unrealized MTM removed -- the no-floor stacked ladder legs mark red between reclips (5 NAS100Lad -$37 each as NAS ticks down; 5 GBPUSDLad -$17) and dragged ALL-TIME DOWN in real time = the "dropping while I watch it" phantom. Per-panel DESK still shows uPnL. Same fix as _idxtot/_fxtot/_smtot (52a902d2) -- that missed ladTot, THIS is the ladder path. */
@@ -1577,8 +1627,7 @@ function parseShadow(txt){
  function unq(v){v=(v||'').trim();return v[0]==='"'?v.slice(1,-1):v;}
  for(var i=1;i<ls.length;i++){var L=ls[i];if(!L)continue;var f=L.split(',');
   if(f.length<hdr.length-2)continue;
-)OMEGAD8"
-R"OMEGAD9(  var ts=parseInt(f[ix.exit_ts_unix],10);if(!ts)continue;
+  var ts=parseInt(f[ix.exit_ts_unix],10);if(!ts)continue;
   var sym=unq(f[ix.symbol]),eng=unq(f[ix.engine]);
   if(sym==='__BOOT__'||eng==='boot_writetest')continue;
   var side=unq(f[ix.side]);if(side==='BUY')side='LONG';if(side==='SELL')side='SHORT';
@@ -1694,7 +1743,8 @@ function ledgerCompRow(k,seen,sym){var m=gcMatch(k);if(!m)return '';
  var st=od?(armed?'<span class="g">ARMED</span>'+(od.mfe_pct!=null?' '+fmt2(od.mfe_pct,2)+'% peak':''):'<span class="d">tracking</span>'):'';
  var bc=bank>0?'var(--grn)':(bank<0?'var(--red)':'var(--t2)');
  /* operator 2026-07-17m: label the book by ITS SYMBOL -- "<SYM> comp" -- so the mimic's bank
-    reads as that symbol's companion money, not an anonymous sub-row. */
+)OMEGAD9"
+R"OMEGAD10(    reads as that symbol's companion money, not an anonymous sub-row. */
  return '<tr><td></td><td class="l d" colspan="3" style="border-left:2px solid var(--grn)">&#8627; <span style="color:var(--t1)">'+esc((sym||'').trim()||m.key)+' comp</span> (stall-clip · paper · additive) · '
   +closed+' banked'+(openn?' · '+openn+' open':'')+(st?' · '+st:'')+'</td>'
   +'<td class="num" style="color:'+bc+'">'+fmt$(bank)+'</td><td colspan="2"></td></tr>';}
@@ -1725,8 +1775,7 @@ function compClipRows(){var cl=window._compClosed||[];if(!cl.length)return '';
 function cryptoLedgerRows(){var live=window._cc||{};var tags=Object.keys(live);if(!tags.length)return '';
  var bySym={};tags.forEach(function(t){var p=live[t];if(!p)return;
   var sy=p.sym||String(p.tag||t).split('-')[0]||'?';(bySym[sy]=bySym[sy]||[]).push(p);});
-)OMEGAD9"
-R"OMEGAD10( var syms=Object.keys(bySym);if(!syms.length)return '';
+ var syms=Object.keys(bySym);if(!syms.length)return '';
  var tot={};syms.forEach(function(sy){var s=0;bySym[sy].forEach(function(p){s+=bpUsd(ccWbp(p));});tot[sy]=s;});
  syms.sort(function(a,b){return Math.abs(tot[b])-Math.abs(tot[a])||a.localeCompare(b);});/* |total| desc */
  var h='<tr><td class="l d" colspan="7" style="padding-top:6px">crypto companion/mimic books — per symbol (PAPER shadow banks, display-only — NOT in PnL/Σ, S-18w; desk-$ weighted)</td></tr>';
@@ -1843,7 +1892,8 @@ function drawHeat(){var rs=winRows();var by={};
    if(e.pnl>1){bg=t>0.4?'#0F6E56':'#0a4434';fg='#9FE1CB';}
    else if(e.pnl<-1){bg=t<-0.4?'#A32D2D':'#5c1f1f';fg='#F7C1C1';}
    var nm=k.replace(/Engine$/,'');
-   h+='<div class="tile" style="background:'+bg+'" title="'+esc(k)+' n='+e.n+' pnl='+fmt$(e.pnl)+'">'
+)OMEGAD10"
+R"OMEGAD11(   h+='<div class="tile" style="background:'+bg+'" title="'+esc(k)+' n='+e.n+' pnl='+fmt$(e.pnl)+'">'
     +'<b style="color:'+fg+'">'+esc(nm)+'</b><span class="num" style="color:'+fg+'">'+fmt$(e.pnl)+' · '+e.n+'</span></div>';});
   h+='</div>';});
  el('heat').innerHTML=h;}
@@ -1885,8 +1935,7 @@ function drawTOD(){if(!el('tod'))return;var rs=ROWS;var grid={};
 function drawPromo(){if(!el('promo'))return;/* PROMOTION TRACKER panel removed 2026-07-06 (operator: useless) */var by={};
  ROWS.forEach(function(r){var k=r.eng||'?';if(!by[k])by[k]={n:0,pnl:0,w:0};by[k].n++;by[k].pnl+=r.pnl;if(r.pnl>0)by[k].w++;});
  var ks=Object.keys(by).sort(function(a,b){return by[b].n-by[a].n;}).slice(0,14);
-)OMEGAD10"
-R"OMEGAD11( if(!ks.length){el('promo').innerHTML='<span class="d">no shadow history yet</span>';return;}
+ if(!ks.length){el('promo').innerHTML='<span class="d">no shadow history yet</span>';return;}
  var GATE=30,h='';
  ks.forEach(function(k){var e=by[k],avg=e.pnl/e.n,ok=e.n>=GATE;
   var col=e.n<10?'var(--t2)':avg>0?(ok?'var(--grn)':'var(--ambB)'):'var(--red)';
@@ -2035,7 +2084,8 @@ function drawPR(){var cv=el("prc");
    ROWS.forEach(function(r){if(sm(r.sym)&&(!lastR||r.ts>lastR.ts))lastR=r;});
    if(lastR){var dd2=(Date.now()/1000-lastR.ts)/86400;
     var note='no '+PRSYM.replace('USD','')+' closes in window — last '
-     +(dd2>=1?Math.round(dd2)+'d':Math.round(dd2*24)+'h')+' ago '+fmt$(lastR.pnl)
+)OMEGAD11"
+R"OMEGAD12(     +(dd2>=1?Math.round(dd2)+'d':Math.round(dd2*24)+'h')+' ago '+fmt$(lastR.pnl)
      +' ('+(lastR.eng||'').replace(/Engine$/,'')+')';
     ctx.font='10px IBM Plex Mono';
     var nw=ctx.measureText(note).width;
@@ -2087,8 +2137,7 @@ function drawPR(){var cv=el("prc");
   var mi=Math.max(0,Math.min(n-1,Math.round((PRMOUSE.x-padL)/pw*(n-1))));
   var mb=bars[mi],mx2=X(mi);
   ctx.strokeStyle='rgba(230,237,243,0.22)';ctx.setLineDash([3,3]);ctx.lineWidth=1;
-)OMEGAD11"
-R"OMEGAD12(  ctx.beginPath();ctx.moveTo(mx2,padT);ctx.lineTo(mx2,padT+ph);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(mx2,padT);ctx.lineTo(mx2,padT+ph);ctx.stroke();
   ctx.beginPath();ctx.moveTo(padL,PRMOUSE.y);ctx.lineTo(padL+pw,PRMOUSE.y);ctx.stroke();ctx.setLineDash([]);
   var pv=hi-(PRMOUSE.y-padT)/ph*(hi-lo);
   ctx.fillStyle='#1F2937';ctx.fillRect(padL+pw+2,PRMOUSE.y-8,padR-6,15);
