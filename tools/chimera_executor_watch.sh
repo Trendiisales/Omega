@@ -57,7 +57,9 @@ PROBE=$(ssh -o ConnectTimeout=25 -o BatchMode=yes chimera-direct '
   lcs=$(grep -o "\"shadow_mode\"[[:space:]]*:[[:space:]]*[a-z]*" /home/jo/ChimeraCrypto/config/live_config.json 2>/dev/null | head -1 | grep -o "[a-z]*$")
   lcm=$(grep -o "\"mode\"[[:space:]]*:[[:space:]]*\"[a-z]*\"" /home/jo/ChimeraCrypto/config/live_config.json 2>/dev/null | tail -1 | grep -o "[a-z]*\"$" | tr -d "\"")
   crs=$(grep -o "\"shadow_mode\"[[:space:]]*:[[:space:]]*[a-z]*" /home/jo/ChimeraCrypto/config/binance_credentials.json 2>/dev/null | head -1 | grep -o "[a-z]*$")
-  printf "ACT=%s\nMODE=%s\nEXEC=%s\nHALTS=%s\nSTARTS30=%s\nLCSHADOW=%s\nLCMODE=%s\nCRSHADOW=%s\n" "$act" "$mode" "$execl" "$halts" "$starts30" "$lcs" "$lcm" "$crs"
+  build=$(grep -F "Tier-2 Edge Engines" "$logf" 2>/dev/null | tail -1 | grep -o "build=[a-f0-9]*" | cut -d= -f2)
+  headsha=$(cd /home/jo/ChimeraCrypto && git rev-parse --short=7 HEAD 2>/dev/null)
+  printf "ACT=%s\nMODE=%s\nEXEC=%s\nHALTS=%s\nSTARTS30=%s\nLCSHADOW=%s\nLCMODE=%s\nCRSHADOW=%s\nBUILD=%s\nHEADSHA=%s\n" "$act" "$mode" "$execl" "$halts" "$starts30" "$lcs" "$lcm" "$crs" "$build" "$headsha"
 ' 2>/dev/null)
 SSH_RC=$?
 
@@ -75,6 +77,8 @@ STARTS30=$(printf '%s\n' "$PROBE" | sed -n 's/^STARTS30=//p'); STARTS30=${STARTS
 LCSHADOW=$(printf '%s\n' "$PROBE" | sed -n 's/^LCSHADOW=//p')
 LCMODE=$(printf '%s\n' "$PROBE" | sed -n 's/^LCMODE=//p')
 CRSHADOW=$(printf '%s\n' "$PROBE" | sed -n 's/^CRSHADOW=//p')
+BUILD=$(printf '%s\n' "$PROBE" | sed -n 's/^BUILD=//p')
+HEADSHA=$(printf '%s\n' "$PROBE" | sed -n 's/^HEADSHA=//p')
 
 REASON=""
 [ "$ACT" != "active" ]                                   && REASON="chimera.service not active ($ACT)"
@@ -88,6 +92,20 @@ if [ -z "$REASON" ] && [ -n "$LCSHADOW" ] && [ -n "$CRSHADOW" ]; then
   lc_live=1; [ "$LCSHADOW" = "true" ] && lc_live=0; [ -n "$LCMODE" ] && [ "$LCMODE" != "live" ] && lc_live=0
   cr_live=1; [ "$CRSHADOW" = "true" ] && cr_live=0
   [ "$lc_live" != "$cr_live" ] && REASON="CONFIG MODE-CONFLICT: live_config(shadow_mode=$LCSHADOW mode=$LCMODE) vs creds(shadow_mode=$CRSHADOW) — next restart FATAL-loops"
+fi
+# BUILD-MISMATCH (operator demand 2026-07-18: "see immediately if the correct
+# software has loaded"): the RUNNING binary's boot-stamped build= hash must be
+# a prefix-match of the repo HEAD on the box. A deploy that committed+pushed
+# but restarted an old binary (or never rebuilt) alarms here instead of being
+# discovered days later. Same class as Omega header-wire-incremental-stale-build.
+if [ -z "$REASON" ] && [ -n "$BUILD" ] && [ -n "$HEADSHA" ]; then
+  case "$HEADSHA" in
+    "$BUILD"*) : ;;  # running build is HEAD (stamp may be shorter than rev-parse)
+    *) case "$BUILD" in
+         "$HEADSHA"*) : ;;
+         *) REASON="BUILD-MISMATCH: running binary build=$BUILD but repo HEAD=$HEADSHA — wrong/stale software loaded, rebuild+restart" ;;
+       esac ;;
+  esac
 fi
 [ -z "$REASON" ] && ! printf '%s' "$MODE" | grep -q "RUNTIME MODE = LIVE" \
                                                           && REASON="runtime mode not LIVE: ${MODE:-<no line>}"
