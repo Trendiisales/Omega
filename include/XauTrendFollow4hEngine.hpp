@@ -468,8 +468,11 @@ public:
         p.mfe           = 0.0;
         p.mae           = 0.0;
         p.size_mult     = 1.0;       // preserve regression-sizing field at full size
-        // one-way mimic notify (fire-and-forget; never reads/touches this position)
-        omega::gold_trend_mimic().on_trend_open(mimic_tag, p.is_long ? 1 : -1, p.entry_px, ps.entry_ts);
+        // one-way mimic notify — RESTORE path (S-2026-07-18 bounded catch-up): the old
+        // unconditional on_trend_open re-fire here spawned duplicate stale-trigger legs
+        // on every restart while holding (no age bound, original entry px). The registry
+        // restore route spawns ONLY under the certified catch-up conditions.
+        omega::gold_trend_mimic().on_trend_restore(mimic_tag, p.is_long ? 1 : -1, p.entry_px, ps.entry_ts);
         return true;
     }
 

@@ -37,6 +37,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
+#include <ctime>
 #include <cstdlib>
 #include <cctype>
 #include <string>
@@ -108,6 +109,33 @@ public:
         // Gate is trigger-time only (bear trigger spawns nothing); pending/open legs are NOT
         // cancelled on a regime flip (tested: delta -0.3, irrelevant). Fail-open until warm.
         bool   live_book    = false; // true after the operator live-flip: json shadow:false
+        // ── S-2026-07-18 BOUNDED CATCH-UP on the parent RESTORE re-fire (Omega port of the
+        //   certified crypto bounded-catch-up class; own cert backtest/GOLDMIMIC_CATCHUP_
+        //   CERT_2026-07-18.md — never carry the crypto cert across). Background: the parent
+        //   trend engines (XauTf4h / XauTfD1) re-fire on_trend_open from persist_restore on
+        //   EVERY restart while holding — post-arm (omega_main restore runs after init_engines'
+        //   arm()), UNCONDITIONALLY, with the ORIGINAL entry px and NO age bound. With legs
+        //   already persisted that re-fire spawned DUPLICATE pending legs at a stale trigger,
+        //   whose BE-ENTER could book at a level far from the market (the closed.csv
+        //   "time-travel fill" incident class; the ledger survived only via its entry_ts
+        //   dedup key). Restore fires now route through on_trend_restore() which spawns IFF:
+        //     • catchup_max_age_secs > 0 (0 = restore NEVER spawns — the safe default; live
+        //       opens are the S-17q fire path and are untouched);
+        //     • confirmed-entry floored book only (be_entry_pct>0 AND no_prebe_loss — same
+        //       family rule as the crypto mimic_floor gate);
+        //     • the book has NEVER seen this trigger (entry_ts > persisted last_trigger_ts_)
+        //       — a persisted/clipped/cancelled trigger is already fully accounted;
+        //     • the book is FLAT (no open/pending legs — crypto in_flight skip);
+        //     • trigger age <= catchup_max_age_secs AND elapsed native bars < pend_bars
+        //       (an always-on book's pending legs would still be alive).
+        //   Recovered legs spawn PENDING with pbars = elapsed bars and a cu (catch-up) mark:
+        //   on their FIRST managed bar, a leg whose BE level was NOT traded inside that bar
+        //   (long: bar low already above the level) is CANCELLED instead of entered — the
+        //   cross happened UNSEEN during the outage, and back-filling that open is the
+        //   forbidden late-chase/backdated-entry class (crypto SKIP rule). A leg whose level
+        //   IS traded books the SAME level entry an always-on book would have booked.
+        int64_t catchup_max_age_secs = 0;   // 0 = OFF (restore re-fire spawns nothing)
+        int64_t catchup_bar_secs     = 0;   // native bar seconds (H4=14400, D1=86400) for pbars
         std::string state_path;      // per-book persisted OPEN legs + forward book
         std::string closed_path;     // per-book persisted CLOSED clips log
     };
@@ -145,6 +173,7 @@ public:
     void on_trend_open(int dir, double entry_px, int64_t ts_sec) noexcept {
         if (entry_px <= 0.0 || dir == 0) return;
         if (cfg_.bull_only && !bull_) return;   // bull-gate (SMA200) — quiet by policy, not fault
+        if (ts_sec > last_trigger_ts_) last_trigger_ts_ = ts_sec;   // catch-up dedup watermark
         const bool be = (cfg_.be_entry_pct > 0.0);   // BE-ENTRY: legs stay pending until cost covered
         for (size_t i = 0; i < cfg_.legs.size(); ++i) {
             Leg L; L.dir = dir; L.li = (int)i; L.entry_ts = ts_sec; L.peak = 0.0; L.armed = false;
@@ -163,6 +192,43 @@ public:
                     be ? "PENDING" : "spawn", cfg_.legs.size(), dir > 0 ? "LONG" : "SHORT", entry_px,
                     be ? " (waits for BE)" : "");
         std::fflush(stdout);
+        save_book_();   // persists the trigger watermark alongside the aggregate
+        save_open_();
+    }
+
+    // ── S-2026-07-18 BOUNDED CATCH-UP restore path (see Config::catchup_max_age_secs for the
+    //   full contract). Fired by a parent engine's persist_restore INSTEAD of on_trend_open.
+    //   Default (catchup_max_age_secs==0) spawns NOTHING — the pre-existing unconditional
+    //   restore re-fire (duplicate stale-trigger legs, unbounded age) is retired either way.
+    void on_trend_restore(int dir, double entry_px, int64_t entry_ts, int64_t now_sec) noexcept {
+        if (cfg_.catchup_max_age_secs <= 0) {
+            std::printf("[GMIMIC][%s] restore re-fire suppressed (catch-up OFF) trig_ts=%lld\n",
+                        cfg_.trigger_tag.c_str(), (long long)entry_ts);
+            std::fflush(stdout);
+            return;
+        }
+        if (entry_px <= 0.0 || dir == 0 || entry_ts <= 0) return;
+        if (cfg_.be_entry_pct <= 0.0 || !cfg_.no_prebe_loss) return;  // confirmed-entry floored family only
+        if (entry_ts <= last_trigger_ts_) return;   // trigger already seen: legs persisted/clipped/cancelled
+        for (const Leg& L : legs_) if (L.open) return;   // in-flight book — never stack a recovery on it
+        if (cfg_.bull_only && !bull_) return;
+        const int64_t age = now_sec - entry_ts;
+        if (age < 0 || age > cfg_.catchup_max_age_secs) return;   // outside the certified bound
+        const int ebars = (cfg_.catchup_bar_secs > 0) ? (int)(age / cfg_.catchup_bar_secs) : 0;
+        if (ebars >= cfg_.pend_bars) return;   // always-on legs would already be cancelled
+        last_trigger_ts_ = entry_ts;
+        for (size_t i = 0; i < cfg_.legs.size(); ++i) {
+            Leg L; L.dir = dir; L.li = (int)i; L.entry_ts = entry_ts; L.peak = 0.0; L.armed = false;
+            L.bars = 0; L.trig = entry_px; L.open = true;
+            L.pending = true; L.pbars = ebars; L.cu = true;   // cu: first-bar gap-through guard applies
+            legs_.push_back(std::move(L));
+        }
+        std::printf("[GMIMIC][%s] CATCHUP restore: %zu PENDING legs %s trig=%.2f age=%llds (%d native bars, bound %llds) "
+                    "— legs open only via the live BE-ENTRY path, gap-through cancels\n",
+                    cfg_.trigger_tag.c_str(), cfg_.legs.size(), dir > 0 ? "LONG" : "SHORT", entry_px,
+                    (long long)age, ebars, (long long)cfg_.catchup_max_age_secs);
+        std::fflush(stdout);
+        save_book_();
         save_open_();
     }
 
@@ -233,6 +299,28 @@ public:
                 L.pbars += 1;
                 const double fav  = L.dir > 0 ? h : l;                 // favorable extreme this bar
                 const double fret = L.dir * (fav / L.trig - 1.0) * 100.0;
+                // CATCH-UP GAP-THROUGH GUARD (S-2026-07-18, cu legs, FIRST managed bar only):
+                // if the BE cross happened UNSEEN during the outage, price at restart is
+                // already beyond the level, so this first bar shows fret>=be with the level
+                // never TRADED inside the bar (long: bar low above it) — entering "at the
+                // level" would be a backdated fill (forbidden late-chase class) -> CANCEL.
+                // A first bar that trades through the level books the same level entry an
+                // always-on book would have. ONE-SHOT: after one live-managed bar the leg's
+                // history is fully seen, so later bars keep the certified level-fill
+                // convention (incl. weekend-gap bars — cert-caught false-cancel otherwise).
+                // Normal (non-cu) legs are untouched.
+                const bool was_cu = L.cu; L.cu = false;
+                if (was_cu && fret >= cfg_.be_entry_pct) {
+                    const double lvl = L.trig * (1.0 + L.dir * cfg_.be_entry_pct / 100.0);
+                    const double adv = L.dir > 0 ? l : h;              // adverse extreme this bar
+                    if (L.dir * (adv - lvl) > 0.0) {                   // level gapped over, never traded
+                        std::printf("[GMIMIC][%s] CATCHUP leg %s CANCELLED (gap-through: level %.2f "
+                                    "not traded, bar %s=%.2f)\n", cfg_.trigger_tag.c_str(),
+                                    leg_engine_(L.li).c_str(), lvl, L.dir > 0 ? "low" : "high", adv);
+                        std::fflush(stdout);
+                        L.open = false; continue;
+                    }
+                }
                 if (fret >= cfg_.be_entry_pct) {                       // BE made -> ENTER at the BE level
                     L.entry = L.trig * (1.0 + L.dir * cfg_.be_entry_pct / 100.0);
                     L.pending = false; L.bars = 0; L.peak = 0.0; L.trough = 0.0; L.armed = false; L.entry_ts = ts_sec;
@@ -311,8 +399,10 @@ private:
     struct Leg { int dir = 0, li = 0, bars = 0, pbars = 0; double entry = 0, peak = 0, trig = 0;
                  double trough = 0;   // min signed ret% seen (MAE); NOT persisted -> resets on restart
                  bool armed = false, open = false, pending = false;
+                 bool cu = false;     // catch-up-spawned (S-2026-07-18): first-bar gap-through guard
                  int64_t entry_ts = 0; std::string token; };
     std::vector<Leg> legs_;
+    int64_t last_trigger_ts_ = 0;   // newest on_trend_open ts seen (persisted; catch-up dedup watermark)
     struct Book { double ret = 0, ret_real = 0; int clips = 0, wins = 0; };
     std::vector<Book> books_;   // one per leg config index
     struct Closed { int li; double entry, exit, ret_real; int64_t ets, xts; std::string reason; };
@@ -360,32 +450,48 @@ private:
         while (f >> kind) { if (kind == "book") { int li; double rt, rr; int cl, wn;
             if (f >> li >> rt >> rr >> cl >> wn && li >= 0 && li < (int)books_.size())
                 books_[li] = Book{rt, rr, cl, wn}; }
+            else if (kind == "trig") { long long t = 0;   // S-2026-07-18 catch-up dedup watermark
+                if (f >> t && t > last_trigger_ts_) last_trigger_ts_ = t; }
             else { std::string rest; std::getline(f, rest); } }
     }
     void save_book_() const {
         const std::string tmp = cfg_.state_path + ".tmp";
         { std::ofstream f(tmp, std::ios::trunc); if (!f.is_open()) return;
+          f.precision(15);   // S-2026-07-18: full double round-trip — 6-sig-fig default
+                             // quantized reloaded aggregates (restart-fidelity class)
           for (size_t i = 0; i < books_.size(); ++i)
               f << "book " << i << " " << books_[i].ret << " " << books_[i].ret_real << " "
-                << books_[i].clips << " " << books_[i].wins << "\n"; }
+                << books_[i].clips << " " << books_[i].wins << "\n";
+          f << "trig " << (long long)last_trigger_ts_ << "\n"; }   // unknown-kind line to old binaries
         std::rename(tmp.c_str(), cfg_.state_path.c_str());
     }
     void load_open_() {  // open legs persisted alongside the book (survive restart)
         std::ifstream f(cfg_.state_path + ".open"); if (!f.is_open()) return;
-        std::string kind;
-        while (f >> kind) { if (kind == "leg") { Leg L; int op, ar, pend; long long ets; std::string tok;
-            if (f >> L.dir >> L.li >> L.bars >> L.entry >> L.peak >> ar >> op >> ets >> pend >> L.trig >> L.pbars >> tok) {
-                L.armed = ar; L.open = op; L.pending = pend; L.entry_ts = ets; L.token = (tok == "-") ? "" : tok;
-                if (L.open) legs_.push_back(std::move(L)); } } }
+        // line-based parse: the optional trailing cu field (S-2026-07-18) must not
+        // break OLD-format rows (absent -> cu=0), and old binaries reading a NEW row
+        // just ignore the trailing token — no one-time leg drop across the seam.
+        std::string line;
+        while (std::getline(f, line)) {
+            std::istringstream is(line); std::string kind;
+            if (!(is >> kind) || kind != "leg") continue;
+            Leg L; int op, ar, pend, cu = 0; long long ets; std::string tok;
+            if (is >> L.dir >> L.li >> L.bars >> L.entry >> L.peak >> ar >> op >> ets >> pend >> L.trig >> L.pbars >> tok) {
+                if (!(is >> cu)) cu = 0;                            // old rows: no cu field
+                L.armed = ar; L.open = op; L.pending = pend; L.cu = (cu != 0);
+                L.entry_ts = ets; L.token = (tok == "-") ? "" : tok;
+                if (L.open) legs_.push_back(std::move(L)); } }
     }
     void save_open_() const {
         const std::string p = cfg_.state_path + ".open", tmp = p + ".tmp";
         { std::ofstream f(tmp, std::ios::trunc); if (!f.is_open()) return;
+          f.precision(15);   // S-2026-07-18: full double round-trip — the 6-sig-fig default
+                             // shifted a reloaded leg's entry by ~5e-3 (gold), so a clip booked
+                             // after a restart differed from the always-on book (cert-caught)
           for (const Leg& L : legs_) if (L.open)
               f << "leg " << L.dir << " " << L.li << " " << L.bars << " " << L.entry << " " << L.peak
                 << " " << (L.armed ? 1 : 0) << " " << (L.open ? 1 : 0) << " " << (long long)L.entry_ts
                 << " " << (L.pending ? 1 : 0) << " " << L.trig << " " << L.pbars
-                << " " << (L.token.empty() ? "-" : L.token) << "\n"; }
+                << " " << (L.token.empty() ? "-" : L.token) << " " << (L.cu ? 1 : 0) << "\n"; }
         std::rename(tmp.c_str(), p.c_str());
     }
     void append_closed_(const Closed& c) const {
@@ -449,6 +555,15 @@ public:
         if (!armed_) return;
         auto it = idx_.find(tag); if (it == idx_.end()) return;
         books_[it->second].on_trend_open(dir, px, ts_sec);
+    }
+    // fired by a trend engine's persist_restore (S-2026-07-18): BOUNDED catch-up path.
+    // Replaces the old unconditional restore re-fire of on_trend_open (which spawned
+    // duplicate stale-trigger legs with no age bound — the "time-travel fill" class).
+    // See GoldTrendMimicBook::Config::catchup_max_age_secs for the spawn conditions.
+    void on_trend_restore(const std::string& tag, int dir, double px, int64_t entry_ts) {
+        std::lock_guard<std::mutex> lk(mu_);
+        auto it = idx_.find(tag); if (it == idx_.end()) return;
+        books_[it->second].on_trend_restore(dir, px, entry_ts, (int64_t)std::time(nullptr));
     }
     // SPECIFIC FEED: the trigger engine feeds its OWN book on its NATIVE bar (turtle=D1,
     // XauTF=H4, MgcFast=M30) so leg management matches the cadence it was backtested on --

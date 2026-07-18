@@ -1659,7 +1659,13 @@ static void init_engines(const std::string& cfg_path)
                 // BE from open -> never books -lc pre-arm (incl straight-adverse). be_entry(0.15)>=rt(0.15%).
                 // Faithful re-validation (clip_path_noprebe_floor.cpp, real XauTf4h entries): ALL6-PASS,
                 // net +151->+142 (-6%), worst-clip 0.00, nNeg 0.
-                c.arm_pct=0.25; c.lc_pct=1.5; c.cap_bars=12; c.rt_cost_bp=15.0; c.be_entry_pct=0.15; c.no_prebe_loss=true; c.pend_bars=6; gm.add(std::move(c)); }
+                c.arm_pct=0.25; c.lc_pct=1.5; c.cap_bars=12; c.rt_cost_bp=15.0; c.be_entry_pct=0.15; c.no_prebe_loss=true; c.pend_bars=6;
+                // BOUNDED CATCH-UP restore path (S-2026-07-18, cert backtest/GOLDMIMIC_CATCHUP_
+                // CERT_2026-07-18.md): the parent's persist_restore re-fire now routes through
+                // on_trend_restore — spawns ONLY a never-seen trigger, flat book, <=24h old,
+                // pend-alive; cu gap-through guard cancels backdated fills. 24h bound, H4 bars.
+                c.catchup_max_age_secs = 86400; c.catchup_bar_secs = 14400;
+                gm.add(std::move(c)); }
             // ── MgcTF4h floored mimic (S-2026-07-17q, operator "Wire it" after the S-17p study) ──
             // Certified backtest/MGC_VENUE_MIMIC_FINDINGS_2026-07-17.md, harness
             // clip_path_mgc_venue_mimic.cpp (REAL parent classes, EXACT production feed order,
@@ -1678,7 +1684,11 @@ static void init_engines(const std::string& cfg_path)
             // NOT claimed. Trigger/feed = g_mgc_tf_4h via per-instance mimic_tag (S-17q).
             {   omega::GoldTrendMimicBook::Config c; c.trigger_tag="MgcTF4h"; c.live_sym="XAUUSD.M";
                 c.legs={{"T",0.08},{"W",0.20}};
-                c.arm_pct=0.25; c.lc_pct=1.5; c.cap_bars=12; c.rt_cost_bp=5.0; c.be_entry_pct=0.15; c.no_prebe_loss=true; c.pend_bars=6; gm.add(std::move(c)); }
+                c.arm_pct=0.25; c.lc_pct=1.5; c.cap_bars=12; c.rt_cost_bp=5.0; c.be_entry_pct=0.15; c.no_prebe_loss=true; c.pend_bars=6;
+                // BOUNDED CATCH-UP (S-2026-07-18, same cert as XauTf4h — MgcTF4h certified in
+                // the same run at its rt5 venue cost): 24h bound, H4 bars.
+                c.catchup_max_age_secs = 86400; c.catchup_bar_secs = 14400;
+                gm.add(std::move(c)); }
             // MgcFastDon — RETIRED S-2026-07-17 (full-grid floored re-val, no live money lost; was SHADOW).
             // The no_prebe_loss floor enabled S-17c for compliance edge-REGRESSED it, and the full re-val
             // shows there is NO recoverable edge: (1) close-grade OFF-floor on the current 2yr XAU-M30 sample
@@ -1696,7 +1706,11 @@ static void init_engines(const std::string& cfg_path)
                 c.legs={{"T",0.08},{"W",0.20}};
                 // NO-PRE-BE-LOSS: be_entry(0.15)>=rt(0.15%). Faithful re-val (real XauTfD1 entries):
                 // ALL6-PASS, net +143->+118, worst-clip 0.00, nNeg 0.
-                c.arm_pct=0.25; c.lc_pct=2.0; c.cap_bars=8; c.rt_cost_bp=15.0; c.be_entry_pct=0.15; c.no_prebe_loss=true; c.pend_bars=4; gm.add(std::move(c)); }
+                c.arm_pct=0.25; c.lc_pct=2.0; c.cap_bars=8; c.rt_cost_bp=15.0; c.be_entry_pct=0.15; c.no_prebe_loss=true; c.pend_bars=4;
+                // BOUNDED CATCH-UP (S-2026-07-18, GOLDMIMIC_CATCHUP_CERT): 24h bound = 1 D1
+                // bar — a restore older than one D1 bar is a certified BOUNDED skip.
+                c.catchup_max_age_secs = 86400; c.catchup_bar_secs = 86400;
+                gm.add(std::move(c)); }
             // XauTf2h — RETIRED S-2026-07-17 (full-grid floored re-val; was SHADOW, no live money lost).
             // The original S-10 validation (TIGHT +76.9%/WIDE +88.5%, both regimes+) was CLOSE-GRADE and
             // still reproduces OFF-floor close-grade (mimic_ladder_overlay 2yr+2022 be0.10: TIGHT +75.8
@@ -2102,6 +2116,15 @@ static void init_engines(const std::string& cfg_path)
                 //     book across all cells. SHADOW; nothing here is a real forward trade yet.
                 c.block_weekend_arms = true;
                 c.weekend_carry_frac = 0.0;
+                // BOUNDED CATCH-UP (S-2026-07-18, Omega port of the certified crypto class;
+                //   OWN cert backtest/FX_CATCHUP_OUTAGE_CERT_2026-07-18.md — fx_catchup_
+                //   outage_bt.cpp drives the REAL class, surgical outage equivalence + grid,
+                //   1x + 2x cost, all 5 wired cells). A jump bar that closes while the
+                //   service is down no longer loses the window: finalize_seed() replays the
+                //   seeded history and re-opens it iff an always-on book would still be
+                //   flat-in-window (BE never crossed) inside the 24-bar bound; legs re-spawn
+                //   PENDING and open only via the live BE-ENTRY path.
+                c.catchup_max_age_bars = 24;
                 fl.add(std::move(c));
             }
             size_t flseeded = 0;
@@ -2231,6 +2254,10 @@ static void init_engines(const std::string& cfg_path)
                 //     US500 -2.91%, NAS100 -4.85%, GER40 -9.46%, M2K -5.03%. SHADOW; deploy-forward.
                 c.block_weekend_arms = true;
                 c.weekend_carry_frac = 0.0;
+                // BOUNDED CATCH-UP (S-2026-07-18): same certified mechanism/bound as the FX
+                // cell above (FX_CATCHUP_OUTAGE_CERT — index cells certified in the same
+                // harness run: US500/NAS100/GER40/M2K surgical 0 mismatch + grid gates).
+                c.catchup_max_age_bars = 24;
                 // NAS100 upside opt-in: arm0 (engage the 10% trail FROM ENTRY) = NAS100 +34.4%
                 // (robust: WF+ both halves, bear -12.4->+0.4). Flip below for the max NAS catch.
                 // if (std::string(ic.tag) == "NAS100") c.wide_arm_pct = 0.0;

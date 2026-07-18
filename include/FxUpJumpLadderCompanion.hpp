@@ -144,6 +144,41 @@ public:
         // (be_entry_pct >= true RT) so a leg opens only after price has cleared cost and can then
         // never book a loss. Default OFF = byte-identical baseline (zero blast radius).
         bool   be_floor_on_open = false;
+        // ── S-2026-07-18 BOUNDED CATCH-UP (Omega port of the certified crypto
+        //   UpJumpLadderCompanion::seed_det_ring_hist mechanism; Omega cert
+        //   backtest/FX_CATCHUP_OUTAGE_CERT_2026-07-18.md — NEVER carry the crypto
+        //   cert across). A restart/outage over a qualifying jump close used to lose
+        //   the window forever: the detector runs ONLY in live_step_ (live bars);
+        //   seeding ingests history without detecting, so a jump bar that closed
+        //   while the service was down never arms a window (the crypto INJ class).
+        //   >0 = at finalize_seed(), REPLAY the seeded history with the live
+        //   detector rule (same flush->detect order, contig gap guard, weekend-arm
+        //   block) and RE-OPEN the window iff ALL of:
+        //     • the replayed detector is still IN the window right now (age < W);
+        //     • the jump is at most catchup_max_age_bars bars old (the BOUND);
+        //     • NO bar since the trigger reached trig*(1 + d*be_entry_pct/100)
+        //       favorable — i.e. an always-on book's legs would still be PENDING
+        //       (BE never made). BE crossed during the outage => SKIP the window
+        //       entirely (back-filling that open = the forbidden late-chase /
+        //       backdated-entry class);
+        //     • confirmed-entry floored cells only (be_entry_pct > 0 AND
+        //       be_floor_on_open — same family rule as crypto mimic_floor);
+        //     • no in-flight persisted state (win_/legs_ restored from live.txt
+        //       are NEVER touched), not retired, not regime-blocked.
+        //   Recovery restores win_/age_/nclips_=1/last_reclip_px_ and, when
+        //   age < pend_bars (an always-on book's legs would still be alive),
+        //   re-spawns the base batch as PENDING legs with pbars = age. Legs then
+        //   OPEN only through the untouched live BE-ENTRY path — a recovered
+        //   window books the SAME BE-cross entry an always-on book would have
+        //   booked, never a backdated fill. age >= pend_bars restores the
+        //   LEGLESS window (always-on cancelled the legs; window state still
+        //   suppresses a spurious fresh re-trigger + keeps reclip semantics).
+        //   LIMITATION (documented, honest): recovery sees only bars present in
+        //   the seed sources (nightly-refreshed warmup CSV + own forward dump) —
+        //   a same-day mid-session restart whose missed bar is in neither source
+        //   is not recoverable (no boot backfill feed; crypto uses REST klines).
+        //   0 = OFF (byte-identical baseline).
+        int    catchup_max_age_bars = 0;
         // S-2026-07-08c DIRECTION flag: false = long UP-JUMP (original mechanics);
         // true = short DOWN-JUMP sign-mirror (USDCAD; fx_bothways_sweep.py dir=-1).
         bool   short_downjump = false;
@@ -283,6 +318,7 @@ public:
             std::ofstream f(cfg_.deploy_path, std::ios::trunc);
             if (f.is_open()) f << (long long)deploy_ts_ << "\n";
         }
+        catchup_replay_();   // S-2026-07-18 bounded catch-up (no-op unless configured + eligible)
     }
 
     // S-2026-07-08d: live display mark (per-tick), so the desk shows the CURRENT
@@ -639,19 +675,84 @@ private:
         // 4) entries: base batch at the trigger close; reclip a WIDE leg on a further
         //    +1.67thr favorable extension (short: -1.67thr).
         if (win_ && nclips_ < cfg_.cap) {
-            const double warm = cfg_.wide_arm_pct;   // >=0 absolute MFE% engage; <0 legacy 2.7*thr
             if (nclips_ == 0) {
-                legs_.push_back(make_leg_(0, T_ARM_M, T_TRAIL_M, cc, ts_sec, fwd));         // TIGHT
-                legs_.push_back(make_leg_(1, W_ARM_M, 0.0,       cc, ts_sec, fwd, warm));   // WIDE peak-profit
-                for (int k = 0; k < 3; ++k)
-                    legs_.push_back(make_leg_(2, S_ARM_M[k], 0.0, cc, ts_sec, fwd));        // STACKED (staggered arm, shared gb)
+                spawn_base_batch_(cc, ts_sec, fwd);
                 nclips_ = 1; last_reclip_px_ = cc;
             } else if (d_ * (cc - last_reclip_px_ * (1.0 + d_ * RECLIP_M * cfg_.thr / 100.0)) >= 0) {
+                const double warm = cfg_.wide_arm_pct;   // >=0 absolute MFE% engage; <0 legacy 2.7*thr
                 legs_.push_back(make_leg_(3, W_ARM_M, 0.0, cc, ts_sec, fwd, warm));         // LADDER (wide params)
                 nclips_ += 1; last_reclip_px_ = cc;
             }
         }
         save_live_state_();
+    }
+
+    // Base-batch spawn (TIGHT + WIDE + 3x STACKED) at the trigger close — shared by the
+    // live detector (step 4) and the bounded catch-up recovery (identical batch, so a
+    // recovered window's legs are byte-identical to the ones an always-on book spawned).
+    void spawn_base_batch_(double cc, int64_t ts_sec, bool fwd) noexcept {
+        const double warm = cfg_.wide_arm_pct;   // >=0 absolute MFE% engage; <0 legacy 2.7*thr
+        legs_.push_back(make_leg_(0, T_ARM_M, T_TRAIL_M, cc, ts_sec, fwd));         // TIGHT
+        legs_.push_back(make_leg_(1, W_ARM_M, 0.0,       cc, ts_sec, fwd, warm));   // WIDE peak-profit
+        for (int k = 0; k < 3; ++k)
+            legs_.push_back(make_leg_(2, S_ARM_M[k], 0.0, cc, ts_sec, fwd));        // STACKED (staggered arm, shared gb)
+    }
+
+    // ── S-2026-07-18 BOUNDED CATCH-UP replay (see Config::catchup_max_age_bars for the
+    //   full contract). Runs ONCE from finalize_seed(), after dedup_sort_. Walks the
+    //   seeded history with the live detector rule (same flush->detect bar order, same
+    //   contig gap guard + weekend-arm block) and re-opens the window ONLY when an
+    //   always-on book would still be flat-in-window right now (BE never crossed since
+    //   the trigger) and the jump is inside the bound. Legs are re-spawned PENDING via
+    //   the shared base-batch path and open only through the untouched live BE-ENTRY
+    //   confirm — never a backdated fill. ──
+    void catchup_replay_() noexcept {
+        if (cfg_.catchup_max_age_bars <= 0) return;                    // OFF (default)
+        if (cfg_.be_entry_pct <= 0.0 || !cfg_.be_floor_on_open) return; // confirmed-entry floored cells only
+        if (win_ || !legs_.empty()) return;                            // in-flight persisted state untouched
+        if (cfg_.block_new_windows_fn && cfg_.block_new_windows_fn()) return;  // regime-blocked (GER40 bull gate)
+        if (cfg_.retire_usd < 0.0 && book_usd() <= cfg_.retire_usd) return;    // auto-retirement latch
+        const int W = cfg_.W, N = (int)c_.size();
+        if (N < W + 2) return;
+        // replay the live detector over the whole seeded history (live_step_ order:
+        // window-age/flush first, then detect on the same bar; entries at trigger close).
+        bool win = false, crossed = false; int age = 0, trig_i = -1; double trig = 0.0;
+        for (int i = 0; i < N; ++i) {
+            if (win && ++age >= W) { win = false; trig_i = -1; }       // window-end flush
+            if (!win && i >= W) {
+                double ref = (d_ > 0) ? l_[i - W] : h_[i - W];
+                if (d_ > 0) { for (int k = i - W + 1; k <= i - 1; ++k) if (l_[k] < ref) ref = l_[k]; }
+                else        { for (int k = i - W + 1; k <= i - 1; ++k) if (h_[k] > ref) ref = h_[k]; }
+                const bool contig = (ts_[i] - ts_[i - W]) <= (int64_t)W * 3600 + 4 * 86400;
+                const double jump = (ref > 0) ? d_ * (c_[i] - ref) / ref * 100.0 : 0.0;
+                const bool wknd_block = cfg_.block_weekend_arms && omega::is_weekend(ts_[i] + 3600);
+                if (ref > 0 && contig && jump >= cfg_.thr && !wknd_block) {
+                    win = true; age = 0; trig_i = i; trig = c_[i]; crossed = false;
+                    continue;   // legs spawn at the trigger CLOSE -> BE gate sees bars AFTER it
+                }
+            }
+            if (win && trig_i >= 0 && i > trig_i) {                    // post-trigger favorable extreme
+                const double fav = d_ > 0 ? h_[i] : l_[i];
+                if (d_ * (fav / trig - 1.0) * 100.0 >= cfg_.be_entry_pct) crossed = true;
+            }
+        }
+        if (!win || trig_i < 0) return;                                // detector flat now — nothing lost
+        if (age > cfg_.catchup_max_age_bars) return;                   // outside the certified bound
+        if (crossed) return;   // BE crossed during the outage: always-on already opened — back-filling
+                               // that entry = the forbidden late-chase class -> SKIP the window entirely
+        win_ = true; age_ = age; nclips_ = 1; last_reclip_px_ = trig;
+        int spawned = 0;
+        if (age < cfg_.pend_bars) {                                    // always-on legs would still be alive
+            spawn_base_batch_(trig, ts_[trig_i], /*fwd=*/false);       // PENDING only (be_entry_pct>0); fwd
+                                                                       // is unused for a pending spawn — the
+                                                                       // live BE-ENTER bar decides fwd/order
+            for (Leg& L : legs_) if (L.pending && L.entry_ts == ts_[trig_i]) { L.pbars = age; ++spawned; }
+        }
+        save_live_state_();
+        std::printf("[FXLAD][CATCHUP] %s window re-opened from seeded history: trig=%.5f age=%db (bound %d, pend %d) "
+                    "%d pending leg(s) re-spawned — legs open only via the live BE-ENTRY path\n",
+                    cfg_.pair.c_str(), trig, age, cfg_.catchup_max_age_bars, cfg_.pend_bars, spawned);
+        std::fflush(stdout);
     }
 
     void load_fwd_book_() noexcept {
@@ -669,6 +770,8 @@ private:
     void save_fwd_book_() const noexcept {
         const std::string tmp = cfg_.book_path + ".tmp";
         { std::ofstream f(tmp, std::ios::trunc); if (!f.is_open()) return;
+          f.precision(15);   // S-2026-07-18: full double round-trip (restart-fidelity; the
+                             // 6-sig-fig default quantized the NAS100 +1226%% book at 1e-2)
           for (int ti = 0; ti < NT_; ++ti)
               f << ti << " " << fwd_[ti].pct << " " << fwd_[ti].clips << " " << fwd_[ti].wins << "\n"; }
 #if defined(_WIN32)
@@ -728,6 +831,8 @@ private:
     void save_live_state_() const noexcept {
         const std::string tmp = cfg_.live_path + ".tmp";
         { std::ofstream f(tmp, std::ios::trunc); if (!f.is_open()) return;
+          f.precision(15);   // S-2026-07-18: full double round-trip — a reloaded leg's entry/
+                             // peak/trail must be bit-faithful or post-restart clips drift
           f << "win " << (win_ ? 1 : 0) << " " << age_ << " " << nclips_ << " " << last_reclip_px_ << "\n";
           for (const Leg& L : legs_)
               f << "leg " << L.ti << " " << L.entry << " " << L.peak << " " << L.arm_px << " "
