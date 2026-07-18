@@ -14,7 +14,7 @@
 # =============================================================================
 $ErrorActionPreference = 'Continue'
 
-$Port    = 4002
+$Port    = 4001  # 2026-07-18: gateway logs in LIVE -> API port 4001 (java listener, 4 API clients attached). Old 4002 probe never matched -> 5-min IBC relaunch loop against a healthy session ('NOT up after 120s' spam).
 $Root    = 'C:\Jts\ibgateway'
 $LogDir  = 'C:\Omega\bracket-bot\logs'
 $LogFile = Join-Path $LogDir 'gateway_watchdog.log'
