@@ -225,12 +225,25 @@ a{color:var(--blu);text-decoration:none}
      bottom. -->
 <div class="cstack">
 
-<!-- CRYPTO MIMIC BOOKS panel REMOVED S-2026-07-19g (operator: "if its real paper trades they
-     should NOT be in any live system" -- panel was 100% shadow_mode=true bookkeeping per
-     chimera-direct persist_companion_clip(), a leftover pre-live prototype layer from before
-     S-18al's real live_mirror execution path existed. Real crypto companion $ is untouched --
-     see pollCC()'s live_mirror/_ccMirror handling + the mirPnl tile. See feedback-no-backtest-
-     in-live-gui + this session's handoff for the full whiplash history this closes out. -->
+<!-- ═══ CRYPTO MIMIC BOOKS — LIVE (real Binance holds only) ═══ S-2026-07-19i rebuild.
+     The S-2026-07-19g panel (removed above-comment history) rendered window._cc, the
+     chimera-direct shadow_mode=true bookkeeping path -- 100% simulation, no live orders.
+     This panel is a from-scratch replacement sourced EXCLUSIVELY from
+     window._ccMirror (live_mirror, g_mimic_mirror/LiveMimicMirror, S-18al) -- real open
+     Binance legs only. Zero window._cc / shadow_mode reference anywhere below. -->
+<div class="pan">
+  <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px">
+    <span class="lbl">CRYPTO MIMIC BOOKS — LIVE open legs (real Binance fills, g_mimic_mirror · S-18al) · unrealized $ marked at live WS px · never vs-WIDE</span>
+    <span id="ccrinfo" class="lbl" style="margin-left:auto">…</span>
+  </div>
+  <div style="overflow:auto;max-height:340px"><table id="ccrtab"><tr><td class="l d">loading…</td></tr></table></div>
+</div>
+
+<!-- CRYPTO MIMIC BOOKS panel (shadow version) REMOVED S-2026-07-19g (operator: "if its real
+     paper trades they should NOT be in any live system" -- panel was 100% shadow_mode=true
+     bookkeeping per chimera-direct persist_companion_clip(), a leftover pre-live prototype
+     layer from before S-18al's real live_mirror execution path existed. See
+     feedback-no-backtest-in-live-gui + 19g/19i handoffs for the full whiplash history. -->
 
 <!-- ═══ GOLD/XAG/USOIL/FX retired BE-floor banners moved to the compact RETIRED strip below
      (S-2026-07-07w, operator: bottom boxes wasted space — actives up, retired tucked underneath) ═══ -->
@@ -1233,6 +1246,56 @@ function drawCC(){
  if(typeof drawEquity==='function')drawEquity();
  if(typeof updDayPnl==='function')updDayPnl();/* header ALL-TIME folds crypto too (full pnl) */
 }
+/* per-leg unrealized $ for a real live_mirror hold, marked at the live WS price. null = no
+   price yet (render '—', not $0.00) -- same convention as mirPnl's per-coin sum. */
+function ccrLegPnl(h){
+ var px=(window._cpx||{})[h&&h.coin];
+ if(!(px>0)||!h||!(safe(h.qty)>0)||!(safe(h.px)>0))return null;
+ return h.qty*(px-h.px);
+}
+/* CRYPTO MIMIC BOOKS — LIVE (S-2026-07-19i rebuild). Reads window._ccMirror.holds ONLY
+   (real Binance legs, g_mimic_mirror/LiveMimicMirror S-18al) -- zero window._cc /
+   shadow_mode reference. Coin summary row (Σ unrealized $) then one nested row per leg
+   (tag/qty/entry px/cur px/hwm/unrl $/floored). */
+function drawCCReal(){
+ var mir=window._ccMirror,holds=(mir&&Array.isArray(mir.holds))?mir.holds:[];
+ if(!holds.length){
+  el('ccrtab').innerHTML='<tr><td class="l d">no live open legs</td></tr>';
+  el('ccrinfo').innerHTML='<span class="d">0 open legs</span>';
+  return;
+ }
+ var bySym={};holds.forEach(function(h){if(!h||!h.coin)return;(bySym[h.coin]=bySym[h.coin]||[]).push(h);});
+ var syms=Object.keys(bySym).sort();
+ var h='<tr><td class="l lbl">coin / tag</td><td class="lbl">qty</td><td class="lbl">entry px</td>'
+      +'<td class="lbl">cur px</td><td class="lbl">hwm</td><td class="lbl">unrl $</td><td class="l lbl">floored</td></tr>';
+ var totU=0,gotU=false,nlegs=0;
+ syms.forEach(function(sy){
+  var legs=bySym[sy].sort(function(a,b){return String(a.tag).localeCompare(String(b.tag));});
+  var curpx=(window._cpx||{})[sy];
+  var coinU=0,coinGot=false;
+  legs.forEach(function(l){var u=ccrLegPnl(l);if(u!==null){coinU+=u;coinGot=true;}});
+  if(coinGot){totU+=coinU;gotU=true;}
+  var cu=coinGot?'<span style="color:'+(coinU>=0?'var(--grn)':'var(--red)')+'">'+fmt$(coinU)+'</span>':'<span class="d">—</span>';
+  h+='<tr><td class="l" style="font-weight:600">'+esc(sy)+'</td><td colspan="4" class="l d" style="font-size:9px">'
+    +legs.length+' leg'+(legs.length>1?'s':'')+'</td><td class="num">'+cu+'</td><td></td></tr>';
+  legs.forEach(function(l){
+   nlegs++;
+   var u=ccrLegPnl(l);
+   var uc=u!==null?'<span style="color:'+(u>=0?'var(--grn)':'var(--red)')+'">'+fmt$(u)+'</span>':'<span class="d">—</span>';
+   var dp=safe(l.px)<10?4:2;
+   h+='<tr><td class="l d" style="border-left:2px solid '+(l.floored?'var(--grn)':'var(--t2)')+';padding-left:10px">&#8627; '+esc(l.tag||'?')+'</td>'
+     +'<td class="num">'+lots(l.qty)+'</td>'
+     +'<td class="num">'+fmt2(l.px,dp)+'</td>'
+     +'<td class="num">'+(curpx>0?fmt2(curpx,dp):'<span class="d">—</span>')+'</td>'
+     +'<td class="num">'+(l.hwm!==undefined?fmt2(l.hwm,dp):'<span class="d">—</span>')+'</td>'
+     +'<td class="num">'+uc+'</td>'
+     +'<td class="l">'+(l.floored?'<span class="g">FLOORED</span>':'<span class="d">—</span>')+'</td></tr>';
+  });
+ });
+ el('ccrtab').innerHTML=h;
+ el('ccrinfo').innerHTML=nlegs+' leg(s) · '+syms.length+' coin(s)'+(gotU?' · '+fmt$(totU)+' unrl':'')
+  +' <span class="d" style="font-size:9px">(real Binance holds, live_mirror only)</span>';
+}
 function pollCC(){fetch('/api/crypto_companion').then(function(r){return r.json();}).then(function(j){
  /* key by companion TAG (grid cell identity, S-2026-07-12). Fallback to sym for a not-yet-
     updated producer file (old shape keyed the 4 cells to one sym — the stale-roster bug). */
@@ -1242,7 +1305,7 @@ function pollCC(){fetch('/api/crypto_companion').then(function(r){return r.json(
     stale frame (file mid-write, momentary 0-leg push) must NOT wipe the last good bank -> that
     was the "-141 disappears then reappears" flicker. Keep the last good frame until a real one lands. */
  if(Object.keys(m).length)window._cc=m;
- drawCC();}).catch(function(){drawCC();});}
+ drawCC();drawCCReal();}).catch(function(){drawCC();drawCCReal();});}
 setInterval(pollCC,1000);pollCC();/* S-2026-07-13 operator: crypto updates >=1Hz (prices are WS-push already; this is the companion/mimic state) */
 
 /* ── CC truth chip (S-2026-07-18af): chimera executor VERIFIED state on the header.
