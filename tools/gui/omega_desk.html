@@ -929,8 +929,15 @@ function pollTrades(){
     var all=(res[0]||[]).concat(res[1]||[]).concat(sd);
     /* S-2026-07-12 operator: fold the CHIMERA EDGE realized (e.g. TIA-TSMOM +7.65) into the
        crypto PnL — it was showing in LAST-15 but never in the total. EDGE trades only
-       (engine !~ CLIP) so it's additive to _cctot (the companion-clip book), no double-count. */
-    window._chimtot=(res[1]||[]).reduce(function(s,t){var e=(t.engine||'');return /CLIP|MIMIC-LIVE/i.test(e)?s:s+safe(t.net_pnl!=null?t.net_pnl:t.pnl);},0);/* MIMIC-LIVE rows excluded: their cash realized folds via _clivetot (S-2026-07-18r), rows here are display-only */
+       (engine !~ CLIP) so it's additive to _cctot (the companion-clip book), no double-count.
+       S-2026-07-18v: the CLIP-tag test alone was stale — BE-cascade/mimic companion clip rows
+       stamp SUB-LEG tags (cfg tag + -T/-S/-L/-J<n>, UpJumpLadderCompanion emit_clip_) with no
+       "CLIP" substring, so the LTC-...-BECASC-S-T1 +$52.90 clip counted HERE and in its _cctot
+       bank (desk +$102 vs true +$49.36). Companion clip rows are already banked in _cctot ->
+       exclude by structure: sub-leg tag suffix OR companion clip/cut reason (STALL_CLIP/
+       REVERSAL_CLIP/FLOOR_TRAIL_CLIP/PREBE_CUT/REVERSAL_CUT/ENGINE_EXIT). EDGE reasons
+       (TP/SL/TIMEOUT/TRAIL/CORE_EXIT/REBAL...) match neither, so EDGE rows still count. */
+    window._chimtot=(res[1]||[]).reduce(function(s,t){var e=(t.engine||''),xr=(t.exitReason||'');return (/CLIP|MIMIC-LIVE/i.test(e)||/-[TSLJ]\d+$/.test(e)||/CLIP|CUT|ENGINE_EXIT/i.test(xr))?s:s+safe(t.net_pnl!=null?t.net_pnl:t.pnl);},0);/* MIMIC-LIVE rows excluded: their cash realized folds via _clivetot (S-2026-07-18r), rows here are display-only */
     if(typeof updDayPnl==='function')updDayPnl();
     all.forEach(function(t){ if(!t.exitTs && t.exit_ts_utc){ var d=Date.parse((t.exit_ts_utc||'').replace(' UTC','Z').replace(' ','T')); if(!isNaN(d))t.exitTs=d/1000; } });
     all.sort(function(a,b){return (b.exitTs||0)-(a.exitTs||0);});
