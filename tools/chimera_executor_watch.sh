@@ -17,6 +17,14 @@
 #     * last "[EXECUTOR] Ready." line is not "shadow=NO (LIVE)"
 #     * any executor halt / credential-failure line AFTER the last boot
 #       (HALTED, Invalid API-key, Binance -2014/-2015, 401, signature errors)
+#     * RESTART-LOOP: >3 systemd starts of chimera in the last 30 min. Added
+#       S-2026-07-18ad after the 07-18 overnight incident: 93 restarts in 14h
+#       (incl. a 60-crash FATAL mode-conflict loop 05:11-05:16Z) stayed GREEN
+#       because `systemctl is-active` reads "active" while systemd flaps and
+#       the last "RUNTIME MODE" line greps stale from the previous good boot.
+#     * CONFIG MODE-CONFLICT: live_config.json shadow_mode/mode disagrees with
+#       binance_credentials.json shadow_mode — the exact FATAL-crash-loop
+#       precondition, caught at the FILE level so it alarms even between boots.
 # One failed check is ignored (restart window / ssh blip); 2 consecutive fails
 # (10 min apart via cron) => RED + banner. Re-notifies every 6h while RED;
 # single "recovered" banner on green. ssh-unreachable is logged, not alarmed.
@@ -45,7 +53,11 @@ PROBE=$(ssh -o ConnectTimeout=25 -o BatchMode=yes chimera-direct '
     # "HALTED when credentials fail" as documentation text, not a state.
     halts=$(tail -n +"$bootln" "$logf" | grep -vF "[REGISTRY]" | grep -ciE "EXECUTOR.*HALT|Invalid API-key|code.:-201[45]|401 Unauthorized|[Ss]ignature for this request is not valid")
   fi
-  printf "ACT=%s\nMODE=%s\nEXEC=%s\nHALTS=%s\n" "$act" "$mode" "$execl" "$halts"
+  starts30=$(sudo -n journalctl -u chimera --since "-30 min" --no-pager 2>/dev/null | grep -c "Started chimera")
+  lcs=$(grep -o "\"shadow_mode\"[[:space:]]*:[[:space:]]*[a-z]*" /home/jo/ChimeraCrypto/config/live_config.json 2>/dev/null | head -1 | grep -o "[a-z]*$")
+  lcm=$(grep -o "\"mode\"[[:space:]]*:[[:space:]]*\"[a-z]*\"" /home/jo/ChimeraCrypto/config/live_config.json 2>/dev/null | tail -1 | grep -o "[a-z]*\"$" | tr -d "\"")
+  crs=$(grep -o "\"shadow_mode\"[[:space:]]*:[[:space:]]*[a-z]*" /home/jo/ChimeraCrypto/config/binance_credentials.json 2>/dev/null | head -1 | grep -o "[a-z]*$")
+  printf "ACT=%s\nMODE=%s\nEXEC=%s\nHALTS=%s\nSTARTS30=%s\nLCSHADOW=%s\nLCMODE=%s\nCRSHADOW=%s\n" "$act" "$mode" "$execl" "$halts" "$starts30" "$lcs" "$lcm" "$crs"
 ' 2>/dev/null)
 SSH_RC=$?
 
@@ -59,9 +71,24 @@ ACT=$(printf '%s\n' "$PROBE"  | sed -n 's/^ACT=//p')
 MODE=$(printf '%s\n' "$PROBE" | sed -n 's/^MODE=//p')
 EXECL=$(printf '%s\n' "$PROBE" | sed -n 's/^EXEC=//p')
 HALTS=$(printf '%s\n' "$PROBE" | sed -n 's/^HALTS=//p'); HALTS=${HALTS:-0}
+STARTS30=$(printf '%s\n' "$PROBE" | sed -n 's/^STARTS30=//p'); STARTS30=${STARTS30:-0}
+LCSHADOW=$(printf '%s\n' "$PROBE" | sed -n 's/^LCSHADOW=//p')
+LCMODE=$(printf '%s\n' "$PROBE" | sed -n 's/^LCMODE=//p')
+CRSHADOW=$(printf '%s\n' "$PROBE" | sed -n 's/^CRSHADOW=//p')
 
 REASON=""
 [ "$ACT" != "active" ]                                   && REASON="chimera.service not active ($ACT)"
+# RESTART-LOOP check FIRST: it is the state in which every later grep lies
+# (stale RUNTIME MODE line from the previous good boot, is-active flapping).
+[ -z "$REASON" ] && [ "$STARTS30" -gt 3 ]                 && REASON="RESTART-LOOP: $STARTS30 chimera starts in 30min (crash loop — det windows zeroed every bounce, fires being eaten)"
+# CONFIG MODE-CONFLICT at the file level (the 05:11Z FATAL-loop precondition):
+# live_config says shadow (shadow_mode true or mode!=live) while creds say live,
+# or vice versa. Empty parse fields = probe couldn't read a config — flag that too.
+if [ -z "$REASON" ] && [ -n "$LCSHADOW" ] && [ -n "$CRSHADOW" ]; then
+  lc_live=1; [ "$LCSHADOW" = "true" ] && lc_live=0; [ -n "$LCMODE" ] && [ "$LCMODE" != "live" ] && lc_live=0
+  cr_live=1; [ "$CRSHADOW" = "true" ] && cr_live=0
+  [ "$lc_live" != "$cr_live" ] && REASON="CONFIG MODE-CONFLICT: live_config(shadow_mode=$LCSHADOW mode=$LCMODE) vs creds(shadow_mode=$CRSHADOW) — next restart FATAL-loops"
+fi
 [ -z "$REASON" ] && ! printf '%s' "$MODE" | grep -q "RUNTIME MODE = LIVE" \
                                                           && REASON="runtime mode not LIVE: ${MODE:-<no line>}"
 [ -z "$REASON" ] && ! printf '%s' "$EXECL" | grep -q "shadow=NO (LIVE)" \
