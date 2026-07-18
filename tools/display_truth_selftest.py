@@ -130,37 +130,54 @@ try:
                                    capture_output=True, text=True, timeout=10).stdout.strip()
 except Exception as e:
     out["active"] = "probe-err:%s" % e
-# current-process CLIP-INIT roster: group journal lines by PID, keep the LAST pid's block
+# current-boot CLIP-INIT roster. PRIMARY source is the service log FILE
+# (systemd unit routes stdout via append: to logs/chimera.log, so the journal
+# stopped receiving [CLIP-INIT] lines mid-Jul-17 — the journal's last-PID roster
+# froze at the Jul-17 00:06 boot and every roster change after diverged into a
+# false DISPLAY-TRUTH RED, S-2026-07-18ai). Parse everything after the LAST
+# "[STARTUP] RUNTIME MODE" boot marker; fall back to the old journal-by-PID
+# scan only if the log file yields nothing (rotated/missing).
 clips = {}
+CLIP_RE = r"\[CLIP-INIT\] (\S+) -> det=(\d+)h/\+(\d+(?:\.\d+)?)%"
+# S-2026-07-14g: CAMPAIGN books boot with [CAMP-INIT] not [CLIP-INIT]
+# (S-2026-07-13 campaign architecture, REGISTRY CAMPAIGN-MGR wired=4).
+# Without this the 4 live CAMP cells were classed as desk GHOSTS -> false RED.
+CAMP_RE = r"\[CAMP-INIT\] (\S+) W=(\d+) thr=\+(\d+(?:\.\d+)?)%"
 try:
-    j = subprocess.run(["journalctl", "-u", "chimera", "--since", "-30 days", "--no-pager"],
-                       capture_output=True, text=True, timeout=60).stdout
-    by_pid = {}
-    for ln in j.splitlines():
-        m = re.search(r"chimera\[(\d+)\]: \[CLIP-INIT\] (\S+) -> det=(\d+)h/\+(\d+(?:\.\d+)?)%", ln)
-        if m:
-            by_pid.setdefault(m.group(1), {})[m.group(2)] = [int(m.group(3)), float(m.group(4))]
-            continue
-        # S-2026-07-14g: CAMPAIGN books boot with [CAMP-INIT] not [CLIP-INIT]
-        # (S-2026-07-13 campaign architecture, REGISTRY CAMPAIGN-MGR wired=4).
-        # Without this the 4 live CAMP cells were classed as desk GHOSTS -> false RED.
-        m = re.search(r"chimera\[(\d+)\]: \[CAMP-INIT\] (\S+) W=(\d+) thr=\+(\d+(?:\.\d+)?)%", ln)
-        if m:
-            by_pid.setdefault(m.group(1), {})[m.group(2)] = [int(m.group(3)), float(m.group(4))]
-            continue
-        m2 = re.search(r"chimera\[(\d+)\]: \[(?:CLIP|CAMP)-INIT\]", ln)
-        if m2:
-            by_pid.setdefault(m2.group(1), {})
-    if by_pid:
-        # journal is time-ordered; the pid of the LAST init line = current roster
+    with open("/home/jo/ChimeraCrypto/logs/chimera.log", errors="replace") as f:
+        f.seek(0, 2)
+        f.seek(max(0, f.tell() - 32 * 1024 * 1024))
+        lines = f.read().splitlines()
+    boot_i = -1
+    for i, ln in enumerate(lines):
+        if "[STARTUP] RUNTIME MODE" in ln:
+            boot_i = i
+    if boot_i >= 0:
+        for ln in lines[boot_i:]:
+            m = re.search(CLIP_RE, ln) or re.search(CAMP_RE, ln)
+            if m:
+                clips[m.group(1)] = [int(m.group(2)), float(m.group(3))]
+except Exception as e:
+    out["logfile_err"] = str(e)
+if not clips:
+    try:
+        j = subprocess.run(["journalctl", "-u", "chimera", "--since", "-30 days", "--no-pager"],
+                           capture_output=True, text=True, timeout=60).stdout
+        by_pid = {}
         last_pid = None
         for ln in j.splitlines():
-            m = re.search(r"chimera\[(\d+)\]: \[(?:CLIP|CAMP)-INIT\]", ln)
+            m2 = re.search(r"chimera\[(\d+)\]: (\[(?:CLIP|CAMP)-INIT\].*)", ln)
+            if not m2:
+                continue
+            last_pid = m2.group(1)
+            m = re.search(CLIP_RE, m2.group(2)) or re.search(CAMP_RE, m2.group(2))
             if m:
-                last_pid = m.group(1)
+                by_pid.setdefault(last_pid, {})[m.group(1)] = [int(m.group(2)), float(m.group(3))]
+            else:
+                by_pid.setdefault(last_pid, {})
         clips = by_pid.get(last_pid, {})
-except Exception as e:
-    out["journal_err"] = str(e)
+    except Exception as e:
+        out["journal_err"] = str(e)
 out["clip_init"] = clips
 # service age (TZ-free: monotonic start vs /proc/uptime) — deploy-grace input
 try:
@@ -454,7 +471,7 @@ def main() -> int:
         rec("FAIL", "CRYPTO-ROSTER", "LEGACY producer shape — legs lack tag/cell (pre-fix emit_companion_state; "
                                      "desk cannot attribute cells; producer/relay running OLD binary or stale copy)")
     elif not clip:
-        rec("WARN", "CRYPTO-ROSTER", "no [CLIP-INIT] lines recoverable from 30d journal (rotated?) — "
+        rec("WARN", "CRYPTO-ROSTER", "no [CLIP-INIT] lines recoverable from chimera.log or 30d journal (rotated?) — "
                                      "producer-drift not checkable this run; desk-vs-box copy check still below")
     else:
         served_tags = set(l.get("tag", "") for l in legs)
