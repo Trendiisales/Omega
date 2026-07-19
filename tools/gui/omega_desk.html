@@ -680,30 +680,36 @@ function drawProx(){var best=ccProx();var has={};
   if(!pe||!r)return;
   /* S-18aj: tile box lights per state (operator: "why is it not lit up better") — reset first */
   if(bx){bx.style.outline='';bx.style.outlineOffset='';bx.style.background='';bx.style.boxShadow='';bx.style.animation='';}
-  if(!b)return;/* no self-detect cell -> 24h% fallback keeps the slot */
-  has[t[0]]=1;
   var mp=mirPnl(t[0]);
-  /* S-2026-07-19l: no real Binance hold on this coin right now -> NEVER show a pk%/WIN/conf-bp/
-     proximity figure that reads as money (operator, furious: "WHY DO WE HAVE CRYPTOS SHOWING REAL
-     TIME PROFIT, OTHERS SHOW PK OR % ... EITHER SHOW ME THE REAL PROFIT OR FUCK OFF"). Honest
-     $0/no-capital beats a lookalike percentage — feedback-no-backtest-in-live-gui ($0 is the
-     honest number when there's no real forward book behind a tile). */
-  if(mp===null){
-   pe.innerHTML='<span style="color:var(--t2)">$0<span style="opacity:.55"> no live capital</span></span>';
-   r.style.width='0%';r.style.background='var(--t2)';return;}
-  var dollar='<span style="font-weight:700;color:'+(mp>=0?'#39ff14':'var(--redB)')+'">$'+(mp>=0?'+':'&minus;')+fmt2(Math.abs(mp),2)+'</span>';
-  if(b.trading){
-   /* S-18ak: TRUE NEON (operator: aj's 1px green outline drowned among ~20 amber WIN tiles —
-      "still do not see the neon highlight"). Same #39ff14 + neonPulse as the header beacon. */
+  var holding=(mp!==null);/* real open Binance leg on this coin (live_mirror) = LIVE TRADING */
+  /* S-2026-07-19t (operator: "anything trading highlighted, ALL symbols"): a real live_mirror
+     hold is the AUTHORITATIVE trading signal -> the tile goes neon independently of the _cc
+     detection relay (which can lag / carry no armed flag). Fixes SUI/SUSHI/TRX trading live but
+     dark because _cc had no armed cell for them. */
+  var trading=(b&&b.trading)||holding;
+  if(!b&&!holding)return;/* no self-detect cell AND no real hold -> 24h% fallback keeps the slot */
+  has[t[0]]=1;
+  if(trading){
+   /* S-18ak: TRUE NEON. Same #39ff14 + neonPulse as the header beacon. */
    if(bx){bx.style.outline='2px solid #39ff14';bx.style.outlineOffset='-2px';
     bx.style.background='rgba(57,255,20,.14)';
     bx.style.boxShadow='inset 0 0 14px rgba(57,255,20,.5), 0 0 12px #39ff14, 0 0 26px rgba(57,255,20,.55)';
     bx.style.animation='neonPulse 1.2s ease-in-out infinite';}
-   /* label neon owned by markTiles (single owner — both run at 1s, dual writers flicker) */
-   pe.innerHTML='<span style="color:#39ff14;font-weight:700;text-shadow:0 0 8px #39ff14">&#9679; TRADING '+b.n+'</span> '+dollar
-    +' <span style="color:var(--t2)">pk +'+fmt2(b.pk,2)+'%</span>';
+   /* $ is HONEST: real mark-to-market when we hold a live leg; $0/no-capital otherwise -- never a
+      lookalike pk%/% with no real capital behind it (feedback-no-backtest-in-live-gui). */
+   var dollarT=holding
+    ?'<span style="font-weight:700;color:'+(mp>=0?'#39ff14':'var(--redB)')+'">$'+(mp>=0?'+':'&minus;')+fmt2(Math.abs(mp),2)+'</span>'
+    :'<span style="color:var(--t2)">$0<span style="opacity:.55"> no live capital</span></span>';
+   var nlab=(b&&b.n)?(' '+b.n):'';
+   var pklab=(holding&&b&&b.pk)?' <span style="color:var(--t2)">pk +'+fmt2(b.pk,2)+'%</span>':'';
+   pe.innerHTML='<span style="color:#39ff14;font-weight:700;text-shadow:0 0 8px #39ff14">&#9679; TRADING'+nlab+'</span> '+dollarT+pklab;
    r.style.width='100%';r.style.background='#39ff14';return;}
-  if(b.open){
+  /* not trading (no live hold, no armed cell) */
+  if(mp===null){
+   pe.innerHTML='<span style="color:var(--t2)">$0<span style="opacity:.55"> no live capital</span></span>';
+   r.style.width='0%';r.style.background='var(--t2)';return;}
+  var dollar='<span style="font-weight:700;color:'+(mp>=0?'#39ff14':'var(--redB)')+'">$'+(mp>=0?'+':'&minus;')+fmt2(Math.abs(mp),2)+'</span>';
+  if(b&&b.open){
    if(bx){bx.style.outline='1px solid var(--amb)';bx.style.outlineOffset='-1px';
     bx.style.background='rgba(240,180,41,.08)';}
    pe.innerHTML=dollar+' <span style="color:var(--t2)">WIN</span>';
@@ -749,6 +755,10 @@ function markTiles(){
     armed = open BE-floored book = TRADING. Label goes NEON to match the drawProx box glow. */
  Object.keys(live).forEach(function(tag){var p=live[tag];
   if(p&&p.sym&&(p.armed||(p.sublegs||[]).some(function(s){return s.armed;})))ca[p.sym]=1;});
+ /* S-2026-07-19t: a real live_mirror hold IS trading -> label neon too, independent of _cc
+    (operator: ALL trading symbols highlighted). */
+ var _mh=window._ccMirror;if(_mh&&Array.isArray(_mh.holds))_mh.holds.forEach(function(h){
+  if(h&&safe(h.qty)>0){var c=String(h.coin||'').toUpperCase();if(c)ca[c]=1;}});
  CTKS.forEach(function(t){var e=el('ctkl_'+t[0]);if(e){e.style.color=ca[t[0]]?'#39ff14':'';
   e.style.textShadow=ca[t[0]]?'0 0 8px #39ff14':'';e.style.fontWeight=ca[t[0]]?'700':'';}});
 }
