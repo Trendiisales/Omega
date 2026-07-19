@@ -240,7 +240,7 @@ def crypto_book_heartbeat() -> dt.date | None:
 
 def mtime_date(path: Path) -> dt.date | None:
     try:
-        return dt.datetime.fromtimestamp(path.stat().st_mtime).date()
+        return dt.datetime.fromtimestamp(path.stat().st_mtime, dt.timezone.utc).date()
     except OSError:
         return None
 
@@ -704,7 +704,10 @@ def vps_watchdog_loop_health() -> list[tuple[str, str, str]]:
 
 def main() -> int:
     quiet = "--quiet" in sys.argv
-    today = dt.date.today()
+    # UTC, not box-local: Mac runs NZ (UTC+12) — bare date.today() flips the
+    # trading day ~12h early and false-STALEs every live feed (same idiom as
+    # the per-feed helper above).
+    today = dt.datetime.now(dt.timezone.utc).date()
     ltd = last_trading_day(today)
     rows, live_red, res_red = [], 0, 0
     for label, kind, max_age, getter in FEEDS:

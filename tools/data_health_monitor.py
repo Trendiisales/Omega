@@ -29,7 +29,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import feeds_selftest as _fst
 
 NOW = time.time()
-TODAY = dt.date.today()
+TODAY = dt.datetime.now(dt.timezone.utc).date()  # UTC: Mac local is NZ (+12), flips day early
 LTD = _fst.last_trading_day(TODAY)   # trading-day reference for *_td kinds
 
 def _td_age(d):
@@ -188,7 +188,7 @@ def check_feed(f):
                     detail=(f"newest {age} trading-days old [{consumer}]" if age is not None else f"unreadable [{consumer}]"))
     elif kind == "mtime_td":
         try:
-            d = dt.date.fromtimestamp(os.path.getmtime(path))
+            d = dt.datetime.fromtimestamp(os.path.getmtime(path), dt.timezone.utc).date()
         except OSError:
             d = None
         age = _td_age(d)
@@ -277,17 +277,19 @@ def check_rdagent_basket():
     sp = f"{HOME}/Omega/data/rdagent/factor_basket_result.json"
     try:
         d = json.load(open(sp)); ts = d.get("ts","")
-        age = (NOW - dt.datetime.fromisoformat(ts).timestamp())/86400.0 if ts else None
+        # TRADING-day ages (weekend/holiday aware) — calendar-day ages false-NO-GO'd every
+        # Sunday (Friday exec = 2.3d > 2d) though the basket only executes on trading days.
+        age = _fst.trading_days_between(dt.datetime.fromisoformat(ts).astimezone(dt.timezone.utc).date(), LTD) if ts else None
         # MODEL AGE: the basket EXECUTES daily, but the underlying model (as_of) can silently go
         # stale -- a fresh exec on an 8-day-old model passed before (2026-06-26). Check BOTH now.
         mdl = d.get("as_of","")
-        mage = (NOW - dt.datetime.strptime(mdl,"%Y-%m-%d").replace(tzinfo=dt.timezone.utc).timestamp())/86400.0 if mdl else None
-        exec_ok = age is not None and age <= 2
-        model_ok = mage is not None and mage <= 3
+        mage = _fst.trading_days_between(dt.datetime.strptime(mdl,"%Y-%m-%d").date(), LTD) if mdl else None
+        exec_ok = age is not None and age <= 1
+        model_ok = mage is not None and mage <= 2
         ok = exec_ok and model_ok
-        warn = "" if model_ok else f" *** MODEL STALE {mage:.0f}d -- qlib retrain owed ***"
-        return dict(name="rdagent.basket", ok=ok, age=round(age,1) if age is not None else None, limit=2, sev="MED",
-                    detail=f"exec {age:.1f}d ago, model {('%.0fd old'%mage) if mage is not None else '?'}{warn}, book={list((d.get('book') or {}).keys())} [RD-Agent paper basket]")
+        warn = "" if model_ok else f" *** MODEL STALE {mage}td -- qlib retrain owed ***"
+        return dict(name="rdagent.basket", ok=ok, age=age, limit=1, sev="MED",
+                    detail=f"exec {age}td ago, model {(('%dtd old') % mage) if mage is not None else '?'}{warn}, book={list((d.get('book') or {}).keys())} [RD-Agent paper basket]")
     except Exception as e:
         return dict(name="rdagent.basket", ok=False, age=None, limit=2, sev="MED", detail=f"result.json: {e} [basket executor not run?]")
 

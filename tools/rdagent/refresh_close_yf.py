@@ -78,7 +78,7 @@ def main():
     tk=open(TICKERS).read().split()
     print(f"[refresh_yf] universe {len(tk)} names")
     full=dl(tk, '2y')
-    today=dt.date.today()
+    today=dt.datetime.now(dt.timezone.utc).date()  # UTC: Mac local NZ (+12) mislabels fresh closes stale
     def stale_or_missing(df, names=None):
         return [s for s in (names or tk) if not _fresh(df, s, today)]
     bad=stale_or_missing(full)

@@ -52,7 +52,7 @@ def main():
     if not os.path.exists(CLOSE):
         print(f"[active_yf] close file missing {CLOSE}"); return 2
     df=pd.read_csv(CLOSE, index_col=0, parse_dates=True)
-    today=dt.date.today(); wrote=0
+    today=dt.datetime.now(dt.timezone.utc).date(); wrote=0  # UTC, not NZ box-local
     for sym in active:
         c=one(sym)
         if c is None: print(f"[active_yf] {sym}: no data"); continue

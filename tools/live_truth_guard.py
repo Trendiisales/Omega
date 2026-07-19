@@ -52,7 +52,7 @@ def main():
     print(f"  LIVE fills  : {LEDGER}")
     print("  RESEARCH    : data/rdagent/* + backtest/data/bigcap_daily_ohlc/* -> NEVER for live state")
     rc = 0
-    today = dt.date.today()
+    today = dt.datetime.now(dt.timezone.utc).date()  # UTC, not NZ box-local
 
     # 1. backtest OHLC footgun must be gone (research data mistaken for live reconstruction source)
     if os.path.isdir(OHLC_LOCAL) and any(n.endswith(".csv") for n in os.listdir(OHLC_LOCAL)):

@@ -36,7 +36,7 @@ def main():
     t0=time.time()
     while not app.ready and time.time()-t0<15: time.sleep(0.1)
     if not app.ready: print('no handshake — is the gateway up + tunnel open?'); return 1
-    today = dt.date.today().isoformat()
+    today = dt.datetime.now(dt.timezone.utc).date().isoformat()  # UTC: Mac local NZ (+12) stamps rows a day ahead of the US session
     newfile = not os.path.exists(OUT)
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
     rows=[]
