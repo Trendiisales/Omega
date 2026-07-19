@@ -58,10 +58,14 @@ namespace omega {
 // reqContractDetails (front month) so we never hardcode a rolling contract month.
 struct IbkrContractSpec {
     std::string ibkr_symbol;
-    std::string sec_type;       // "FUT" / "CASH"
-    std::string exchange;       // "COMEX","CME","CBOT","EUREX","ICEEU","IDEALPRO"
+    std::string sec_type;       // "FUT" / "CASH" / "STK"
+    std::string exchange;       // "COMEX","CME","CBOT","EUREX","ICEEU","IDEALPRO","SMART"
     std::string currency;       // "USD","EUR","GBP"
     double      qty_per_lot = 1.0;   // Omega lot -> IBKR contracts (1 lot = 1 contract)
+    // STK only: primary listing exchange, disambiguates SMART routing when a ticker
+    // trades on multiple venues (leaving it empty risks contractDetails ambiguity ->
+    // an arbitrary "first-wins" resolve). Empty for FUT/CASH.
+    std::string primary_exchange;
 };
 
 struct IbkrExecutionEngine : public DefaultEWrapper {
@@ -136,6 +140,27 @@ struct IbkrExecutionEngine : public DefaultEWrapper {
         add("AUDUSD",  {"AUD",    "CASH", "IDEALPRO", "USD", 1.0});
         add("NZDUSD",  {"NZD",    "CASH", "IDEALPRO", "USD", 1.0});
         add("USDJPY",  {"USD",    "CASH", "IDEALPRO", "JPY", 1.0});
+
+        // ── US single-name equities (STK/SMART) for StockDip + StockTurtle live ──
+        // (S-2026-07-19t). Covers the FULL unique roster of BOTH daily-close books
+        // (DIP live-11 + DIP ext-11 + TURTLE live-11 + TURTLE ext-14; both families
+        // route send_live_order -> ibkr_exec). Symbol == omega sym (US tickers are
+        // 1:1). SMART routing + a per-ticker primaryExchange to disambiguate. Shares
+        // are integer, no multiplier (qty_per_lot=1). primaryExchange verified at
+        // Monday boot via the [IBKR-EXEC] qualified-log line; a name that does NOT
+        // qualify is a wrong exchange -> re-map (never fires an order unresolved).
+        //
+        // NYSE-listed: DELL, TPR, SHOP, NOW, DD, BMY. Everything else NASDAQ.
+        auto stk = [&](const char* om, const char* primary) {
+            add(om, {om, "STK", "SMART", "USD", 1.0, primary});
+        };
+        const char* STK_NASDAQ[] = {
+            "MU","NVDA","AVGO","CRDO","STX","INTC","AMD","AAPL","MSFT","MRVL",
+            "PLTR","META","NFLX","MSTR","AMZN","GOOGL","WDC","SWKS","QCOM","TSLA",
+            "CRWD","PANW","ASTS","RKLB" };
+        const char* STK_NYSE[] = { "DELL","TPR","SHOP","NOW","DD","BMY" };
+        for (const char* om : STK_NASDAQ) stk(om, "NASDAQ");
+        for (const char* om : STK_NYSE)   stk(om, "NYSE");
     }
 
     Contract base_contract(const IbkrContractSpec& s) const {
@@ -144,6 +169,10 @@ struct IbkrExecutionEngine : public DefaultEWrapper {
         c.secType  = s.sec_type;
         c.exchange = s.exchange;
         c.currency = s.currency;
+        // STK: disambiguate SMART routing with the primary listing exchange so
+        // reqContractDetails resolves to exactly one contract (no first-wins guess).
+        if (s.sec_type == "STK" && !s.primary_exchange.empty())
+            c.primaryExchange = s.primary_exchange;
         return c;
     }
 
@@ -266,7 +295,12 @@ struct IbkrExecutionEngine : public DefaultEWrapper {
         // known thin-interface gap), so the order would vanish without a trace.
         // Operator min-size mandate 2026-07-18: round to integer, floor at 1.
         double send_qty = qty;
-        if (c.secType == "FUT") send_qty = std::max(1.0, std::round(qty));
+        // FUT: whole contracts >=1 (fractional = silent IBKR reject). STK: whole
+        // shares >=1 (US equities are integer-share; a fractional qty needs the
+        // fractional-shares flag we don't set, so round + floor to 1). Both share
+        // the same integer-floor path; CASH (FX) keeps its fractional qty.
+        if (c.secType == "FUT" || c.secType == "STK")
+            send_qty = std::max(1.0, std::round(qty));
         o.totalQuantity = DecimalFunctions::doubleToDecimal(send_qty);
         if (type == "LMT") o.lmtPrice = px;
         if (type == "STP") o.auxPrice = px;
