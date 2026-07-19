@@ -370,6 +370,9 @@ R"OMEGAD1(      <span id="prtrend" class="chip" style="background:var(--pan2)"><
 'use strict';
 function safe(v,d){d=d===undefined?0:d;var n=Number(v);return isNaN(n)?d:n;}
 function fmt$(v){var s=v<0?'-':'+';return s+'$'+Math.abs(v).toLocaleString(undefined,{maximumFractionDigits:0});}
+/* S-2026-07-20k operator: cent-scale books (crypto mimic legs ~$65 notional, unrl in cents)
+   rendered "-$0/+$0" under whole-dollar fmt$ — useless. Always 2dp for small-book panels. */
+function fmtc$(v){var s=v<0?'-':'+';return s+'$'+Math.abs(v).toFixed(2);}
 function fmt2(v,n){return safe(v).toFixed(n===undefined?2:n);}
 function lots(v){v=safe(v);return v>0?String(+v.toFixed(4)):'—';}
 function el(id){return document.getElementById(id);}
@@ -1309,13 +1312,13 @@ function drawCCReal(){
   var coinU=0,coinGot=false;
   legs.forEach(function(l){var u=ccrLegPnl(l);if(u!==null){coinU+=u;coinGot=true;}});
   if(coinGot){totU+=coinU;gotU=true;}
-  var cu=coinGot?'<span style="color:'+(coinU>=0?'var(--grn)':'var(--red)')+'">'+fmt$(coinU)+'</span>':'<span class="d">—</span>';
+  var cu=coinGot?'<span style="color:'+(coinU>=0?'var(--grn)':'var(--red)')+'">'+fmtc$(coinU)+'</span>':'<span class="d">—</span>';
   h+='<tr><td class="l" style="font-weight:600">'+esc(sy)+'</td><td colspan="4" class="l d" style="font-size:9px">'
     +legs.length+' leg'+(legs.length>1?'s':'')+'</td><td class="num">'+cu+'</td><td></td></tr>';
   legs.forEach(function(l){
    nlegs++;
    var u=ccrLegPnl(l);
-   var uc=u!==null?'<span style="color:'+(u>=0?'var(--grn)':'var(--red)')+'">'+fmt$(u)+'</span>':'<span class="d">—</span>';
+   var uc=u!==null?'<span style="color:'+(u>=0?'var(--grn)':'var(--red)')+'">'+fmtc$(u)+'</span>':'<span class="d">—</span>';
    var dp=safe(l.px)<10?4:2;
    h+='<tr><td class="l d" style="border-left:2px solid '+(l.floored?'var(--grn)':'var(--t2)')+';padding-left:10px">&#8627; '+esc(l.tag||'?')+'</td>'
      +'<td class="num">'+lots(l.qty)+'</td>'
@@ -1329,7 +1332,7 @@ function drawCCReal(){
  el('ccrtab').innerHTML=h;
  /* OVERALL live PnL up top (operator S-2026-07-19), big + colored; per-mimic lines nest below. */
  el('ccrtotal').innerHTML='OVERALL '
-  +(gotU?'<span style="color:'+(totU>=0?'var(--grn)':'var(--red)')+'">'+fmt$(totU)+'</span>':'<span class="d">—</span>')
+  +(gotU?'<span style="color:'+(totU>=0?'var(--grn)':'var(--red)')+'">'+fmtc$(totU)+'</span>':'<span class="d">—</span>')
   +' <span class="d" style="font-size:10px;font-weight:400">unrealized · '+nlegs+' live leg(s) across '+syms.length+' coin(s)</span>';
  el('ccrinfo').innerHTML='<span class="d" style="font-size:9px">real Binance holds · live_mirror · live fills</span>';
 }
@@ -1379,7 +1382,7 @@ function renderCompanionOpenTrades(pfx, open, trades, pxPrec){
    h+='<tr><td class="l">'+esc(o.flavor)+'</td><td class="l">'+esc(o.dir)+'</td><td class="l">'+esc(o.tier)+'</td>'
      +'<td class="num">'+fmt2(safe(o.entry),pxPrec)+'</td><td class="num">'+fmt2(safe(o.cur),pxPrec)+'</td>'
      +'<td class="num">'+fmt2(safe(o.wm),pxPrec)+'</td>'
-     +'<td class="num" style="color:'+(u>0?'var(--grn)':(u<0?'var(--red)':'var(--t2)'))+'">'+fmt$(u)+'</td></tr>';});
+     +'<td class="num" style="color:'+(u>0?'var(--grn)':(u<0?'var(--red)':'var(--t2)'))+'">'+fmtc$(u)+'</td></tr>';});
   ot.innerHTML=h; ow.style.display='';
  } else { ot.innerHTML=''; ow.style.display='none'; }
  var tw=el(pfx+'tradeswrap'), tt=el(pfx+'trades');
@@ -1390,7 +1393,7 @@ function renderCompanionOpenTrades(pfx, open, trades, pxPrec){
    var dt=t.exit_ts?new Date(t.exit_ts*1000).toISOString().slice(5,16).replace('T',' '):'';
    th+='<tr><td class="l">'+esc(t.flavor)+'</td><td class="l">'+esc(t.dir)+'</td><td class="l">'+esc(t.tier)+'</td>'
      +'<td class="num">'+fmt2(safe(t.entry),pxPrec)+'</td><td class="num">'+fmt2(safe(t.exit),pxPrec)+'</td>'
-     +'<td class="num" style="color:'+(u>0?'var(--grn)':(u<0?'var(--red)':'var(--t2)'))+'">'+fmt$(u)+'</td>'
+     +'<td class="num" style="color:'+(u>0?'var(--grn)':(u<0?'var(--red)':'var(--t2)'))+'">'+fmtc$(u)+'</td>'
      +'<td class="l d">'+esc(t.reason||'')+'</td><td class="l d">'+dt+'</td></tr>';});
   tt.innerHTML=th; tw.style.display='';
  } else { tt.innerHTML=''; tw.style.display='none'; }
@@ -1420,7 +1423,7 @@ function drawGold(){var j=window._gold||null;
    h+='<td class="l">'+esc(r.tier)+'</td><td class="num">'+safe(r.gb_bp)+'</td>'
      +'<td class="num">'+safe(r.clips)+'</td><td class="num">'+safe(r.wins)+'</td>'
      +'<td class="num">'+fmt2(safe(r.pts_real!==undefined?r.pts_real:r.pts),2)+'</td>'
-     +'<td class="num" style="font-weight:600;color:'+(u>0?'var(--grn)':(u<0?'var(--red)':'var(--t2)'))+'">'+fmt$(u)+'</td></tr>';
+     +'<td class="num" style="font-weight:600;color:'+(u>0?'var(--grn)':(u<0?'var(--red)':'var(--t2)'))+'">'+fmtc$(u)+'</td></tr>';
    first=false;
   });
  });
@@ -1458,7 +1461,7 @@ function drawXag(){var j=window._xag||null;
    h+='<td class="l">'+esc(r.tier)+'</td><td class="num">'+safe(r.gb_bp)+'</td>'
      +'<td class="num">'+safe(r.clips)+'</td><td class="num">'+safe(r.wins)+'</td>'
      +'<td class="num">'+fmt2(safe(r.pts_real!==undefined?r.pts_real:r.pts),2)+'</td>'
-     +'<td class="num" style="font-weight:600;color:'+(u>0?'var(--grn)':(u<0?'var(--red)':'var(--t2)'))+'">'+fmt$(u)+'</td></tr>';
+     +'<td class="num" style="font-weight:600;color:'+(u>0?'var(--grn)':(u<0?'var(--red)':'var(--t2)'))+'">'+fmtc$(u)+'</td></tr>';
    first=false;
   });
  });
@@ -1495,7 +1498,7 @@ function drawUsoil(){var j=window._usoil||null;
    h+='<td class="l">'+esc(r.tier)+'</td><td class="num">'+safe(r.gb_bp)+'</td>'
      +'<td class="num">'+safe(r.clips)+'</td><td class="num">'+safe(r.wins)+'</td>'
      +'<td class="num">'+fmt2(safe(r.pts_real!==undefined?r.pts_real:r.pts),2)+'</td>'
-     +'<td class="num" style="font-weight:600;color:'+(u>0?'var(--grn)':(u<0?'var(--red)':'var(--t2)'))+'">'+fmt$(u)+'</td></tr>';
+     +'<td class="num" style="font-weight:600;color:'+(u>0?'var(--grn)':(u<0?'var(--red)':'var(--t2)'))+'">'+fmtc$(u)+'</td></tr>';
    first=false;
   });
  });
