@@ -15,9 +15,11 @@
 // SHADOW-safe: when live==false (g_cfg.mode != "LIVE") there is no real broker
 // position, so it LOGS the breach ([CATASTROPHE-SHADOW]) and never flattens — the
 // engine's own simulated SL must run (matches the dollar-stop shadow-skip rule).
-// In LIVE it calls a registered per-engine flatten callback keyed "symbol|engine";
-// symbols without a registered flatten are LOGGED LOUDLY ([CATASTROPHE-NO-HANDLER])
-// so the operator can flatten manually.
+// In LIVE it first tries a registered per-engine flatten callback keyed
+// "symbol|engine"; absent that it falls back to the UNIVERSAL flatten hook
+// (S-2026-07-20j: same opposing-MKT + close_matching path as the KILL-ALL panic
+// button — registered once in engine_init, closes ANY registry position). Only if
+// BOTH are missing does it log [CATASTROPHE-NO-HANDLER] for a manual cut.
 //
 // Wire: once per 250ms in on_tick, call g_catastrophic_guard.check(now_s) after the
 // existing dollar-stop block. Set .live / .per_trade_usd from config first.
@@ -41,12 +43,23 @@ public:
     void register_flatten(const std::string& key, std::function<void()> fn){ flatten_[key]=fn; }
     size_t flatten_count() const { return flatten_.size(); }
 
+    // S-2026-07-20j: UNIVERSAL flatten fallback — one hook that can close ANY
+    // g_open_positions snapshot (opposing MKT via send_live_order + close_matching,
+    // the proven KILL-ALL path). Registered once in engine_init after the exec
+    // layer is up. Returns true if the engine slot was cleared (closer wired).
+    std::function<bool(const PositionSnapshot&)> universal_flatten;
+
     // Boot-time LIVE-readiness gate. Call once at startup AFTER engine init.
     // If we are LIVE but no per-engine flatten hooks are registered, the guard can
     // only LOG catastrophic breaches, not auto-close them -> warn loudly so the
     // operator wires register_flatten() before sizing up. Returns true if ready.
     bool warn_if_live_unhooked(bool is_live) const {
         if (!is_live) return true;                 // shadow: hooks not needed
+        if (universal_flatten) {
+            printf("[CATASTROPHE-GUARD] LIVE + UNIVERSAL flatten hook registered (+%zu per-engine) -- auto-flatten ARMED\n",
+                   flatten_count());
+            fflush(stdout); return true;
+        }
         if (flatten_count() > 0) {
             printf("[CATASTROPHE-GUARD] LIVE + %zu flatten hooks registered -- auto-flatten ARMED\n", flatten_count());
             fflush(stdout); return true;
@@ -84,6 +97,13 @@ public:
                 printf("[CATASTROPHE] FLATTEN %s/%s %s entry=%.4f unr=$%.0f < -$%.0f\n",
                        p.symbol.c_str(), p.engine.c_str(), p.side.c_str(), p.entry, unr, cat); fflush(stdout);
                 it->second();
+            } else if (universal_flatten) {
+                printf("[CATASTROPHE] FLATTEN(universal) %s/%s %s entry=%.4f unr=$%.0f < -$%.0f\n",
+                       p.symbol.c_str(), p.engine.c_str(), p.side.c_str(), p.entry, unr, cat); fflush(stdout);
+                if (!universal_flatten(p)) {
+                    printf("[CATASTROPHE][NO-CLOSER] %s/%s -- broker close SENT but engine slot NOT cleared\n",
+                           p.symbol.c_str(), p.engine.c_str()); fflush(stdout);
+                }
             } else if (do_log) {
                 printf("[CATASTROPHE-NO-HANDLER] %s/%s %s unr=$%.0f < -$%.0f -- OPERATOR MUST FLATTEN MANUALLY\n",
                        p.symbol.c_str(), p.engine.c_str(), p.side.c_str(), unr, cat); fflush(stdout);

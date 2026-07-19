@@ -30,8 +30,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     // order (send_live_order is hard SHADOW-gated -> a safe no-op in shadow,
     // where there is no broker position) AND close_matching() to clear the
     // engine's internal slot + book the close. exchange(false) => fire once.
-    // This is the ONLY generic broker-flatten path in the system; the
-    // CatastrophicGuard net has zero registered flatten hooks (detection-only).
+    // Generic broker-flatten path; since S-2026-07-20j the CatastrophicGuard net
+    // shares it via its universal_flatten hook (no longer detection-only).
     if (g_flatten_all_request.exchange(false)) {
         int n_flat = 0;
         for (const auto& ps : g_open_positions.snapshot_all()) {

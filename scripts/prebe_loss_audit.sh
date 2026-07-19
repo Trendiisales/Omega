@@ -88,7 +88,11 @@ EMITTER_RE='(book_clip_|jf_book_|emit_clip_|emit_be_clip_)[[:space:]]*\('
 # ledger to a fill the broker never gave (the S-17f model-vs-execution class).
 # The no-prebe-loss rule governs what a strategy can BOOK BY ITS OWN LOGIC, not
 # what the operator forces; hence SAFE here by exemption, not by floor.
-SAFE_REASON_RE='^(BE_FLOOR|RESTORE_FLOOR|FLOOR_TRAIL_STOP|FLOOR_TRAIL_CLIP|MANUAL_KILL_ALL)$'
+# CATASTROPHE_FLATTEN (S-2026-07-20j): CatastrophicGuard universal flatten —
+# emergency cut past 3x dollar-stop through the same KILL-ALL close path. Same
+# exemption class: an emergency cut is not a strategy booking; flooring it
+# would fake the ledger (S-17f class).
+SAFE_REASON_RE='^(BE_FLOOR|RESTORE_FLOOR|FLOOR_TRAIL_STOP|FLOOR_TRAIL_CLIP|MANUAL_KILL_ALL|CATASTROPHE_FLATTEN)$'
 # Any quoted ALL-CAPS token on an emitter line is treated as a reason.
 REASON_TOKEN_RE='"[A-Z][A-Z0-9_]+"'
 # FILE-level compliance markers -> the whole header is BE-floored-on-open.

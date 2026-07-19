@@ -8414,12 +8414,21 @@ static void init_engines(const std::string& cfg_path)
     }
 
     // ── Universal catastrophe-net LIVE-readiness flag ──────────────────────────
-    // Surfaces the one remaining gap AT the live flip: the guard can DETECT+LOG any
-    // position past 3x dollar-stop across all engines, but auto-FLATTEN needs per-
-    // engine register_flatten() hooks. In SHADOW this is silent (hooks not needed);
-    // the moment mode=LIVE with zero hooks it prints a loud boot WARNING so we wire
-    // them before sizing up. See CatastrophicGuard.hpp.
+    // S-2026-07-20j: the guard is no longer detection-only. The UNIVERSAL flatten
+    // hook below closes ANY g_open_positions snapshot through the SAME proven path
+    // as the KILL-ALL panic button (opposing MKT via send_live_order — hard SHADOW-
+    // gated — + close_matching to clear the engine slot + book the close). Per-
+    // engine register_flatten() hooks remain supported and take precedence. The
+    // guard's check() runs on the trading thread (on_tick), so closing here cannot
+    // race a tick. Booking reason CATASTROPHE_FLATTEN is prebe-SAFE BY EXEMPTION
+    // (emergency cut of a catastrophic loser ≠ strategy booking; flooring it would
+    // be the S-17f fake-ledger class — same rationale as MANUAL_KILL_ALL).
     g_catastrophic_guard.per_trade_usd = g_cfg.dollar_stop_usd;
+    g_catastrophic_guard.universal_flatten = [](const omega::PositionSnapshot& ps) -> bool {
+        const bool buy_to_close = (ps.side == "SHORT");   // close SHORT => BUY
+        send_live_order(ps.symbol, buy_to_close, ps.size, ps.current, "CATFLAT");
+        return g_open_positions.close_matching(ps, "CATASTROPHE_FLATTEN");
+    };
     g_catastrophic_guard.warn_if_live_unhooked(g_cfg.mode == "LIVE");
 
     // ── INDEPENDENT profit-giveback clipper (S-2026-06-29, operator-mandated) ───
