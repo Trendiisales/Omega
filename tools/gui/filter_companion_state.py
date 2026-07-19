@@ -26,7 +26,13 @@ import sys
 
 PILOT_SYMS = {
     s.strip().upper()
-    for s in os.environ.get("CRYPTO_DESK_PILOT_SYMS", "LTC,LTCUSDT").split(",")
+    for s in os.environ.get(
+        "CRYPTO_DESK_PILOT_SYMS",
+        # S-2026-07-19: live pilot REOPENED to 9 coins (was LTC-only concentration);
+        # desk gate tracks the live pilot so their REAL legs show, not filtered as shadow.
+        "BTC,BTCUSDT,ETH,ETHUSDT,SOL,SOLUSDT,BNB,BNBUSDT,DOGE,DOGEUSDT,"
+        "SUI,SUIUSDT,XRP,XRPUSDT,LINK,LINKUSDT,LTC,LTCUSDT",
+    ).split(",")
     if s.strip()
 }
 

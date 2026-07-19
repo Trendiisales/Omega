@@ -40,7 +40,13 @@ CLIP_REASONS = {
 # CRYPTO_DESK_PILOT_SYMS="LTC,ETH,..." (comma-list, sym-column values) if the pilot widens.
 PILOT_SYMS = {
     s.strip().upper()
-    for s in os.environ.get("CRYPTO_DESK_PILOT_SYMS", "LTC,LTCUSDT").split(",")
+    for s in os.environ.get(
+        "CRYPTO_DESK_PILOT_SYMS",
+        # S-2026-07-19: live pilot REOPENED to 9 coins (was LTC-only concentration);
+        # desk gate tracks the live pilot so their REAL trades show, not filtered as shadow.
+        "BTC,BTCUSDT,ETH,ETHUSDT,SOL,SOLUSDT,BNB,BNBUSDT,DOGE,DOGEUSDT,"
+        "SUI,SUIUSDT,XRP,XRPUSDT,LINK,LINKUSDT,LTC,LTCUSDT",
+    ).split(",")
     if s.strip()
 }
 
