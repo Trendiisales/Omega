@@ -2822,7 +2822,11 @@ static void init_engines(const std::string& cfg_path)
                     tr.entryPrice = entry_px; tr.exitPrice = exit_px; tr.size = lots;
                     tr.entryTs = entry_ts; tr.exitTs = exit_ts; tr.exitReason = reason;
                     tr.pnl = (is_long ? (exit_px - entry_px) : (entry_px - exit_px)) * lots;
-                    tr.shadow = true;   // SHADOW book: audit-only ledger row
+                    // S-2026-07-19t LIVE: honest mode (operator: no shadow anywhere). In LIVE the
+                    // book fires a real IBKR order, so this row is a REAL trade -> feeds the daily-
+                    // loss hard halt (trade_lifecycle L642 gates the halt on !shadow) + real
+                    // accounting. No double-count: applyBrokerFill no-ops on an unmatched clOrdId.
+                    tr.shadow = (g_cfg.mode != "LIVE");
                     handle_closed_trade(tr);
                 });
             const std::string sdt_csv = "data/rdagent/sp500_long_close.csv";
@@ -2896,6 +2900,7 @@ static void init_engines(const std::string& cfg_path)
                         // BE beats riding to -lc for a mean-reverter). pre_arm_be_pct now inert (be-floor precedes).
                         c.be_entry_pct = 0.08; c.no_prebe_loss = true;
                         c.rt_cost_bp = 8.0; c.notional = 10000.0; c.bull_only = false;
+                        c.live_book = true; c.lot = 1.0;   // S-2026-07-19t LIVE: real money, 1-share/leg (min live unit; cost gate + buying power cap fills)
                         c.state_path  = std::string("stockdipmimic_stockdipmimt_") + nm + "_state.txt";
                         c.closed_path = std::string("stockdipmimic_stockdipmimt_") + nm + "_closed.csv";
                         sdm.add(std::move(c)); }
@@ -2906,6 +2911,7 @@ static void init_engines(const std::string& cfg_path)
                         c.pre_arm_be_pct = 1.5;                   // half-of-arm: pre-arm winner reversal -> BE exit
                         c.be_entry_pct = 0.08; c.no_prebe_loss = true;
                         c.rt_cost_bp = 8.0; c.notional = 10000.0; c.bull_only = false;
+                        c.live_book = true; c.lot = 1.0;   // S-2026-07-19t LIVE: real money, 1-share/leg (min live unit; cost gate + buying power cap fills)
                         c.state_path  = std::string("stockdipmimic_stockdipmimw_") + nm + "_state.txt";
                         c.closed_path = std::string("stockdipmimic_stockdipmimw_") + nm + "_closed.csv";
                         sdm.add(std::move(c)); }
@@ -2921,6 +2927,7 @@ static void init_engines(const std::string& cfg_path)
                         c.pre_arm_be_pct = 0.75;                  // half-of-arm
                         c.be_entry_pct = 0.08; c.no_prebe_loss = true;
                         c.rt_cost_bp = 8.0; c.notional = 10000.0; c.bull_only = false;
+                        c.live_book = true; c.lot = 1.0;   // S-2026-07-19t LIVE: real money, 1-share/leg (min live unit; cost gate + buying power cap fills)
                         c.state_path  = std::string("stockdipmimic_stockdipmimx_") + nm + "_state.txt";
                         c.closed_path = std::string("stockdipmimic_stockdipmimx_") + nm + "_closed.csv";
                         sdm.add(std::move(c)); }
@@ -2931,6 +2938,7 @@ static void init_engines(const std::string& cfg_path)
                         c.pre_arm_be_pct = 1.25;                  // half-of-arm
                         c.be_entry_pct = 0.08; c.no_prebe_loss = true;
                         c.rt_cost_bp = 8.0; c.notional = 10000.0; c.bull_only = false;
+                        c.live_book = true; c.lot = 1.0;   // S-2026-07-19t LIVE: real money, 1-share/leg (min live unit; cost gate + buying power cap fills)
                         c.state_path  = std::string("stockdipmimic_stockdipmimy_") + nm + "_state.txt";
                         c.closed_path = std::string("stockdipmimic_stockdipmimy_") + nm + "_closed.csv";
                         sdm.add(std::move(c)); }
@@ -2949,6 +2957,7 @@ static void init_engines(const std::string& cfg_path)
                         c.legs = {{"", 0.50}};
                         c.arm_pct = 1.5; c.lc_pct = 1.5; c.cap_bars = 10; c.pre_arm_be_pct = 0.75;
                         c.be_entry_pct = 0.08; c.no_prebe_loss = true; c.rt_cost_bp = 8.0; c.notional = 10000.0; c.bull_only = false;
+                        c.live_book = true; c.lot = 1.0;   // S-2026-07-19t LIVE: real money, 1-share/leg (min live unit; cost gate + buying power cap fills)
                         c.state_path  = std::string("stockturtlemimic_stockturtlemima_") + nm + "_state.txt";
                         c.closed_path = std::string("stockturtlemimic_stockturtlemima_") + nm + "_closed.csv";
                         sdm.add(std::move(c)); }
@@ -2957,6 +2966,7 @@ static void init_engines(const std::string& cfg_path)
                         c.legs = {{"", 0.50}};
                         c.arm_pct = 2.0; c.lc_pct = 2.0; c.cap_bars = 10; c.pre_arm_be_pct = 1.0;
                         c.be_entry_pct = 0.08; c.no_prebe_loss = true; c.rt_cost_bp = 8.0; c.notional = 10000.0; c.bull_only = false;
+                        c.live_book = true; c.lot = 1.0;   // S-2026-07-19t LIVE: real money, 1-share/leg (min live unit; cost gate + buying power cap fills)
                         c.state_path  = std::string("stockturtlemimic_stockturtlemimb_") + nm + "_state.txt";
                         c.closed_path = std::string("stockturtlemimic_stockturtlemimb_") + nm + "_closed.csv";
                         sdm.add(std::move(c)); }
@@ -2965,6 +2975,7 @@ static void init_engines(const std::string& cfg_path)
                         c.legs = {{"", 0.40}};
                         c.arm_pct = 2.5; c.lc_pct = 2.5; c.cap_bars = 10; c.pre_arm_be_pct = 1.25;
                         c.be_entry_pct = 0.08; c.no_prebe_loss = true; c.rt_cost_bp = 8.0; c.notional = 10000.0; c.bull_only = false;
+                        c.live_book = true; c.lot = 1.0;   // S-2026-07-19t LIVE: real money, 1-share/leg (min live unit; cost gate + buying power cap fills)
                         c.state_path  = std::string("stockturtlemimic_stockturtlemimc_") + nm + "_state.txt";
                         c.closed_path = std::string("stockturtlemimic_stockturtlemimc_") + nm + "_closed.csv";
                         sdm.add(std::move(c)); }
@@ -2973,6 +2984,7 @@ static void init_engines(const std::string& cfg_path)
                         c.legs = {{"", 0.40}};
                         c.arm_pct = 3.5; c.lc_pct = 3.5; c.cap_bars = 10; c.pre_arm_be_pct = 1.75;
                         c.be_entry_pct = 0.08; c.no_prebe_loss = true; c.rt_cost_bp = 8.0; c.notional = 10000.0; c.bull_only = false;
+                        c.live_book = true; c.lot = 1.0;   // S-2026-07-19t LIVE: real money, 1-share/leg (min live unit; cost gate + buying power cap fills)
                         c.state_path  = std::string("stockturtlemimic_stockturtlemimd_") + nm + "_state.txt";
                         c.closed_path = std::string("stockturtlemimic_stockturtlemimd_") + nm + "_closed.csv";
                         sdm.add(std::move(c)); }
@@ -2980,18 +2992,25 @@ static void init_engines(const std::string& cfg_path)
                 sdm.set_exec(
                     [](const std::string& sym, bool is_long, double lots, double px)->std::string { return send_live_order(sym, is_long, lots, px); },
                     [](const std::string& sym, bool orig_is_long, double lots, double px, const std::string& token){ send_live_order(sym, !orig_is_long, lots, px, token); },
-                    [](const std::string& /*sym*/, double /*tp_dist_pts*/, double /*lots*/)->bool {
-                        // Single-name equity: ExecutionCostGuard has NO cost row (befloor lesson);
-                        // the 8bp RT debit in the book is the validated gate. OM-03: FAIL CLOSED in
-                        // LIVE (no single-name order without a real cost model). SHADOW unaffected
-                        // (send_live_order no-ops on mode!=LIVE) -> zero behaviour change today.
-                        return g_cfg.mode != "LIVE"; },
+                    [](const std::string& sym, double tp_dist_pts, double lots)->bool {
+                        // S-2026-07-19t LIVE (operator: StockDip + ALL mimics trade real money, NO
+                        // shadow anywhere). ExecutionCostGuard NOW carries a real US-equity cost row
+                        // (S-07-08c: $0.005/share/side min $1 + spread + slippage), so the old
+                        // "no cost model -> FAIL CLOSED in LIVE" no longer holds. Gate on the real
+                        // equity economics + the daily-loss hard halt (same filter the parent book
+                        // uses); the book's own 8bp RT debit + BE-floor remain on top. A cost-blocked
+                        // leg (e.g. 1 share of a sub-~$130 name can't cover commission on a 2% move)
+                        // is a real cost decision, NOT shadow.
+                        return ExecutionCostGuard::is_viable(sym.c_str(), 0.02, tp_dist_pts, lots); },
                     [](const std::string& engine, const std::string& sym, bool is_long, double entry_px, double exit_px, double lots, int64_t entry_ts, int64_t exit_ts, const char* reason, double mfe_pct, double mae_pct){
                         omega::TradeRecord tr; tr.engine=engine; tr.symbol=sym; tr.side=is_long?"LONG":"SHORT";
                         tr.entryPrice=entry_px; tr.exitPrice=exit_px; tr.size=lots; tr.entryTs=entry_ts; tr.exitTs=exit_ts;
                         tr.exitReason=reason; tr.pnl=(is_long?(exit_px-entry_px):(entry_px-exit_px))*lots;
                         tr.mfe=(mfe_pct/100.0)*entry_px*lots; tr.mae=(std::fabs(mae_pct)/100.0)*entry_px*lots;
-                        tr.shadow=true;   // SHADOW book: audit-only ledger row
+                        // S-2026-07-19t LIVE (operator: no shadow anywhere): honest mode. LIVE mimic
+                        // legs fire real IBKR orders -> real ledger row, feeds daily-loss halt. No
+                        // double-count (applyBrokerFill no-ops on unmatched clOrdId).
+                        tr.shadow = (g_cfg.mode != "LIVE");
                         handle_closed_trade(tr); });
                 // Fan the ONE StockDip DIP open (per name) out to all 4 DIP cells (T + W + X + Y).
                 sdt.set_mimic_cbs(
@@ -3019,13 +3038,13 @@ static void init_engines(const std::string& cfg_path)
                         omega::stockdip_trend_mimic().on_bar(std::string("StockTurtleMimC_") + sym, close, close, close, ts);
                         omega::stockdip_trend_mimic().on_bar(std::string("StockTurtleMimD_") + sym, close, close, close, ts); });
                 sdm.arm();   // DEPLOY-FORWARD: only live (post-seed) opens spawn legs
-                printf("[OMEGA-INIT][SEED] StockDip/Turtle BE-MIMIC wired: %d DIP names x 4 cells (T arm2/gb50 + W arm3/gb70 + X arm1.5/gb70 + Y arm2.5/gb60) + %d TURTLE names x 4 cells (A arm1.5/gb50, B arm2/gb50, C arm2.5/gb40, D arm3.5/gb40); incl S-17k ext rosters (clip_path_ext_mimic ALL6-PASS 8+16bp); cap10, half-of-arm pre-arm BE-ratchet + post-arm BE-floor, rt 8bp, $10k, triggered one-way from real DIP/breakout opens, close-grade daily feed, SHADOW deploy-forward, VALIDATED all-6 PASS ungated (STOCKDIP_MIMIC_FINDINGS_2026-07-15 + PREARM_FLOOR + TURTLE_MIMIC_FINDINGS_2026-07-16)\n",
+                printf("[OMEGA-INIT][SEED] StockDip/Turtle BE-MIMIC wired: %d DIP names x 4 cells (T arm2/gb50 + W arm3/gb70 + X arm1.5/gb70 + Y arm2.5/gb60) + %d TURTLE names x 4 cells (A arm1.5/gb50, B arm2/gb50, C arm2.5/gb40, D arm3.5/gb40); incl S-17k ext rosters (clip_path_ext_mimic ALL6-PASS 8+16bp); cap10, half-of-arm pre-arm BE-ratchet + post-arm BE-floor, rt 8bp, 1-share/leg LIVE (S-2026-07-19t, real money, cost gate + buying power cap fills), triggered one-way from real DIP/breakout opens, close-grade daily feed, LIVE in mode=LIVE else PRE-TRADE deploy-forward, VALIDATED all-6 PASS ungated (STOCKDIP_MIMIC_FINDINGS_2026-07-15 + PREARM_FLOOR + TURTLE_MIMIC_FINDINGS_2026-07-16)\n",
                        (int)DIP_MIM.size(), (int)TUR_MIM.size());
                 fflush(stdout);
             }
 
             sdt.start_poller(sdt_csv, 900000);   // own 15-min poller
-            printf("[OMEGA-INIT][SEED] StockDip/StockTurtle books wired: %d dip + %d turtle names (incl S-17k ext-11 dip @16bp retire -$9.7k + ext-14 turtle @16bp retire -$23k), %zu seed rows, %zu forward bars restored, %zu open entry_ts exempted from phantom-drop, $10k notional, live-11 rt 8bp retire dip -$9.5k / turtle -$8.5k, LONG-only, SHADOW, deploy-forward, daily-CSV-polled\n",
+            printf("[OMEGA-INIT][SEED] StockDip/StockTurtle books wired: %d dip + %d turtle names (incl S-17k ext-11 dip @16bp retire -$9.7k + ext-14 turtle @16bp retire -$23k), %zu seed rows, %zu forward bars restored, %zu open entry_ts exempted from phantom-drop, $10k notional, live-11 rt 8bp retire dip -$9.5k / turtle -$8.5k, LONG-only, LIVE in mode=LIVE (S-2026-07-19t: parent 1-share/name real money) else PRE-TRADE, deploy-forward, daily-CSV-polled\n",
                    n_dip, n_tur, sdt_seeded, sdt_restored, sdt_exempt);
             fflush(stdout);
         }
