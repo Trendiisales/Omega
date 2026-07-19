@@ -395,7 +395,7 @@ bash scripts/ungated_engine_audit.sh
 #     cost-gate backfill owed) -- now a documented exception in the allowlist.
 #   * StockDipTurtle no longer needs a note: its INJECTED gate_fn leaves a
 #     literal ExecutionCostGuard reference in the header, which the script sees.
-#   * SurvivorPortfolio / FxUpJumpLadderCompanion / GoldTrendMimicLadder /
+#   * SurvivorPortfolio / FxMimicLadderCompanion / GoldTrendMimicLadder /
 #     dormant DonchianEngine+EmaPullbackEngine+TrendRiderEngine are NEW
 #     EXPOSURES of the wide regex, documented in the allowlist.
 # Wired into scripts/mac_canary_engines.sh, so it runs on every pre-commit
@@ -459,8 +459,8 @@ The canonical recipe (proven S-2026-07-17c, Omega fd51311a + crypto c771068):
 - **BE-ENTRY** — leg stays FLAT, books/pays nothing until fav >= confirm; opens AT that level.
 - **confirm >= 2× round-trip cost** (NOT just >=RT — at exactly RT the 2×-cost
   robustness stress reopens a pre-arm window: crypto TRX −511bp. 60bp is the safe uniform value).
-- **ANCHOR** `le = epx` on open (`confirm_anchor_epx` in UpJumpLadderCompanion/BeCascade;
-  `be_floor_on_open` book-clamp in FxUpJumpLadderCompanion) — do NOT reset le to the
+- **ANCHOR** `le = epx` on open (`confirm_anchor_epx` in MimicLadderCompanion/BeCascade;
+  `be_floor_on_open` book-clamp in FxMimicLadderCompanion) — do NOT reset le to the
   confirm/current price ⇒ hwm=cur>=le*(1+RT) at open ⇒ floored at BE ⇒ worst clip net>=0.
 - **RECLIP** must be `reclip_pct=0` OR anchored-reclip (route re-entry through the same
   confirm+anchor path, keep le=reclip_px). A raw `le=cur` reclip reopens a pre-arm window
