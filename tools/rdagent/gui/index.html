@@ -120,17 +120,24 @@ async function load(){
       <p class="hint" style="margin-top:6px">arms on ${be.arms_on} · +${be.armed_day_bps}bps on armed days · ${be.caveat}</p></div>`;
   }
   const sig=d.signal||{}, bk=(sig.basket||[]);
-  // STALE-DATA GUARD: never present old data as "today". Compare basket date to the
-  // last expected trading day (weekend-aware). >=2 trading-days behind => loud red banner.
-  // age==1 is NOT stale: intraday before today's EOD pull lands, yesterday's basket IS
-  // the freshest valid one (today's bar not closed). Matches feeds_selftest max_age=2.
+  // STALE-DATA GUARD: never present old data as "today". Basket dates are US trading
+  // dates, so the reference is the last COMPLETED US session computed in
+  // America/New_York (before ~17:00 ET the current NY day's EOD pull hasn't landed, so
+  // the previous trading day is the freshest valid basket), and age is counted in
+  // TRADING days (weekends skipped; age<=1 tolerated for holidays). The old code mixed
+  // local getDay() with toISOString()'s UTC date and counted calendar days — a Monday
+  // NZ morning flagged Friday's basket as "2 trading-days stale" over a normal weekend.
   (function(){
     const sb=document.getElementById('stale'); if(!sb) return;
     const sd=sig.date; if(!sd){ sb.style.display='none'; return; }
-    const now=new Date(), dow=now.getDay(); const ltd=new Date(now);
-    if(dow===0) ltd.setDate(now.getDate()-2); else if(dow===6) ltd.setDate(now.getDate()-1);
-    const exp=ltd.toISOString().slice(0,10);
-    const age=Math.round((new Date(exp)-new Date(sd))/86400000);
+    const pad=n=>String(n).padStart(2,'0');
+    const fmt=x=>`${x.getFullYear()}-${pad(x.getMonth()+1)}-${pad(x.getDate())}`;
+    const ny=new Date(new Date().toLocaleString('en-US',{timeZone:'America/New_York'}));
+    if(ny.getHours()<17) ny.setDate(ny.getDate()-1);
+    while(ny.getDay()===0||ny.getDay()===6) ny.setDate(ny.getDate()-1);
+    const exp=fmt(ny);
+    let age=0; const d=new Date(sd+'T12:00:00');
+    while(fmt(d)<exp && age<30){ d.setDate(d.getDate()+1); if(d.getDay()!==0&&d.getDay()!==6) age++; }
     const missing=bk.filter(b=>b.price==null).length;
     if(age>1){
       sb.style.display='';

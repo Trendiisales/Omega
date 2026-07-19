@@ -50,7 +50,10 @@ ALERT_LOG = REPO / "outputs" / "sentinel_alerts.log"
 
 OMEGA_SSH_HOST = "omega-new"
 CHIMERA_SSH_HOST = "chimera-direct"
-CHIMERA_LEDGER_PATH = "~/ChimeraCrypto/data/chimera_inbound.csv"
+CHIMERA_LEDGER_PATH = "~/ChimeraCrypto/data/chimera_inbound.csv"   # LEGACY shadow feed (truncated 20f)
+CHIMERA_LIVE_LEDGER_PATH = "~/ChimeraCrypto/data/live_trades.csv"  # ledger of record since S-2026-07-20f
+                                                                   # (LiveMimicMirror::book_close_ appends
+                                                                   #  every real Binance SELL)
 
 MIN_ENGINE_N_FOR_IFOREST = 20   # below this, robust z-score vs engine history instead
 OUTLIER_Z = 3.0                 # |robust z| beyond this = statistical outlier flag
@@ -94,8 +97,24 @@ def pull_omega() -> list[tuple[str, str, str]]:
     return out
 
 
-def pull_chimera() -> str | None:
-    return _run(["ssh", CHIMERA_SSH_HOST, f"cat {CHIMERA_LEDGER_PATH}"], timeout=60)
+def pull_chimera() -> list[tuple[str, str]]:
+    """One ssh round-trip for both crypto ledgers. Returns [(kind, csv_text)].
+    live_trades.csv = ledger of record since 20f; chimera_inbound.csv kept as legacy
+    (writer removed + truncated at source, but old rows may exist on a restore)."""
+    sh = (
+        f"echo '===F===live==='; cat {CHIMERA_LIVE_LEDGER_PATH} 2>/dev/null; "
+        f"echo '===F===legacy==='; cat {CHIMERA_LEDGER_PATH} 2>/dev/null"
+    )
+    raw = _run(["ssh", CHIMERA_SSH_HOST, sh], timeout=60)
+    if not raw:
+        print("  WARN: chimera pull failed entirely", file=sys.stderr)
+        return []
+    out = []
+    for chunk in raw.split("===F===")[1:]:
+        header, _, body = chunk.partition("\n")
+        if body.strip() and len(body.strip().splitlines()) > 1:  # header-only file = empty
+            out.append((header.strip().rstrip("="), body))
+    return out
 
 
 # ── normalization to one schema ───────────────────────────────────────────────
@@ -202,6 +221,35 @@ def norm_chimera(text: str) -> pd.DataFrame:
     return out
 
 
+def norm_chimera_live(text: str) -> pd.DataFrame:
+    # exit_ts_ms,entry_ts_ms,coin,tag,qty,entry_px,exit_px,realized_usd,reason
+    # (data/live_trades.csv — real Binance fills, fees folded; S-2026-07-20f ledger of record)
+    df = pd.read_csv(StringIO(text))
+    if df.empty:
+        return df
+    ets = pd.to_numeric(df.get("entry_ts_ms"), errors="coerce") / 1000.0
+    xts = pd.to_numeric(df.get("exit_ts_ms"), errors="coerce") / 1000.0
+    out = pd.DataFrame({
+        "system": "chimera", "book": "live",
+        "engine": "LiveMimic", "symbol": df.get("coin"), "side": "BUY",  # long-only spot
+        "entry_ts": ets, "exit_ts": xts,
+        "net_pnl": pd.to_numeric(df.get("realized_usd"), errors="coerce"),
+        "mfe": np.nan, "mae": np.nan,
+        "hold_sec": xts - ets,
+        "exit_reason": df.get("reason"), "regime": None,
+        "spread_at_entry": np.nan, "slippage_exit_pct": np.nan,
+        "entry_px": pd.to_numeric(df.get("entry_px"), errors="coerce"),
+        "exit_px": pd.to_numeric(df.get("exit_px"), errors="coerce"),
+        "commission": np.nan,
+    })
+    # FIFO backfill legitimately yields identical rows (two fills, same px/qty) — suffix an
+    # ordinal so each row keeps a distinct state key instead of collapsing to one.
+    base = ("CL|" + df["tag"].astype(str) + "|" + df["exit_ts_ms"].astype(str) + "|"
+            + df["qty"].astype(str) + "|" + df["realized_usd"].astype(str))
+    out["key"] = base + "#" + base.groupby(base).cumcount().astype(str)
+    return out
+
+
 def load_all(offline_csv: str | None, offline_system: str) -> pd.DataFrame:
     frames: list[pd.DataFrame] = []
     if offline_csv:
@@ -213,6 +261,8 @@ def load_all(offline_csv: str | None, offline_system: str) -> pd.DataFrame:
             frames.append(norm_omega_companion(raw, "offline"))
         elif "net_usd" in head:
             frames.append(norm_chimera(raw))
+        elif "realized_usd" in head:
+            frames.append(norm_chimera_live(raw))
         else:
             frames.append(norm_omega_shadow(raw))
     else:
@@ -226,12 +276,11 @@ def load_all(offline_csv: str | None, offline_system: str) -> pd.DataFrame:
                     frames.append(norm_omega_companion(text, src))
             except Exception as e:  # noqa: BLE001
                 print(f"  WARN: parse failed for omega {book}/{src}: {e}", file=sys.stderr)
-        ch = pull_chimera()
-        if ch:
+        for kind, text in pull_chimera():
             try:
-                frames.append(norm_chimera(ch))
+                frames.append(norm_chimera_live(text) if kind == "live" else norm_chimera(text))
             except Exception as e:  # noqa: BLE001
-                print(f"  WARN: parse failed for chimera: {e}", file=sys.stderr)
+                print(f"  WARN: parse failed for chimera {kind}: {e}", file=sys.stderr)
     frames = [f for f in frames if f is not None and not f.empty]
     if not frames:
         return pd.DataFrame()

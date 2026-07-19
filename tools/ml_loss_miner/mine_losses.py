@@ -13,7 +13,8 @@ questions ("how efficient is this engine" vs "what specifically correlates with 
 Data sources (pulled read-only, per feedback-audit-read-only-never-mutate):
   Omega   ssh omega-new  C:\\Omega\\logs\\trades\\omega_trade_closes.csv (+ daily variants)
                           C:\\Omega\\logs\\shadow\\omega_shadow.csv
-  Chimera ssh chimera-direct  ~/ChimeraCrypto/data/chimera_inbound.csv
+  Chimera ssh chimera-direct  ~/ChimeraCrypto/data/live_trades.csv (ledger of record, S-20f)
+                              + chimera_inbound.csv (legacy, truncated)
 
 Usage:
   python3 tools/ml_loss_miner/mine_losses.py --system omega
@@ -43,7 +44,8 @@ OMEGA_LEDGER_PATHS = [
     r"C:\Omega\logs\shadow\omega_shadow.csv",
 ]
 CHIMERA_SSH_HOST = "chimera-direct"
-CHIMERA_LEDGER_PATH = "~/ChimeraCrypto/data/chimera_inbound.csv"
+CHIMERA_LEDGER_PATH = "~/ChimeraCrypto/data/chimera_inbound.csv"   # LEGACY (truncated S-20f)
+CHIMERA_LIVE_LEDGER_PATH = "~/ChimeraCrypto/data/live_trades.csv"  # ledger of record since S-20f
 
 
 # ── data loading ──────────────────────────────────────────────────────────────
@@ -93,17 +95,30 @@ def load_omega() -> pd.DataFrame:
 
 
 def load_chimera() -> pd.DataFrame:
-    raw = _ssh_cat(CHIMERA_SSH_HOST, CHIMERA_LEDGER_PATH)
-    if not raw:
-        print(f"  skip (unreachable/empty): {CHIMERA_LEDGER_PATH}", file=sys.stderr)
-        return pd.DataFrame()
     from io import StringIO
-    df = pd.read_csv(StringIO(raw))
-    if "net_pnl" not in df.columns:
-        for cand in ("pnl_usd", "pnl", "net_usd"):
-            if cand in df.columns:
-                df["net_pnl"] = df[cand]
-                break
+    frames = []
+    for path in (CHIMERA_LIVE_LEDGER_PATH, CHIMERA_LEDGER_PATH):
+        raw = _ssh_cat(CHIMERA_SSH_HOST, path)
+        if not raw or len(raw.strip().splitlines()) < 2:  # missing or header-only
+            print(f"  skip (unreachable/empty): {path}", file=sys.stderr)
+            continue
+        df = pd.read_csv(StringIO(raw))
+        if "realized_usd" in df.columns:
+            # live_trades.csv (S-20f): exit_ts_ms,entry_ts_ms,coin,tag,qty,entry_px,exit_px,realized_usd,reason
+            df["net_pnl"] = df["realized_usd"]
+            df["sym"] = df.get("coin")
+            df["strat"] = "LiveMimic"
+            df["entry_ts"] = pd.to_numeric(df.get("entry_ts_ms"), errors="coerce") / 1000.0
+            df["exit_ts"] = pd.to_numeric(df.get("exit_ts_ms"), errors="coerce") / 1000.0
+        elif "net_pnl" not in df.columns:
+            for cand in ("pnl_usd", "pnl", "net_usd"):
+                if cand in df.columns:
+                    df["net_pnl"] = df[cand]
+                    break
+        frames.append(df)
+    if not frames:
+        return pd.DataFrame()
+    df = pd.concat(frames, ignore_index=True, sort=False)
     df["_system"] = "chimera"
     return df.reset_index(drop=True)
 

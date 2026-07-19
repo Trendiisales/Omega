@@ -28,8 +28,11 @@ from __future__ import annotations
 
 import csv
 import glob
+import io
 import json
 import os
+import subprocess
+import time
 import urllib.request
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -72,8 +75,55 @@ def _src_label(path: Path) -> str:
     return "OMEGA" if d == STALL_ROOT else d.name
 
 
+# ── S-2026-07-20g: crypto LIVE closes (real Binance fills) in the trades log ──
+# The stall-root glob only covers Mac-local companion books; the crypto desk books
+# every real SELL to josgp1 data/live_trades.csv (ledger of record since 20f), so
+# without this pull the log showed NO trades all weekend while crypto clipped live.
+# Read-only ssh cat, TTL-cached so page loads don't hammer the box; on failure the
+# last good copy is served (fail-safe, never blanks the log).
+CHIMERA_HOST = os.environ.get("CHIMERA_SSH_HOST", "chimera-direct")
+CHIMERA_LIVE_LEDGER = os.environ.get("CHIMERA_LIVE_LEDGER", "~/ChimeraCrypto/data/live_trades.csv")
+_CRYPTO_TTL_S = 120
+_crypto_cache: dict = {"ts": 0.0, "rows": []}
+
+
+def _read_crypto_live() -> list[dict]:
+    now = time.time()
+    if now - _crypto_cache["ts"] < _CRYPTO_TTL_S:
+        return _crypto_cache["rows"]
+    rows: list[dict] = []
+    try:
+        out = subprocess.run(["ssh", CHIMERA_HOST, f"cat {CHIMERA_LIVE_LEDGER}"],
+                             capture_output=True, text=True, timeout=10)
+        if out.returncode != 0 or not out.stdout.strip():
+            raise RuntimeError(out.stderr.strip() or "empty")
+        for row in csv.DictReader(io.StringIO(out.stdout)):
+            try:
+                rows.append({
+                    "src": "CRYPTO-LIVE",
+                    "ts": int(float(row["exit_ts_ms"]) / 1000),
+                    "engine": "LiveMimic",
+                    "symbol": row.get("coin", ""),
+                    "side": "BUY",
+                    "entry": float(row["entry_px"]),
+                    "pnl": float(row["realized_usd"]),
+                    "reason": row.get("reason", ""),
+                    "mfe_pct": None,
+                    "bars": "",
+                    "book": "crypto_live",
+                })
+            except (KeyError, TypeError, ValueError):
+                continue
+        _crypto_cache["rows"] = rows
+    except Exception:  # noqa: BLE001 -- box unreachable: serve last good, retry next TTL
+        rows = _crypto_cache["rows"]
+    _crypto_cache["ts"] = now
+    return rows
+
+
 def _read_trades() -> dict:
     closed, opened = [], []
+    closed.extend(_read_crypto_live())
     # ---- past clips: every companion_closed.csv under the stall root ----
     for fp in sorted(glob.glob(str(STALL_ROOT / "**" / "companion_closed.csv"), recursive=True)):
         p = Path(fp)
@@ -156,7 +206,7 @@ def _read_trades() -> dict:
         "open": opened,
         "n_closed": len(closed),
         "n_open": len(opened),
-        "note": "forward live clips. BeFloor gold/FX desk $ are BACKTEST (bt), not forward -- $0 forward until a real move clips.",
+        "note": "forward live clips. CRYPTO-LIVE rows = real Binance fills (live_trades.csv). BeFloor gold/FX desk $ are BACKTEST (bt), not forward -- $0 forward until a real move clips.",
     }
 
 # PANIC KILL-ALL fan-out (per-book isolation, operator's choice). The cockpit is a
