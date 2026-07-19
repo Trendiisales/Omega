@@ -20,14 +20,14 @@
 #include "XagBeFloorCompanion.hpp"  // XAGPos/XAGNeg SILVER BE-floor companion (native C++, /api/xag_companion)
 #include "UsoilBeFloorCompanion.hpp"// USOILPos/USOILNeg WTI CRUDE BE-floor companion (native C++, /api/usoil_companion)
 #include "FxBeFloorCompanion.hpp"   // per-pair FX BE-floor companion (EUR/GBP/JPY/AUD/NZD) -> /api/fx_companion
-#include "FxUpJumpLadderCompanion.hpp" // per-pair FX jump LADDER companion (long EUR/GBP/NZD/AUD + short USDCAD) -> /api/fxladder_companion
+#include "FxMimicLadderCompanion.hpp" // per-pair FX jump LADDER companion (long EUR/GBP/NZD/AUD + short USDCAD) -> /api/fxladder_companion
 #include "OmegaBeCascadeBook.hpp"      // S-2026-07-16: BE-CASCADE companion book (46 cells: 7 non-stock + 39 stock, SHADOW) -> omega_shadow.csv
-                                       //   + index_upjump_ladder_book() (US500/NAS100/GER40) -> /api/idxladder_companion
+                                       //   + index_mimic_ladder_book() (US500/NAS100/GER40) -> /api/idxladder_companion
 #include "IndexRiskGate.hpp"           // omega::index_risk_off() (GER40 ladder bull-gate)
 #include "IndexBeFloorCompanion.hpp"// per-symbol index BE-floor companion (US500/NAS100/DJ30/GER40) -> /api/index_companion
 // (JumpRiderEngine.hpp include REMOVED — engine culled/tombstoned S-2026-07-10)
 #include "StockDayMoverBeFloorCompanion.hpp"// per-name BIGCAP day-mover BE-floor companion (RETIRED S-2026-07-07e) -> /api/stockmover_companion
-#include "StockDayMoverLadderCompanion.hpp" // per-name BIGCAP day-mover UP-JUMP LADDER companion (39 stocks) -> /api/stockladder_companion
+#include "StockDayMoverLadderCompanion.hpp" // per-name BIGCAP day-mover MIMIC LADDER companion (39 stocks) -> /api/stockladder_companion
 #include "StockDipTurtleEngine.hpp" // per-name US-stock StockDip (ConnorsRSI2 archetype) + StockTurtle (Donchian 20/10) daily-close books (S-2026-07-08c)
 #include "BigCapHi52Engine.hpp"     // 52wk-high-proximity BIGCAP-45 portfolio book, SPY-200DMA gated, weekly rebal (S-2026-07-17k scan candidate C)
 #include "BigCap2pctImpulseCompanion.hpp"  // per-name BIGCAP +2%-impulse / 20d-breakout LONG-only LOOSE-RIDE book (S-2026-07-09) -> /api/bigcap2pct_companion
@@ -1997,13 +1997,13 @@ static void init_engines(const std::string& cfg_path)
         // ── JumpRider ENGINE CULLED / TOMBSTONED (S-2026-07-10, operator) — removed completely.
         //    Reason: shorted gold (JumpRiderXAUUSD SYM_FLIP -$5,215) into the safe-haven squeeze;
         //    exhaustive gold-short backtest found NO viable gold short at any TF/regime. Whole
-        //    UpJump-on-non-crypto rider retired (header + wiring + feeds + /api/jumprider gone).
+        //    Mimic-on-non-crypto rider retired (header + wiring + feeds + /api/jumprider gone).
         //    Memory-Omega GoldShort tombstone. Do NOT resurrect without a new all-6 basis.
 
         // ── FX JUMP LADDER companion (S-2026-07-07x wire; S-2026-07-08c both-ways update) ──
         //   The FX member of the no-floor ladder family (BIGCAP daily sibling above). Native
-        //   C++ port of backtest/omega_upjump_ladder_bt.py, PARITY-EXACT vs python (backtest/
-        //   fx_upjump_parity.cpp: EURUSD +39.7 vs +39.7, GBPUSD +37.4 vs +37.4, NZDUSD +41.2
+        //   C++ port of backtest/omega_mimic_ladder_bt.py, PARITY-EXACT vs python (backtest/
+        //   fx_mimic_parity.cpp: EURUSD +39.7 vs +39.7, GBPUSD +37.4 vs +37.4, NZDUSD +41.2
         //   vs +41.2 — registry §6). Detector: close >= thr% off the W-bar min low -> W-bar
         //   window; legs TIGHT a0.17thr/trail0.67thr + WIDE a2.7thr/g50 + STACKED
         //   {0.67,1.33,2.0}thr g50 + reclip WIDE on +1.67thr (cap 5); LOSS_CUT 5thr pre-arm
@@ -2039,7 +2039,7 @@ static void init_engines(const std::string& cfg_path)
         //   engine), judged STANDALONE, deploy-forward.
         //   FEED: tick_fx.hpp H1 roll (h/l/c — manage is intrabar adverse-first, in-calibration).
         {
-            auto& fl = omega::fx_upjump_ladder_book();
+            auto& fl = omega::fx_mimic_ladder_book();
             // {pair, W, thr%, rt_cost_bp, short_downjump, notional$, retire_usd, warmup CSV (ts,o,h,l,c H1)}
             struct FLCfg { const char* pair; int W; double thr; double rt;
                            bool short_dj; double notional; double retire; const char* csv; };
@@ -2069,7 +2069,7 @@ static void init_engines(const std::string& cfg_path)
             //   Evidence: the 3 research artifacts above (ibkr_fx_h1_pull.py +
             //   fx_ibkr_ladder_sweep.cpp + fx_ibkr_ladder_orchestrate.py) reproduce these
             //   numbers; parity: the same driver reproduces the histdata research exactly
-            //   (EURUSD_merged W48/0.5 = +39.7% == research). Vault: FxUpJumpLadder page.
+            //   (EURUSD_merged W48/0.5 = +39.7% == research). Vault: FxMimicLadder page.
             static const FLCfg FL[] = {
                 {"GBPUSD", 48, 0.75, 2.0, false, 10000.0,    0.0, "phase1/signal_discovery/warmup_GBPUSD_H1.csv"},
                 // -- DISABLED S-2026-07-09c: FAIL all-6 STANDALONE on 3Y IBKR feed (above). --
@@ -2103,7 +2103,7 @@ static void init_engines(const std::string& cfg_path)
                 //   0) per clip); arm/trail/LC/flush timing + clip count are unchanged, so it
                 //   STRICTLY DOMINATES the validated GBPUSD book (net +40.5% -> improves, worst-clip
                 //   -> >=0, WF both halves preserved, 2x-cost holds). Sweep: backtest/
-                //   fx_upjump_be_floor_sweep.cpp (OFF vs ON, all FX + all index).
+                //   fx_mimic_be_floor_sweep.cpp (OFF vs ON, all FX + all index).
                 c.be_floor_on_open = true;
                 // ── WEEKEND-GAP RISK GATE (S-2026-07-11, go-live) — WEEKEND_RISK_LAYERS_FINDINGS.md,
                 //   faithful port of backtest/weekend_risk_layers_bt.py (parity-checked). Flag-gated.
@@ -2156,12 +2156,12 @@ static void init_engines(const std::string& cfg_path)
             fflush(stdout);
         }
 
-        // ── INDEX up-jump LADDER companion (S-2026-07-07x resume, operator: "more NAS100/
-        //    most-lucrative-index companion/upjump trades with protections") ──
+        // ── INDEX mimic LADDER companion (S-2026-07-07x resume, operator: "more NAS100/
+        //    most-lucrative-index companion/mimic trades with protections") ──
         //   Same validated ladder class/mechanism as the FX book above (parity-exact port).
-        //   Research: backtest/index_upjump_ladder_sweep.py over freshly-built H1 from the
+        //   Research: backtest/index_mimic_ladder_sweep.py over freshly-built H1 from the
         //   /Users/jo/Tick tick corpus (backtest/histdata_tick_to_h1.cpp), evidence
-        //   outputs/INDEX_UPJUMP_LADDER_2026-07-07.txt:
+        //   outputs/INDEX_MIMIC_LADDER_2026-07-07.txt:
         //     US500  W24 thr2.0: +123.2% PF1.34 n854 WF+ 2x+89 RANDOM -24 (pure detector
         //            edge; SPXUSD_2022_2026.h1.csv CERTIFIED CLEAN; thr2 plateau W12/24/96 WF+)
         //     NAS100 W24 thr1.5: +242.9% PF1.23 n2129 WF+ 2x+179 RANDOM -5 (the most
@@ -2176,7 +2176,7 @@ static void init_engines(const std::string& cfg_path)
         //   (same backtested verdict as the FX book). SEPARATE INDEPENDENT observe-only
         //   SHADOW book, judged STANDALONE, deploy-forward, per-clip RT cost debited.
         {
-            auto& il = omega::index_upjump_ladder_book();
+            auto& il = omega::index_mimic_ladder_book();
             struct ILCfg { const char* tag; const char* live; int W; double thr; double rt;
                            bool bull_gate; const char* csv; };
             static const ILCfg IL[] = {
@@ -2197,7 +2197,7 @@ static void init_engines(const std::string& cfg_path)
                 //   the W24/thr1.5 cell was NOT rare (61.6 windows/yr on the 2yr M2K_h1 sample)
                 //   but it was the WEAKEST M2K cell. Full W{12,24,48} x thr{0.75..2.0} sweep on
                 //   the REAL FxLadderPair over Tick/M2K_h1.csv (= the live warmup_M2K_H1 data,
-                //   backtest/index_upjump_ladder_cadence_sweep.cpp, LIVE params arm0.5/be0.08/
+                //   backtest/index_mimic_ladder_cadence_sweep.cpp, LIVE params arm0.5/be0.08/
                 //   gb0.10): W24/thr1.0 STRICTLY DOMINATES W24/thr1.5 on EVERY axis --
                 //     thr1.0: fires 70.6/yr n675 net+186.3% PF1.54 H1+93.4 H2+92.9 bull+71.9
                 //             bear+64.3 ; 2x-cost(rt8) net+159.3 PF1.45 all-6 HOLD.
@@ -2237,7 +2237,7 @@ static void init_engines(const std::string& cfg_path)
                 //   Book-time clamp only (max(unfloored, 0) per clip); arm/trail/LC/flush timing +
                 //   clip count unchanged, so it STRICTLY DOMINATES the validated index cells (US500
                 //   +204.9% / NAS100 +90.1% / GER40 +123.7% / M2K +186.3% -> worst-clip >=0, WF both
-                //   halves preserved, 2x-cost holds). Sweep: backtest/fx_upjump_be_floor_sweep.cpp.
+                //   halves preserved, 2x-cost holds). Sweep: backtest/fx_mimic_be_floor_sweep.cpp.
                 c.be_floor_on_open = true;
                 // ── WEEKEND-GAP RISK GATE (S-2026-07-11, go-live) — WEEKEND_RISK_LAYERS_FINDINGS.md,
                 //   faithful port of backtest/weekend_risk_layers_bt.py (parity-checked). Flag-gated.
@@ -2303,13 +2303,13 @@ static void init_engines(const std::string& cfg_path)
                     handle_closed_trade(tr);
                 });
             il.finalize_all();
-            printf("[OMEGA-INIT][SEED] INDEX upjump LADDER wired: US500(W24/2.0) NAS100(W24/1.5) GER40(W12/1.5 BULL-GATED) M2K(W24/1.0 BULL-GATED, feed via bridge --symbols M2K), ALL IBKR-futures seed+live (S-2026-07-09 complete migration), %zu H1 warmup bars seeded, %zu forward bars restored, LC5thr+trail+window-flush, SHADOW, deploy-forward\n",
+            printf("[OMEGA-INIT][SEED] INDEX mimic LADDER wired: US500(W24/2.0) NAS100(W24/1.5) GER40(W12/1.5 BULL-GATED) M2K(W24/1.0 BULL-GATED, feed via bridge --symbols M2K), ALL IBKR-futures seed+live (S-2026-07-09 complete migration), %zu H1 warmup bars seeded, %zu forward bars restored, LC5thr+trail+window-flush, SHADOW, deploy-forward\n",
                    ilseeded, ilrestored);
             fflush(stdout);
         }
 
         // ── BE-CASCADE companion book (S-2026-07-16, operator wire) ──────────────────
-        //   Omega port of the crypto-validated BE-CASCADE mimic (chimera::UpJumpLadder-
+        //   Omega port of the crypto-validated BE-CASCADE mimic (chimera::MimicLadder-
         //   Companion, frozen in include/BeCascadeCompanionEngine.hpp). stagger_mode=1
         //   BE_CASCADE: releases the next of up-to-8 legs only once every open leg is BE
         //   (mfe>=20bp) => at most ONE un-BE'd leg at a time; post-arm BE-floor (never
@@ -2346,7 +2346,7 @@ static void init_engines(const std::string& cfg_path)
                                       const std::string& reason) {
                 omega::TradeRecord tr;
                 tr.symbol     = sym;
-                tr.side       = "LONG";              // long-only up-jump mimic
+                tr.side       = "LONG";              // long-only mimic
                 tr.engine     = "BeCascade";
                 tr.entryPrice = entry_px;
                 tr.exitPrice  = exit_px;
@@ -2415,10 +2415,10 @@ static void init_engines(const std::string& cfg_path)
             fflush(stdout);
         }
 
-        // ── Stock day-mover UP-JUMP LADDER companion (S-2026-07-07w, operator item 4) ──
+        // ── Stock day-mover MIMIC LADDER companion (S-2026-07-07w, operator item 4) ──
         //   The NO-FLOOR successor to the retired BE-floor above. Native C++ port of the
-        //   VALIDATED backtest/bigcap_upjump_ladder_bt.py (evidence outputs/BIGCAP_UPJUMP_
-        //   LADDER_2026-07-07.md, vault BigCapUpJumpLadder): parent +3% day -> enter NEXT
+        //   VALIDATED backtest/bigcap_mimic_ladder_bt.py (evidence outputs/BIGCAP_MIMIC_
+        //   LADDER_2026-07-07.md, vault BigCapMimicLadder): parent +3% day -> enter NEXT
         //   close, exit -3% day (flush next close); legs TIGHT a0.5/s2 (stall banker) +
         //   WIDE a8/g50 (giveback runner) + self-funding ladder cap5, reclip 5%, LOSS_CUT 15
         //   (ADVERSE-PROTECTION verdict: FREE, worst clip -32.6% -> -28.1%), RT 8bp/clip.
@@ -2431,8 +2431,8 @@ static void init_engines(const std::string& cfg_path)
         //   FEED: same wide daily-close CSV as befloor (RDAgent refresh_close_ibkr.py, IBKR 4002).
         //   NOTE: sp500_long_close.csv stale since 2026-06-29 (IBKR sub lapse — operator item);
         //   engine seeds+arms now, books resume the day the feed does.
-        // ── S-2026-07-16l KILL (operator: "kill the upjumps for stockdip they will never
-        //    work" / "remove the upjump engines in bigcap"). The BIGCAP up-jump LADDER
+        // ── S-2026-07-16l KILL (operator: "kill the mimics for stockdip they will never
+        //    work" / "remove the mimic engines in bigcap"). The BIGCAP mimic LADDER
         //    (stockmover_ladder_book) AND the 2%-impulse book (bigcap_impulse_book) below
         //    NEVER booked a single trade all-time (0 rows in the mirror ledger, both files)
         //    — a dead limb even after the 07-16k mimic-only conversion. Retired to a clean
@@ -2441,13 +2441,13 @@ static void init_engines(const std::string& cfg_path)
         //    a BE-mimic overlay on the ONE bigcap book that actually fires (StockDip) — is
         //    now the StockDip BE-MIMIC cells wired below (validated STANDALONE all-6 PASS,
         //    backtest/STOCKDIP_MIMIC_FINDINGS_2026-07-15.md). SHADOW -> zero live-money impact.
-        //    NOTE: the INDEX up-jump ladder (US500/NAS100/GER40/M2K) is a DIFFERENT engine and
-        //    is left untouched — only the two STOCK/bigcap up-jump books are killed here.
-#if 0  // S-2026-07-16l BIGCAP up-jump LADDER + 2%-impulse DISABLED (never traded; replaced by StockDip BE-mimics)
+        //    NOTE: the INDEX mimic ladder (US500/NAS100/GER40/M2K) is a DIFFERENT engine and
+        //    is left untouched — only the two STOCK/bigcap mimic books are killed here.
+#if 0  // S-2026-07-16l BIGCAP mimic LADDER + 2%-impulse DISABLED (never traded; replaced by StockDip BE-mimics)
         {
             auto& sl = omega::stockmover_ladder_book();
             // the RDAgent BIGCAP universe (tools/rdagent/refresh_close_ibkr.py) — the exact
-            // 39-name list the PASS was measured on (bigcap_upjump_ladder_bt.py BIGCAP).
+            // 39-name list the PASS was measured on (bigcap_mimic_ladder_bt.py BIGCAP).
             static const char* BIGCAP_LAD[] = {
                 "NVDA","AMD","AVGO","MU","MRVL","SMCI","ARM","PLTR","TSLA","META","NFLX","CRWD",
                 "SHOP","COIN","MSTR","SNOW","NOW","PANW","UBER","ABNB","DELL","ORCL","QCOM","INTC",
@@ -2495,7 +2495,7 @@ static void init_engines(const std::string& cfg_path)
                 c.w_arm = 1.0; c.w_gb = 0.10;
                 // S-2026-07-13 PARENT + 4x BE-MIMIC redo (operator: "the bigcap engine should be
                 // a engine that trades on trigger with 4x mimic engines"; feedback-no-immediate-
-                // entry-upjump-mimic-only). be_entry_pct>0 switches the window to ONE immediate
+                // entry-mimic-only). be_entry_pct>0 switches the window to ONE immediate
                 // PARENT leg (w_arm1/gb10, LadW) + 4 PENDING mimic legs (T/MIRROR/Wm/W8) that
                 // open only at the first close >= trigger*(1+0.5%) and cancel after 3 closes;
                 // ladder respawns BE-gated the same way. VALIDATED bigcap_parent4mimic_bt.py
@@ -2504,9 +2504,9 @@ static void init_engines(const std::string& cfg_path)
                 // whole 12-cell be/pend sweep passes (plateau). Interior cell wired, not the
                 // corner-best (be0.3/pend5 +11,228%) — robustness over last drop of net.
                 c.be_entry_pct = 0.5; c.pend_closes = 3;   // w8 cell = struct default a8/gb50
-                // S-2026-07-16k MIMIC-ONLY (operator: "remove the upjump engines in bigcap and
-                // replace with 2x mimic engines immediately"; feedback-no-immediate-entry-upjump-
-                // mimic-only). Drop the immediate PARENT up-jump leg — ONLY the 4 BE-mimic legs
+                // S-2026-07-16k MIMIC-ONLY (operator: "remove the mimic engines in bigcap and
+                // replace with 2x mimic engines immediately"; feedback-no-immediate-entry-mimic-
+                // mimic-only). Drop the immediate PARENT mimic leg — ONLY the 4 BE-mimic legs
                 // (T/MIRROR/Wm/W8) trade, each BE-gated + LOSS_CUT 15 pre-arm + giveback-floor
                 // post-arm. VALIDATED STANDALONE bigcap_parent4mimic_bt.py 4x-MIMIC be0.5/pend3:
                 // +9,603% PF1.64 worst -24.1% all-6 + 2x + ex-best PASS. p_arm/p_gb below are now
@@ -2535,7 +2535,7 @@ static void init_engines(const std::string& cfg_path)
                 for (const char* e : AGG_ELITE) if (c.sym == e) { is_elite = true; break; }
                 for (const char* o : AGG_OUT)   if (c.sym == o) { is_out   = true; break; }
                 // S-2026-07-13 operator "can we add more mimics?": ladder capacity 5->8 (+ mirror
-                // base leg = cap 9). Cap sweep on the validated harness (bigcap_upjump_ladder_bt,
+                // base leg = cap 9). Cap sweep on the validated harness (bigcap_mimic_ladder_bt,
                 // pooled 39-name all-6 gate): cap5 +6923%/PF1.56 -> cap8 +7418%/PF1.55 (2x PF1.51
                 // pass) -> cap12 +7850%/PF1.58. Worst clip UNCHANGED -33bp at every cap — spawns
                 // are self-funded from banked winners only, so added legs never add cold risk.
@@ -2610,7 +2610,7 @@ static void init_engines(const std::string& cfg_path)
             // fresh names to write (bridge-down/thin day -> skip, last-good CSV untouched).
             sl.enable_daily_close_writer(true, 10);
             sl.start_poller(wide_csv, 900000);   // 15-min poll of the wide daily-close CSV
-            printf("[OMEGA-INIT][SEED] BIGCAP MIMIC-ONLY LADDER companion wired (S-2026-07-16k: NO immediate parent up-jump leg): 45 names, %zu seed rows, %zu forward bars restored, %zu unconfirmed legs flushed, LIVE-CONFIRM GATE ON (session+fresh<60s+rising), 4 BE-mimic legs T a0.5/s2 + MIRROR a2/g75 + Wm a1/g10 + W8 a8/g50 (be0.5%%/pend3, LOSS_CUT 15 pre-arm + giveback-floor post-arm), ladder cap9 reclip5%%, rt 8bp, LONG-only, SHADOW, deploy-forward, daily-CSV-polled\n",
+            printf("[OMEGA-INIT][SEED] BIGCAP MIMIC-ONLY LADDER companion wired (S-2026-07-16k: NO immediate parent mimic leg): 45 names, %zu seed rows, %zu forward bars restored, %zu unconfirmed legs flushed, LIVE-CONFIRM GATE ON (session+fresh<60s+rising), 4 BE-mimic legs T a0.5/s2 + MIRROR a2/g75 + Wm a1/g10 + W8 a8/g50 (be0.5%%/pend3, LOSS_CUT 15 pre-arm + giveback-floor post-arm), ladder cap9 reclip5%%, rt 8bp, LONG-only, SHADOW, deploy-forward, daily-CSV-polled\n",
                    lseeded, lrestored, lflushed);
             printf("[OMEGA-INIT][SEED] BIGCAP in-binary DAILY-CLOSE WRITER active: target=%s, fires once/day at 20:00 UTC (US cash close, weekday) appending a WIDE-format row from live IBKR L1 mids (min 10 fresh names), idempotent -- REPLACES yfinance OmegaStockMoverFeed\n",
                    wide_csv.c_str());
@@ -2618,7 +2618,7 @@ static void init_engines(const std::string& cfg_path)
         }
 
         // ── BigCap2pctImpulse per-name +2%-impulse LOOSE-RIDE book (S-2026-07-09) ──
-        //   A SEPARATE INDEPENDENT engine from the up-jump ladder above. ONE LONG
+        //   A SEPARATE INDEPENDENT engine from the mimic ladder above. ONE LONG
         //   position per name: entered when the daily close is >= +2% close-to-close
         //   AND a NEW 20-day closing high (impulse + continuation), UNGATED (fires
         //   every regime, no bull/bear/200d gate). Ridden with a DELIBERATELY LOOSE
@@ -2672,8 +2672,8 @@ static void init_engines(const std::string& cfg_path)
                 // (45 names, RT 20bp): be0.5/pend5 +4022% PF1.95 worst -21.9% all-6 + 2x
                 // PASS; all 4 be/pend cells pass (plateau); ex-best(NVDA) +3619%/1.87 PASS.
                 c.mimic_be_pct = 0.5; c.mimic_pend = 5;
-                // S-2026-07-16k MIMIC-ONLY (operator: "remove the upjump engines in bigcap and
-                // replace with 2x mimic engines"; feedback-no-immediate-entry-upjump-mimic-only).
+                // S-2026-07-16k MIMIC-ONLY (operator: "remove the mimic engines in bigcap and
+                // replace with 2x mimic engines"; feedback-no-immediate-entry-mimic-only).
                 // Drop the immediate parent impulse LONG — ONLY the 2 BE-mimic legs (M/W8) trade,
                 // each BE-gated + DRAWDOWN-CANCEL -15% pre-arm + giveback-floor post-arm. VALIDATED
                 // STANDALONE bigcap_ride_harder_bt.py 2LEG be0.5/pend5: +4022% PF1.95 worst -21.9%
@@ -2721,7 +2721,7 @@ static void init_engines(const std::string& cfg_path)
                    (int)(sizeof(BC2_UNIV)/sizeof(BC2_UNIV[0])), bi_seeded, bi_restored);
             fflush(stdout);
         }
-#endif  // S-2026-07-16l BIGCAP up-jump LADDER + 2%-impulse DISABLED
+#endif  // S-2026-07-16l BIGCAP mimic LADDER + 2%-impulse DISABLED
 
         // ── StockDip + StockTurtle per-name daily-close books (S-2026-07-08c) ──
         //   TWO validated LONG-only single-stock families in ONE registry
@@ -2837,7 +2837,7 @@ static void init_engines(const std::string& cfg_path)
             size_t sdt_exempt = 0;
             for (int64_t ets : sdt.restored_open_entry_ts()) { g_restored_entry_ts.insert(ets); ++sdt_exempt; }
 
-            // ── StockDip BE-MIMIC cells (S-2026-07-16l, operator: "remove the upjump engines in
+            // ── StockDip BE-MIMIC cells (S-2026-07-16l, operator: "remove the mimic engines in
             //    bigcap and replace with 2x mimic engines"). 2 INDEPENDENT SHADOW cells per DIP
             //    name, layered on the ONE bigcap book that actually fires (StockDip). Each cell is
             //    a GoldTrendMimicBook (proven mechanics): opens its OWN leg the instant StockDip
@@ -6269,9 +6269,9 @@ static void init_engines(const std::string& cfg_path)
             printf("[OMEGA-INIT] MondayRiskOn NAS100 (FX legs removed): shadow=true Mon-long SMA50-gate\n");
         }
 
-        // ── BE-CASCADE + gold intraday up-jump families REMOVED (S-2026-07-13, code cull) ──
+        // ── BE-CASCADE + gold intraday mimic families REMOVED (S-2026-07-13, code cull) ──
         //   XsBeCascade x3 (idx D1) + XauBracketCascade x12 (gold H1/M5/M10/M15/H4, SPX/NQ H1+H4,
-        //   M2K x4) + XauUpJumpIntraday x8: disabled 0c247c70 (operator: NO up-jump on ANY engine,
+        //   M2K x4) + XauMimicIntraday x8: disabled 0c247c70 (operator: NO mimic on ANY engine,
         //   immediate-entry class trades into a loss), culled this commit. History: registry +
         //   Memory-Omega BeCascadeEngines/SESSION_HANDOFF_2026-07-13b. Do NOT resurrect —
         //   the surviving jump-family pattern is companion-at-BE mimic only (FX/IDX/BIGCAP ladders).

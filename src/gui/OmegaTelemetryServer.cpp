@@ -806,7 +806,7 @@ static std::string buildHistoryJson(bool all_time = false)
 //   crypto_inbound.csv          book="crypto"   Mac ibkrcrypto daily book
 //   crypto_intraday_inbound.csv book="crypto"   Mac ibkrcrypto intraday book
 //   chimera_inbound.csv         book="chimera"  josgp1 chimera SHADOW closes
-//     (slot engines/UPJUMP parents/companion clips/XSec rebalances; written by
+//     (slot engines/MIMIC parents/companion clips/XSec rebalances; written by
 //     chimera export_desk_trade, relayed by tools/gui/refresh_crypto_companion.sh
 //     every 120s). DISPLAY-ONLY — never folded into ALL-TIME PnL (the fold
 //     path, CryptoLedgerInbound, reads crypto_inbound.csv only).
@@ -1331,15 +1331,15 @@ void OmegaTelemetryServer::run(int port)
         else if (strstr(buf, "GET /api/fx_companion"))   { ct = "application/json"; body = loadFile("fx_companion_state.json"); if (body.empty()) body = "{\"engine\":\"fx-befloor-pos-neg\",\"pairs\":[]}"; }
         else if (strstr(buf, "GET /api/index_companion")){ ct = "application/json"; body = loadFile("index_companion_state.json"); if (body.empty()) body = "{\"engine\":\"index-befloor-pos-neg\",\"syms\":[]}"; }
         else if (strstr(buf, "GET /api/stockmover_companion")){ ct = "application/json"; body = loadFile("stockmover_companion_state.json"); if (body.empty()) body = "{\"engine\":\"stockmover-befloor-pos-neg\",\"names\":[]}"; }
-        else if (strstr(buf, "GET /api/stockladder_companion")){ ct = "application/json"; body = loadFile("stockladder_companion_state.json"); if (body.empty()) body = "{\"engine\":\"stockmover-upjump-ladder\",\"names\":[]}"; }
+        else if (strstr(buf, "GET /api/stockladder_companion")){ ct = "application/json"; body = loadFile("stockladder_companion_state.json"); if (body.empty()) body = "{\"engine\":\"stockmover-mimic-ladder\",\"names\":[]}"; }
         else if (strstr(buf, "GET /api/stockdipturtle")){ ct = "application/json"; body = loadFile("stockdipturtle_state.json"); if (body.empty()) body = "{\"engine\":\"stock-dip-turtle\",\"books\":[]}"; }
         // BigCapHi52 (S-2026-07-17m): SHADOW deploy-forward 52wk-high portfolio paper book
         // (rdagent-basket class). Engine writes hi52_state.json atomically on every daily row.
         else if (strstr(buf, "GET /api/hi52")){ ct = "application/json"; body = loadFile("hi52_state.json"); if (body.empty()) body = "{\"engine\":\"BigCapHi52\",\"shadow\":true,\"pnl_usd\":0,\"eq_fwd\":1.0,\"members\":[]}"; }
         else if (strstr(buf, "GET /api/bigcap2pct_companion")){ ct = "application/json"; body = loadFile("bigcap2pct_companion_state.json"); if (body.empty()) body = "{\"engine\":\"bigcap-2pct-impulse\",\"names\":[]}"; }
         // (GET /api/jumprider endpoint REMOVED — JumpRider engine culled/tombstoned S-2026-07-10)
-        else if (strstr(buf, "GET /api/fxladder_companion")){ ct = "application/json"; body = loadFile("fxladder_companion_state.json"); if (body.empty()) body = "{\"engine\":\"fx-upjump-ladder\",\"pairs\":[]}"; }
-        else if (strstr(buf, "GET /api/idxladder_companion")){ ct = "application/json"; body = loadFile("idxladder_companion_state.json"); if (body.empty()) body = "{\"engine\":\"index-upjump-ladder\",\"pairs\":[]}"; }
+        else if (strstr(buf, "GET /api/fxladder_companion")){ ct = "application/json"; body = loadFile("fxladder_companion_state.json"); if (body.empty()) body = "{\"engine\":\"fx-mimic-ladder\",\"pairs\":[]}"; }
+        else if (strstr(buf, "GET /api/idxladder_companion")){ ct = "application/json"; body = loadFile("idxladder_companion_state.json"); if (body.empty()) body = "{\"engine\":\"index-mimic-ladder\",\"pairs\":[]}"; }
         else if (strstr(buf, "POST /api/clear_ledger") || strstr(buf, "GET /api/clear_ledger")) {
             // Clear in-memory ledger + rename today's CSV so it won't be re-read.
             //

@@ -1,7 +1,7 @@
 #pragma once
 // ─────────────────────────────────────────────────────────────────────────────
 // OmegaBeCascadeBook — Omega (namespace omega) wrapper over the vendored crypto-
-// validated BE-CASCADE engine (chimera::UpJumpLadderCompanion, frozen in
+// validated BE-CASCADE engine (chimera::MimicLadderCompanion, frozen in
 // include/BeCascadeCompanionEngine.hpp). ONE book holds every wired cell (7 non-
 // stock + 39 bigcap/rdagent stocks = 46), keyed by live symbol; each is fed from
 // its asset-class dispatch site (tick_fx / tick_indices / tick_gold H1; stock-daily
@@ -21,7 +21,7 @@
 // through OmegaCostGuard/ExecutionCostGuard because it never places a live order; it is
 // a paper/shadow ledger. Documented in scripts/ungated_engine_allowlist.txt.
 // ─────────────────────────────────────────────────────────────────────────────
-#include "BeCascadeCompanionEngine.hpp"   // chimera::UpJumpLadderCompanion (vendored, frozen)
+#include "BeCascadeCompanionEngine.hpp"   // chimera::MimicLadderCompanion (vendored, frozen)
 #include <unordered_map>
 #include <string>
 #include <functional>
@@ -45,7 +45,7 @@ public:
 
     void set_clip_fn(ClipFn f) { clip_fn_ = std::move(f); }
 
-    // Build one cell. W=det window (bars), thr=up-jump fraction, rt=RT cost bp,
+    // Build one cell. W=det window (bars), thr=mimic fraction, rt=RT cost bp,
     // tf_secs=3600 H1 / 86400 daily, legs=cap (8), g=uniform giveback (0.5),
     // confirm_bp=BE-ENTRY threshold in bp (0 => auto 3x rt). rank_out=true => detector
     // stays warm (windows tracked) but the cell REFUSES to arm new legs (books nothing).
@@ -65,7 +65,7 @@ public:
     void add_cell(const std::string& live_sym, int W, double thr, double rt,
                   int tf_secs, int legs = 8, double g = 0.5, double confirm_bp = 0.0,
                   bool rank_out = false) {
-        chimera::UpJumpLadderCompanion::Config c;
+        chimera::MimicLadderCompanion::Config c;
         const double conf = (confirm_bp > 0.0) ? confirm_bp : rt * 3.0;   // BE-ENTRY threshold (>rt); 3x rt = crypto-validated margin
         c.parent_tag   = "SELF";               // self-triggered (no external parent leg)
         c.tag          = "OMEGA-BC-" + live_sym;
@@ -89,10 +89,10 @@ public:
         for (int k = 2; k < legs; ++k) c.extra_base.push_back({0.2, 0, 0.0, 0, 0.0});
         c.cap   = legs;
 
-        auto cell = std::make_unique<chimera::UpJumpLadderCompanion>(c);
+        auto cell = std::make_unique<chimera::MimicLadderCompanion>(c);
         if (rank_out) cell->set_rank_out(true);   // warm detector, refuse-to-arm
         const std::string sym = live_sym;
-        cell->set_on_clip([this, sym](const chimera::UpJumpLadderCompanion::ClipRecord& r) {
+        cell->set_on_clip([this, sym](const chimera::MimicLadderCompanion::ClipRecord& r) {
             // seeding_ = replaying history to prime the detector: prime, don't book.
             if (seeding_.load()) return;
             if (clip_fn_) clip_fn_(sym, r.net_bp_real, r.entry_px, r.exit_px, r.mfe_pct,
@@ -211,7 +211,7 @@ private:
         }
     }
 
-    std::unordered_map<std::string, std::unique_ptr<chimera::UpJumpLadderCompanion>> cells_;
+    std::unordered_map<std::string, std::unique_ptr<chimera::MimicLadderCompanion>> cells_;
     ClipFn clip_fn_;
     std::atomic<bool> seeding_{false};
     std::atomic<bool> running_{false};
@@ -223,7 +223,7 @@ private:
     int64_t           file_max_ts_= 0;
 };
 
-// Singleton — accessor mirrors omega::fx_upjump_ladder_book().
+// Singleton — accessor mirrors omega::fx_mimic_ladder_book().
 inline BeCascadeBook& be_cascade_book() noexcept {
     static BeCascadeBook b;
     return b;

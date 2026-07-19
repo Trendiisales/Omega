@@ -1968,7 +1968,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             sym == "NZDUSD"  ||
             // USDCAD (S-2026-07-08d): re-activated S-2026-07-08c as a BAR
             //   SOURCE for the down-jump ladder (tick_fx.hpp on_tick_usdcad
-            //   -> fx_feed_bars H1 -> fx_upjump_ladder_book). This gate was
+            //   -> fx_feed_bars H1 -> fx_mimic_ladder_book). This gate was
             //   not updated then, so USDCAD ticks (IBKR IDEALPRO L1 via
             //   on_book -> engine_dispatch) died HERE before the symbol
             //   dispatch at the router below -- telemetry usdcad_bid still

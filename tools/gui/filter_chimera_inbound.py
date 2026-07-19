@@ -3,10 +3,10 @@
 #
 # OPERATOR RULE (hard, end of story): there are NO negative crypto trades on the desk.
 # Crypto is long-only spot + every companion is floored (feedback-mimic-be-floor-mandatory:
-# "can't close neg after arming"; feedback-no-immediate-entry-upjump-mimic-only: a mimic
+# "can't close neg after arming"; feedback-no-immediate-entry-mimic-only: a mimic
 # books nothing until BE is covered). So this guard drops EVERY net<0 row in the desk feed
 # regardless of engine/reason. A negative row is one of:
-#   - a stale row from a RETIRED cell (e.g. INJ-UJ55W24-SWEET, no longer in the roster),
+#   - a stale row from a RETIRED cell (e.g. INJ-MIM55W24-SWEET, no longer in the roster),
 #   - a gap-through / bad-tick artifact on a jump_floor cell,
 #   - a genuine floor violation (bug to fix at the engine).
 # In every case it must NOT reach the :7779 last-15 panel. This filter runs inside the 120s
@@ -21,7 +21,7 @@
 # close that recurrence permanently.
 import sys
 
-# Companion-clip exit reasons (UpJumpLadderCompanion.hpp). All must be net>=0 on a floored
+# Companion-clip exit reasons (MimicLadderCompanion.hpp). All must be net>=0 on a floored
 # cell. ENGINE_EXIT is intentionally EXCLUDED — it is shared with slot/parent flat-closes.
 CLIP_REASONS = {
     "FLOOR_TRAIL_STOP", "FLOOR_TRAIL_CLIP", "BE_TRAIL_CLIP", "STALL_CLIP",

@@ -5,7 +5,7 @@ Two SELF-DETECTING standalone companion books (NOT a stall_accountant parent-mir
   AUPOS  (uptrend / long)  — internal 2h/+1% up-detector  -> x2 BE-floor long  companions
   AUNEG  (downtrend/short) — internal 2h/-1% down-detector -> x2 BE-floor short companions
 
-Mirror of the crypto UpJumpLadderCompanion be_floor path, in the Omega Python-companion
+Mirror of the crypto MimicLadderCompanion be_floor path, in the Omega Python-companion
 idiom. SEPARATE INDEPENDENT ENGINE (feedback-companion-independent-engine) — judged
 STANDALONE, never vs a parent/WIDE. Everything PAPER/shadow. Loss-protection verdict =
 BE-FLOOR (net >= 0 on EVERY clip by construction; feedback-engine-loss-protection-provision).

@@ -4,7 +4,7 @@
 #
 # HOP 1 (S-2026-07-12) — CHIMERA→OMEGA DESK closed trades:
 #   chimera src/main.cpp export_desk_trade appends every CLOSED shadow trade
-#   (slot engines TSMOM/ICHI/BOLL, UPJUMP parents, companion clips, XSec/XSec2
+#   (slot engines TSMOM/ICHI/BOLL, MIMIC parents, companion clips, XSec/XSec2
 #   rebalance legs) to
 #     chimera-direct:/home/jo/ChimeraCrypto/data/chimera_inbound.csv
 #   relayed to omega-new:C:/Omega/logs/trades/chimera_inbound.csv where the
@@ -13,7 +13,7 @@
 #   (CryptoLedgerInbound reads crypto_inbound.csv only).
 #
 # HOP 2 — companion live-state json (original job):
-#   The native UpJumpCompanionEngine emit (src/main.cpp emit_companion_state)
+#   The native MimicCompanionEngine emit (src/main.cpp emit_companion_state)
 #   writes chimera-direct:/home/jo/ChimeraCrypto/data/crypto_companion_state.json
 #   once at startup + on every H1 bar close. The Omega desk :7779 endpoint
 #   GET /api/crypto_companion -> loadFile("crypto_companion_state.json")

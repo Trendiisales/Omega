@@ -29,7 +29,7 @@
 #include <chrono>
 #include "FxBeFloorCompanion.hpp"   // omega::fx_befloor_book() (per-pair BE-floor companion)
 // (JumpRiderEngine.hpp include REMOVED — engine culled/tombstoned S-2026-07-10)
-#include "FxUpJumpLadderCompanion.hpp" // omega::fx_upjump_ladder_book() (upjump LADDER, needs H1 h/l/c)
+#include "FxMimicLadderCompanion.hpp" // omega::fx_mimic_ladder_book() (mimic LADDER, needs H1 h/l/c)
 #include "OmegaBeCascadeBook.hpp"      // omega::be_cascade_book() (BE-CASCADE companion, S-2026-07-16)
 
 // ── FX chart + companion bar builder (S-2026-07-06) ─────────────────────────
@@ -41,7 +41,7 @@
 struct FxBarAgg { OHLCBar m1{}, m5{}, m15{}, h1{}; int64_t s1=0, s5=0, s15=0, sh1=0; };
 static inline void fx_feed_bars(FxBarAgg& a, SymBarState& bars, const char* pair, double mid) {
     if (mid <= 0.0) return;
-    omega::fx_upjump_ladder_book().set_disp_mid(pair, mid);   // S-2026-07-08d live display mark
+    omega::fx_mimic_ladder_book().set_disp_mid(pair, mid);   // S-2026-07-08d live display mark
     const int64_t now_ms = static_cast<int64_t>(
         std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch()).count());
@@ -53,7 +53,7 @@ static inline void fx_feed_bars(FxBarAgg& a, SymBarState& bars, const char* pair
             if (drive) {
                 omega::fx_befloor_book().on_h1_bar(pair, start / 1000, acc.close);
                 // (JumpRider FX feed REMOVED — engine culled/tombstoned S-2026-07-10)
-                omega::fx_upjump_ladder_book().on_h1_bar(pair, start / 1000,
+                omega::fx_mimic_ladder_book().on_h1_bar(pair, start / 1000,
                                                          acc.high, acc.low, acc.close, acc.open); // h/l intrabar; open for Layer-3 weekend gap
                 // S-2026-07-16: BE-CASCADE companion (EURUSD/GBPUSD/AUDUSD cells; others absent = no-op)
                 omega::be_cascade_book().on_bar(pair, start / 1000, acc.high, acc.low, acc.close);
@@ -124,7 +124,7 @@ static void on_tick_audusd(
 
 // ── USDCAD ──────────────────────────────────────────────────
 // S-2026-07-08c: USDCAD re-activated as a BAR SOURCE ONLY for the DOWN-JUMP
-// SHORT ladder companion (FxUpJumpLadderCompanion short_downjump=true; sweep
+// SHORT ladder companion (FxMimicLadderCompanion short_downjump=true; sweep
 // outputs/FX_BOTHWAYS_SWEEP_2026-07-08.md row 5, W96/0.5 +2241bp PF1.58).
 // Quotes arrive via the IBKR IDEALPRO L1 bridge (same path as the other 5
 // pairs; USDCAD is NOT on the BlackBull ext-symbol list, IBKR is its only

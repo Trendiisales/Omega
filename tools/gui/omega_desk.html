@@ -276,12 +276,12 @@ a{color:var(--blu);text-decoration:none}
 
 </div><!-- /left column cstack -->
 
-<!-- ═══ STOCK MOVERS — BIGCAP day-mover UP-JUMP LADDER books (no-floor · pre-trade, additive)
+<!-- ═══ STOCK MOVERS — BIGCAP day-mover MIMIC LADDER books (no-floor · pre-trade, additive)
      + stacked underneath (2026-07-08, operator): 4 retired BE-floor banners + DOM L2 ═══ -->
 <div class="cstack">
 <div class="pan">
   <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px">
-    <span class="lbl">STOCK MOVERS — BIGCAP upjump LADDER (no-floor) · +3% day → next-close entry · TIGHT a0.5/s2 + WIDE a8/g50 + ladder cap5 · LOSS_CUT 15 · BT +7,044% PF1.58 all-6 (native C++ · pre-trade · REAL fills · never vs-WIDE)</span>
+    <span class="lbl">STOCK MOVERS — BIGCAP mimic LADDER (no-floor) · +3% day → next-close entry · TIGHT a0.5/s2 + WIDE a8/g50 + ladder cap5 · LOSS_CUT 15 · BT +7,044% PF1.58 all-6 (native C++ · pre-trade · REAL fills · never vs-WIDE)</span>
     <span id="sminfo" class="lbl" style="margin-left:auto">…</span>
   </div>
   <div style="overflow:auto;max-height:340px"><table id="smtab"><tr><td class="l d">loading…</td></tr></table></div>
@@ -316,10 +316,10 @@ a{color:var(--blu);text-decoration:none}
 <!-- ═══ LADDER + STOCK merged into ONE right-column cstack (S-2026-07-11 operator: fill the empty
      right-column space -- STOCK MOVERS + STOCK BASKET now stack with the ladders instead of
      stranding in a short column). ═══ -->
-<!-- ═══ INDEX LADDER — H1 upjump giveback LADDER books (BE-floored-on-open · pre-trade, additive · S-2026-07-17 1ba35842) ═══ -->
+<!-- ═══ INDEX LADDER — H1 mimic giveback LADDER books (BE-floored-on-open · pre-trade, additive · S-2026-07-17 1ba35842) ═══ -->
 <div class="pan">
   <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px">
-    <span class="lbl">INDEX LADDER — H1 upjump LADDER (BE-floored-on-open, unrealized mark can still show red pre-exit) · US500 W24/2.0 · NAS100 W24/1.5 · GER40 W12/1.5 BULL-GATED (index_risk_off) · TIGHT+WIDE+STACKED + reclip cap5 · LC 5×thr floored (native C++ · pre-trade · never vs-WIDE)</span>
+    <span class="lbl">INDEX LADDER — H1 mimic LADDER (BE-floored-on-open, unrealized mark can still show red pre-exit) · US500 W24/2.0 · NAS100 W24/1.5 · GER40 W12/1.5 BULL-GATED (index_risk_off) · TIGHT+WIDE+STACKED + reclip cap5 · LC 5×thr floored (native C++ · pre-trade · never vs-WIDE)</span>
     <span id="ixladinfo" class="lbl" style="margin-left:auto">…</span>
   </div>
   <div style="overflow:auto;max-height:340px"><table id="ixladtab"><tr><td class="l d">loading…</td></tr></table></div>
@@ -327,10 +327,10 @@ a{color:var(--blu);text-decoration:none}
   <div id="ixladtradeswrap" style="display:none;margin-top:6px"><div class="lbl">TRADES LOG (completed forward clips)</div><div style="overflow-x:auto"><table id="ixladtrades"></table></div></div>
 </div>
 
-<!-- ═══ FX LADDER — H1 upjump giveback LADDER books (BE-floored-on-open · pre-trade, additive · S-2026-07-17) ═══ -->
+<!-- ═══ FX LADDER — H1 mimic giveback LADDER books (BE-floored-on-open · pre-trade, additive · S-2026-07-17) ═══ -->
 <div class="pan">
   <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px">
-    <span class="lbl">FX LADDER — H1 upjump LADDER (BE-floored-on-open, unrealized mark can still show red pre-exit) · close ≥thr% off W-bar low → window · TIGHT+WIDE+STACKED + reclip cap5 · LC 5×thr floored · GBPUSD W48/0.75 ONLY — re-validated 3Y IBKR (S-2026-07-10): +40.5% PF1.44 all-6 clean; EUR/AUD/NZD/CAD FAIL the real feed (no config passes) (native C++ · pre-trade · never vs-WIDE)</span>
+    <span class="lbl">FX LADDER — H1 mimic LADDER (BE-floored-on-open, unrealized mark can still show red pre-exit) · close ≥thr% off W-bar low → window · TIGHT+WIDE+STACKED + reclip cap5 · LC 5×thr floored · GBPUSD W48/0.75 ONLY — re-validated 3Y IBKR (S-2026-07-10): +40.5% PF1.44 all-6 clean; EUR/AUD/NZD/CAD FAIL the real feed (no config passes) (native C++ · pre-trade · never vs-WIDE)</span>
     <span id="fxladinfo" class="lbl" style="margin-left:auto">…</span>
   </div>
   <div style="overflow:auto;max-height:340px"><table id="fxladtab"><tr><td class="l d">loading…</td></tr></table></div>
@@ -1085,7 +1085,7 @@ function pollTrades(){
        crypto PnL — it was showing in LAST-15 but never in the total. EDGE trades only
        (engine !~ CLIP) so it's additive to _cctot (the companion-clip book), no double-count.
        S-2026-07-18v: the CLIP-tag test alone was stale — BE-cascade/mimic companion clip rows
-       stamp SUB-LEG tags (cfg tag + -T/-S/-L/-J<n>, UpJumpLadderCompanion emit_clip_) with no
+       stamp SUB-LEG tags (cfg tag + -T/-S/-L/-J<n>, MimicLadderCompanion emit_clip_) with no
        "CLIP" substring, so the LTC-...-BECASC-S-T1 +$52.90 clip counted HERE and in its _cctot
        bank (desk +$102 vs true +$49.36). Companion clip rows are already banked in _cctot ->
        exclude by structure: sub-leg tag suffix OR companion clip/cut reason (STALL_CLIP/
@@ -1194,8 +1194,8 @@ function pollRdagent(){
 setInterval(pollRdagent,5000);pollRdagent();
 
 /* ── crypto mimic books — DYNAMIC render, no baked roster (S-2026-07-13 panel rewrite) ──
-   Live truth 13-07: KILL_UPJUMP_CLIPS + KILL_UPJUMP_PARENTS culled the entire immediate-
-   entry up-jump grid (68 cells + daily cascades) on josgp1. The box now runs ONLY
+   Live truth 13-07: KILL_IMMEDIATE_CLIPS + KILL_IMMEDIATE_PARENTS culled the entire immediate-
+   entry clip grid (68 cells + daily cascades) on josgp1. The box now runs ONLY
    companion-at-BE MIMIC books (permitted class — never opens underwater, confirm=20bp,
    BE-cascade managed): *-REGIME-BEMIMIC (mimics the 24h/+8% regime-switch parent) +
    *-SWEET (validated 2023+ sweet-spot self-detect cells, HANDOFF 2026-07-13i). The old
@@ -1560,10 +1560,10 @@ function pollIndex(){fetch('/api/index_companion').then(function(r){return r.jso
  }).catch(function(){drawIndex();});}
 setInterval(pollIndex,15000);pollIndex();
 
-/* ── STOCK MOVERS (per-name BIGCAP upjump LADDER · long-only · no-floor · native C++ · additive, STANDALONE) ──
+/* ── STOCK MOVERS (per-name BIGCAP mimic LADDER · long-only · no-floor · native C++ · additive, STANDALONE) ──
    S-2026-07-07w: panel repointed from the RETIRED BE-floor (/api/stockmover_companion, real-fill -$110.7k,
    registry §5) to the LADDER successor /api/stockladder_companion (stockladder_companion_state.json) — the
-   validated no-floor giveback ladder (bigcap_upjump_ladder_bt.py: +7,044% of clip notional PF1.58 all-6).
+   validated no-floor giveback ladder (bigcap_mimic_ladder_bt.py: +7,044% of clip notional PF1.58 all-6).
    REAL FORWARD TRADES ONLY — $0 until a live clip closes (deploy-forward). +3% day -> legs enter NEXT close;
    TIGHT a0.5/s2 stall banker + WIDE a8/g50 giveback runner + self-funding ladder cap5; LOSS_CUT 15; RT 8bp.
    Schema: {engine,pre-trade,grade,total_usd_real,ts,names:[{sym,bars,notional,clips,wins,pct_real,usd_real,
@@ -1637,8 +1637,8 @@ function pollHi52(){fetch('/api/hi52').then(function(r){return r.json();}).then(
  }).catch(function(){drawHi52();});}
 setInterval(pollHi52,30000);pollHi52();
 
-/* ── FX + INDEX upjump LADDER panels (S-2026-07-07x wire; /api/fxladder_companion +
-   /api/idxladder_companion, written in-binary by FxUpJumpLadderCompanion registries).
+/* ── FX + INDEX mimic LADDER panels (S-2026-07-07x wire; /api/fxladder_companion +
+   /api/idxladder_companion, written in-binary by FxMimicLadderCompanion registries).
    FORWARD TRADES ONLY — deploy-forward, $0 until a live clip closes; per-clip rt cost
    debited in-engine (single honest column). STANDALONE additive, never vs-WIDE.
    Schema: {engine,pre-trade,grade,total_usd,ts,pairs:[{pair,live_sym,bars,deploy_ts,ts,W,thr,

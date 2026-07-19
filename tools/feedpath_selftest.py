@@ -24,7 +24,7 @@ CHECKS (all must pass in market hours):
   [6] BIGCAP-CONSUMER  the bigcap L1 bridge (:7784) heartbeat shows consumer=Y — the
                     binary is consuming live mids so the in-binary daily-close writer
                     is fed. consumer=N => sp500_long_close.csv freezes and the bigcap
-                    up-jump ladder silently stops firing (S-2026-07-16 root cause: the
+                    mimic ladder silently stops firing (S-2026-07-16 root cause: the
                     Omega service env was missing OMEGA_BIGCAP_BRIDGE=1 — the SAME
                     missing-env failure class as [1], for a bridge nothing guarded).
 
@@ -204,7 +204,7 @@ def main():
     # [6] BIGCAP-CONSUMER — the bigcap L1 bridge (:7784) primary path. IDENTICAL failure class to
     #     [1]/[2] for FX. S-2026-07-16: the Omega service env was missing OMEGA_BIGCAP_BRIDGE=1, so
     #     the binary never consumed :7784 -> in-binary daily-close writer got 0 fresh mids ->
-    #     data/rdagent/sp500_long_close.csv froze -> the bigcap up-jump ladder never saw a new day
+    #     data/rdagent/sp500_long_close.csv froze -> the bigcap mimic ladder never saw a new day
     #     and never fired, silently masked by the yfinance OmegaStockMoverFeed fallback. The bridge
     #     screams "[BIGCAP-ALERT] consumer=N ... Omega NOT consuming :7784" every heartbeat but
     #     nothing surfaced it. Connection is independent of RTH (holds post-close), so this is NOT
@@ -223,14 +223,14 @@ def main():
     else:
         consumer_y = "consumer=Y" in hb
         # S-2026-07-16: post-TEE (omega_main.hpp pump_feed::run live_cb), the :7784 consumer is the
-        # up-jump LADDER's ONLY live-confirm tick source (the 45 bigcap STK names ride here, not the
+        # mimic LADDER's ONLY live-confirm tick source (the 45 bigcap STK names ride here, not the
         # :9701 bridge). consumer=Y => ticks reach stockmover_ladder_book().on_live_tick, so a pending
         # +thr window can actually confirm + open, AND the daily-close writer gets live mids. consumer=N
         # => the ladder is BLIND (opens zero legs) even with a fresh CSV — the exact silent state that
         # made it "not fire daily". OMEGA_BIGCAP_BRIDGE=1 in the service env is what starts this consumer.
         rec("BIGCAP-CONSUMER", consumer_y,
             "bigcap bridge :7784 consumer=Y — binary consuming live ticks (ladder live-confirm gate fed + daily-close writer fed)" if consumer_y
-            else "bigcap bridge :7784 consumer=N — binary NOT consuming; the up-jump LADDER is BLIND (live-confirm "
+            else "bigcap bridge :7784 consumer=N — binary NOT consuming; the mimic LADDER is BLIND (live-confirm "
                  "gate starved -> opens ZERO legs) and the daily-close writer is starved. Check OMEGA_BIGCAP_BRIDGE=1 "
                  "in the Omega service env + single bridge proc.")
 

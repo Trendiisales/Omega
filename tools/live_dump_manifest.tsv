@@ -22,7 +22,7 @@ index_mkt_regime_h1.csv	120	hourly index risk-off gate
 # macro gate FAILS SAFE stale (MacroGoldGate 36h -> price core) — alert at 26h so a dead
 # producer is known a day before the engine silently reverts.
 macro/macro_gold_gate.tsv	1560	daily macro hostile-regime gate producer (OmegaMacroGoldGate 23:00 UTC; engine fails safe at 36h)
-../data/rdagent/sp500_long_close.csv	1560	bigcap stockmover daily close feed (OmegaStockMoverFeed; upjump ladder goes blind-quiet if dead)
+../data/rdagent/sp500_long_close.csv	1560	bigcap stockmover daily close feed (OmegaStockMoverFeed; mimic ladder goes blind-quiet if dead)
 # S-2026-07-14 latent-class sweep P1-1: these two producers existed UNSCHEDULED since
 # birth — gates ran permanently inert on stale files (engines degrade to ungated/risk-on
 # past 4d, so nothing halted). Alert at 26h = producer death known ~3d before gate dies.

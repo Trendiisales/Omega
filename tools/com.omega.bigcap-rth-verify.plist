@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  One-shot RTH live-fire proof for the bigcap up-jump ladder tee (HEAD 6d2b4df2).
+  One-shot RTH live-fire proof for the bigcap mimic ladder tee (HEAD 6d2b4df2).
   Fires daily at NZ-local 08:25 == 20:25 UTC (just after the 20:00 UTC US RTH
   close, well before the 22:35 UTC yfinance batch). tools/bigcap_rth_verify.sh
   self-unloads this job on the first clean PASS (drops /tmp/bigcap_rth_verify.DONE);

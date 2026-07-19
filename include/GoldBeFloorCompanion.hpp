@@ -8,7 +8,7 @@
 //   book  : tools/gold_befloor_companion.py  (book_points deploy-forward gate +
 //           build_state desk schema)
 // This REPLACES the Mac-cron Python executor + companion_aggregate fold with a
-// native engine compiled into Omega.exe, mirroring the crypto UpJumpLadderCompanion
+// native engine compiled into Omega.exe, mirroring the crypto MimicLadderCompanion
 // architecture (C++ in the trading binary, own state file + own /api endpoint).
 //
 // HARD OPERATOR RULE — SEPARATE INDEPENDENT ENGINE (feedback-companion-independent-

@@ -29,7 +29,7 @@ static void on_tick_gold(
     //   (sustained-bear long-block). Self-contained (no external feed) -> cannot
     //   silently degrade to all-clear in a real bear. See RegimeState.hpp.
     omega::gold_regime().on_tick(bid, ask, omega::pg::_pg_now_ms());
-    // (XauBracketCascade + gold up-jump dispatch removed S-2026-07-13 code cull — families deleted.)
+    // (XauBracketCascade + gold mimic dispatch removed S-2026-07-13 code cull — families deleted.)
     // 2026-06-17: macro-hostile tightening ON TOP of the price core. Fail-safe --
     //   g_macro_gold_gate.hostile() returns false on disabled/missing/stale feed,
     //   so this can only ADD a long block when real yields + dollar rise hard,

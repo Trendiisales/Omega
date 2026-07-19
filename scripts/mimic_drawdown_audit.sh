@@ -32,7 +32,7 @@
 # Scanned headers: include/*Companion.hpp + include/*Mimic*.hpp + include/*Ladder*.hpp
 #   (the mimic/companion/ladder naming conventions). S-2026-07-14 (latent-class sweep
 #   item 14c): *Ladder*.hpp added -- every ladder book to date IS a mimic/companion
-#   (GoldTrendMimicLadder, FxUpJumpLadderCompanion, StockDayMoverLadderCompanion), but a
+#   (GoldTrendMimicLadder, FxMimicLadderCompanion, StockDayMoverLadderCompanion), but a
 #   future header named e.g. FooLadder.hpp alone would have dodged the gate entirely.
 #   Files matching several globs are deduped. A new mimic idiom -> add its glob here.
 #

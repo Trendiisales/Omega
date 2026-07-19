@@ -21,7 +21,7 @@ the adverse audit while still booking pre-BE-negative clips:
 
 | Engine | Pre-BE-negative booking sites |
 |---|---|
-| `FxUpJumpLadderCompanion` | `book_clip_ LOSS_CUT` (5×thr pre-arm), `TRAIL_STOP` (sub-BE trail), `WINDOW_EXIT` |
+| `FxMimicLadderCompanion` | `book_clip_ LOSS_CUT` (5×thr pre-arm), `TRAIL_STOP` (sub-BE trail), `WINDOW_EXIT` |
 | `GoldTrendMimicLadder` | `book_clip_` pre-arm `LOSS_CUT` (−lc_pct), `TRAIL_STOP`, `WINDOW_CAP` |
 | `BeCascadeCompanionEngine` | `jf_book_ RESTORE_PREBE / PREBE_STOP`, `emit_clip_ PREBE_CUT / REVERSAL_CUT / ENGINE_EXIT`, `emit_be_clip_ BE_TRAIL_CLIP / ENGINE_EXIT` (honest real column = worse-of H1 close, can be < BE) |
 | `StockDayMoverLadderCompanion` | `book_clip_ LOSS_CUT / WINDOW_EXIT` |
@@ -109,7 +109,7 @@ The allowlist should shrink to empty as the session's floor fixes land.
 
 ```
 ALLOWLISTED (backfill-owed): include/BeCascadeCompanionEngine.hpp   — 8 sites
-ALLOWLISTED (backfill-owed): include/FxUpJumpLadderCompanion.hpp    — 3 sites
+ALLOWLISTED (backfill-owed): include/FxMimicLadderCompanion.hpp    — 3 sites
 ALLOWLISTED (backfill-owed): include/GoldTrendMimicLadder.hpp       — 5 sites
 ALLOWLISTED (backfill-owed): include/StockDayMoverLadderCompanion.hpp — 4 sites
 --- prebe-loss audit: 0 clean, 4 allowlisted(backfill-owed), 0 new-unprotected-site(s) across 20 risk site(s) ---
@@ -151,7 +151,7 @@ behavioural guarantee at boot time.
 ## ⚠️ S-2026-07-17f HONESTY CORRECTION — the gate is a CONFIG property, not an execution guarantee
 
 The adversarial verify (17d disaster-stop sweep) found the crypto
-`UpJumpLadderCompanion::book_mimic_stop_` booked floored exits at the **resting-stop
+`MimicLadderCompanion::book_mimic_stop_` booked floored exits at the **resting-stop
 LEVEL** (`lg.stop_px`, which is ≥ BE by construction), **NOT** the price that actually
 pierced it. So the live `MIMIC-FLOOR-GATE ... 0 VIOLATION` line + the shadow ledger's
 `floorMin=+0.0 / nNeg=0` were a **MODEL/SHADOW property, not execution truth** —
@@ -181,10 +181,10 @@ Documented out-of-class cells (crypto; ruled S-2026-07-17f, operator):
 
 | Cell(s) | Why out-of-class |
 |---|---|
-| **PJ jump_floor** (AAVE / ETH / GRT) | Real up-jump spot parent position; carries the widest per-cell backtested structural stop; books its real stop loss honestly (no clamp). Not a mimic. |
+| **PJ jump_floor** (AAVE / ETH / GRT) | Real mimic spot parent position; carries the widest per-cell backtested structural stop; books its real stop loss honestly (no clamp). Not a mimic. |
 | **Campaign** (UNI / TRX / LDO) | Real virtual-parent campaign position; keeps its structural `pstop`. A directional book, not an additive companion clip. |
 
 The dominance/no-pre-BE-loss framing does not apply to these — judge them as directional
 strategies (`feedback-companion-independent-engine` is about the *reverse* case:
 companions must be judged standalone, never vs the parent). Canonical: Memory-Chimera
-`UpJump2pctSpotParent` + the campaign entity.
+`Mimic2pctSpotParent` + the campaign entity.

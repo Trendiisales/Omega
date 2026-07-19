@@ -436,7 +436,7 @@ def main() -> int:
         served_cc["legs"] = [l for l in _legs0 if l.get("sym") != _drop]
     if "roster_extra" in INJECT and isinstance(served_cc, dict):
         served_cc.setdefault("legs", []).append(
-            {"sym": "FAKE", "tag": "FAKE-UJ9-CLIP", "cell": "UJ9", "det_w": 1, "det_thr_pct": 9.0})
+            {"sym": "FAKE", "tag": "FAKE-MIM9-CLIP", "cell": "MIM9", "det_w": 1, "det_thr_pct": 9.0})
     if "legacy_shape" in INJECT and isinstance(served_cc, dict):
         served_cc["legs"] = [{k: v for k, v in l.items() if k not in ("tag", "cell")}
                              for l in served_cc.get("legs", [])]

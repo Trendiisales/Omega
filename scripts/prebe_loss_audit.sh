@@ -7,7 +7,7 @@
 # THE HOLE THIS CLOSES
 #   scripts/adverse_protection_audit.sh only checks that a verdict TAG is
 #   PRESENT ("is there a backtested adverse-protection decision"). It does NOT
-#   inspect the booking path. Every vulnerable companion (FxUpJumpLadderCompanion
+#   inspect the booking path. Every vulnerable companion (FxMimicLadderCompanion
 #   LOSS_CUT/TRAIL_STOP; GoldTrendMimicLadder pre-arm LOSS_CUT/WINDOW_CAP;
 #   BeCascadeCompanionEngine PREBE_CUT/PREBE_STOP/REVERSAL_CUT) carries such a tag
 #   and PASSES that script YET books clips net<0 BEFORE break-even is covered.

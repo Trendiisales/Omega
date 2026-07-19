@@ -1056,7 +1056,7 @@ int main(int argc, char* argv[])
             // bridge DomRecorder broadcasts contract.symbol "NQ" for the NAS100
             // --symbols key (CME front-month FUTURES ~29433, ~0.75% above the
             // BlackBull NAS100 CFD). Post it as a "NAS100" tick so on_tick_nas100
-            // -- and index_feed_h1 -> the index up-jump ladder + set_disp_mid --
+            // -- and index_feed_h1 -> the index mimic ladder + set_disp_mid --
             // run on the live IBKR futures scale. The BlackBull NAS100 FIX quote is
             // gated out in fix_dispatch (is_ibkr_primary_index) while this slot is
             // fresh, so no double-feed; bridge down -> BlackBull CFD fallback.
@@ -1090,7 +1090,7 @@ int main(int argc, char* argv[])
             // BlackBull FIX quote is gated out in fix_dispatch (is_ibkr_primary_index)
             // while this slot is fresh; bridge down / no entitlement -> BlackBull
             // fallback. Note: ES/DAX are FUTURES scale (basis over the CFD) -- the
-            // index up-jump ladder US500/GER40 seeds are re-synced to futures scale
+            // index mimic ladder US500/GER40 seeds are re-synced to futures scale
             // in engine_init (SHADOW book, cosmetic). See outputs/FEED_AUDIT_2026-07-09.md.
             struct IdxMap { const char* wire; const char* tick; };
             static const IdxMap kIdxMap[] = {
@@ -1104,7 +1104,7 @@ int main(int argc, char* argv[])
                 {"DX",     "DX.F"},
                 {"NG",     "NGAS.F"},
                 {"COIL",   "BRENT"},
-                {"M2K",    "M2K"},      // 2026-07-09 micro Russell -> index up-jump ladder SHADOW
+                {"M2K",    "M2K"},      // 2026-07-09 micro Russell -> index mimic ladder SHADOW
             };
             for (const auto& m : kIdxMap) {
                 if (std::strcmp(sym, m.wire) == 0) {
@@ -1123,7 +1123,7 @@ int main(int argc, char* argv[])
                 engine_dispatch_post_tick(sym, bid, ask);
                 return;
             }
-            // ── BIGCAP stock L1 (S-2026-07-10): the up-jump ladder companion's LIVE-
+            // ── BIGCAP stock L1 (S-2026-07-10): the mimic ladder companion's LIVE-
             //    CONFIRMATION gate. The bridge broadcasts contract.symbol = the ticker
             //    (STK/SMART/USD L1) for each bigcap name on --symbols. Feed the quote to
             //    the ladder book: a PENDING +thr window opens only when this live tick
@@ -1162,7 +1162,7 @@ int main(int argc, char* argv[])
                   << (s_bigcap_ab ? "  (A/B twin BigCapMomoGB ON)" : "") << "\n";
         std::cout.flush();
         std::thread([bport]{
-            // S-2026-07-16: TEE this :7784 bigcap price stream into the up-jump LADDER's live-confirm
+            // S-2026-07-16: TEE this :7784 bigcap price stream into the mimic LADDER's live-confirm
             // gate. The 45 bigcap STK names are carried on THIS bridge (healthy, tradeable in RTH) but
             // were NEVER on the :9701 IBKR bridge $Symbols, so stockmover_ladder_book().on_live_tick
             // (the ONLY confirm path, omega_main.hpp:1035) never fired -> the ladder opened ZERO legs

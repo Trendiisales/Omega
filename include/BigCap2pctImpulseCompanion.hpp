@@ -1,7 +1,7 @@
 #pragma once
 // =============================================================================
 // BigCap2pctImpulseCompanion — per-NAME BIGCAP +2%-impulse / 20-day-breakout
-// LONG-only LOOSE-RIDE book. A SEPARATE INDEPENDENT engine (not the up-jump
+// LONG-only LOOSE-RIDE book. A SEPARATE INDEPENDENT engine (not the mimic
 // ladder): one position per name, entered on a strong impulse day, ridden with
 // a DELIBERATELY LOOSE 3-layer exit so a big continuation runs to the end.
 //
@@ -111,8 +111,8 @@ public:
         // S-2026-07-13s BE-MIMIC legs (see header block). 0 = no mimic legs (legacy).
         double mimic_be_pct   = 0.0;      // % above parent entry a mimic must see on a CLOSE to open
         int    mimic_pend     = 5;        // closes to make BE before a pending leg cancels
-        // S-2026-07-16k MIMIC-ONLY (operator: "remove the upjump engines in bigcap and replace with
-        // 2x mimic engines"; feedback-no-immediate-entry-upjump-mimic-only). When true the book opens
+        // S-2026-07-16k MIMIC-ONLY (operator: "remove the mimic engines in bigcap and replace with
+        // 2x mimic engines"; feedback-no-immediate-entry-mimic-only). When true the book opens
         // NO immediate parent impulse position — ONLY the 2 PENDING BE-mimic legs (M/W8) fire per
         // window, so it NEVER trades into a loss on the impulse close (fresh-entry forbidden). The
         // mimic legs already carry the full protection stack: BE-entry gate (never open underwater),

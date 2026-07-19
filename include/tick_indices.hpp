@@ -30,7 +30,7 @@
 #include <chrono>
 #include "IndexBeFloorCompanion.hpp"   // omega::index_befloor_book() (per-symbol index BE-floor companion)
 // (JumpRiderEngine.hpp include REMOVED — engine culled/tombstoned S-2026-07-10)
-#include "FxUpJumpLadderCompanion.hpp" // omega::index_upjump_ladder_book() (upjump LADDER, needs H1 h/l)
+#include "FxMimicLadderCompanion.hpp" // omega::index_mimic_ladder_book() (mimic LADDER, needs H1 h/l)
 #include "OmegaBeCascadeBook.hpp"      // omega::be_cascade_book() (BE-CASCADE companion, S-2026-07-16)
 
 // ── index BE-floor companion H1 feed (S-2026-07-06) ─────────────────────────
@@ -43,7 +43,7 @@ struct IdxH1Agg { int64_t start = 0; double close = 0.0; double high = 0.0, low 
 static inline void index_feed_h1(IdxH1Agg& a, const char* tag, double bid, double ask) {
     const double mid = (bid + ask) * 0.5;
     if (mid <= 0.0) return;
-    omega::index_upjump_ladder_book().set_disp_mid(tag, mid);   // S-2026-07-08d live display mark
+    omega::index_mimic_ladder_book().set_disp_mid(tag, mid);   // S-2026-07-08d live display mark
     const int64_t now_ms = static_cast<int64_t>(
         std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch()).count());
@@ -52,7 +52,7 @@ static inline void index_feed_h1(IdxH1Agg& a, const char* tag, double bid, doubl
     else if (b != a.start) {
         omega::index_befloor_book().on_h1_bar(tag, a.start / 1000, a.close);
         // (JumpRider index feed REMOVED — engine culled/tombstoned S-2026-07-10)
-        omega::index_upjump_ladder_book().on_h1_bar(tag, a.start / 1000,
+        omega::index_mimic_ladder_book().on_h1_bar(tag, a.start / 1000,
                                                     a.high, a.low, a.close, a.open); // h/l intrabar; open for Layer-3 weekend gap
         // S-2026-07-16: BE-CASCADE companion (US500/NAS100/GER40 cells; others absent = no-op)
         omega::be_cascade_book().on_bar(tag, a.start / 1000, a.high, a.low, a.close);
@@ -68,8 +68,8 @@ static inline void index_feed_h1(IdxH1Agg& a, const char* tag, double bid, doubl
 // ── M2K (micro E-mini Russell 2000, CME) ───────────────────
 // 2026-07-09: NEW underlying (not covered by US500/NAS100/DJ30). IBKR-only L1 feed
 // via the bridge (M2K->M2K). MINIMAL handler by design -- M2K drives ONLY the index
-// up-jump ladder SHADOW book (validated W24/thr1.5 + BE-entry0.08 = +76.5% WF both
-// halves). index_feed_h1 aggregates ticks -> H1 -> index_upjump_ladder_book().on_h1_bar.
+// mimic ladder SHADOW book (validated W24/thr1.5 + BE-entry0.08 = +76.5% WF both
+// halves). index_feed_h1 aggregates ticks -> H1 -> index_mimic_ladder_book().on_h1_bar.
 // The BE-floor book is culled (family retired) so its on_h1_bar/on_tick calls there are
 // cheap no-ops for M2K (no leg ever opens). No other engine family runs on M2K.
 static void on_tick_m2k(
@@ -77,9 +77,9 @@ static void on_tick_m2k(
         bool tradeable, bool lat_ok, const std::string& regime)
 {
     (void)sym; (void)tradeable; (void)lat_ok; (void)regime;
-    { static IdxH1Agg agg; index_feed_h1(agg, "M2K", bid, ask); }  // index up-jump ladder H1 feed
-    g_engine_heartbeat.pulse("M2KUpJumpLadder");
-    // S-2026-07-13p: M2K bear-gated cascade mini-grid CULLED (up-jump family removed e7d35d6f)
+    { static IdxH1Agg agg; index_feed_h1(agg, "M2K", bid, ask); }  // index mimic ladder H1 feed
+    g_engine_heartbeat.pulse("M2KMimicLadder");
+    // S-2026-07-13p: M2K bear-gated cascade mini-grid CULLED (mimic family removed e7d35d6f)
 }
 
 // ── US500.F ────────────────────────────────────────────────
@@ -88,7 +88,7 @@ static void on_tick_us500(
         bool tradeable, bool lat_ok, const std::string& regime)
 {
     { static IdxH1Agg agg; index_feed_h1(agg, "US500", bid, ask); }  // BE-floor companion H1 feed
-    // S-2026-07-13p: SPX BE-cascade port + regime brain CULLED (up-jump family removed e7d35d6f)
+    // S-2026-07-13p: SPX BE-cascade port + regime brain CULLED (mimic family removed e7d35d6f)
     // 2026-05-05 (audit-fixes-40): heartbeat pulses for every US500-driven engine.
     // S11 P3b: HybridSP pulse removed (engine culled in P3a + globals/init removed in P3b).
     g_engine_heartbeat.pulse("IFlowSP");
@@ -317,7 +317,7 @@ static void on_tick_ustec(
     const std::string& sym, double bid, double ask,
         bool tradeable, bool lat_ok, const std::string& regime)
 {
-    // S-2026-07-13p: NQ BE-cascade port + regime brain + NDX down-jump CULLED (up-jump family removed e7d35d6f)
+    // S-2026-07-13p: NQ BE-cascade port + regime brain + NDX down-jump CULLED (mimic family removed e7d35d6f)
     // 2026-05-05 (audit-fixes-40): heartbeat pulses for every USTEC-driven engine.
     // S11 P3b: HybridNQ pulse removed (engine culled in P3a + globals/init removed in P3b).
     g_engine_heartbeat.pulse("IFlowNQ");
@@ -551,7 +551,7 @@ static void on_tick_dj30(
         bool tradeable, bool lat_ok, const std::string& regime)
 {
     { static IdxH1Agg agg; index_feed_h1(agg, "DJ30", bid, ask); }  // BE-floor companion H1 feed
-    // S-2026-07-13p: DJ30 BE-cascade port CULLED (up-jump family removed e7d35d6f)
+    // S-2026-07-13p: DJ30 BE-cascade port CULLED (mimic family removed e7d35d6f)
     // 2026-05-05 (audit-fixes-40): heartbeat pulses for every DJ30-driven engine.
     // S11 P3b: HybridUS30 pulse removed (engine culled in P3a + globals/init removed in P3b).
     g_engine_heartbeat.pulse("IFlowUS30");

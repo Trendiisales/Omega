@@ -122,7 +122,7 @@ struct ExecutionCostGuard {
             tick_usd_per_lot   = 1000.0;
         } else if (is_us_equity_ticker(s)) {
             // S-2026-07-08c stock-ladder equity cost row (queue: "real equity cost row
-            // before LIVE sizing", BIGCAP_UPJUMP_LADDER_2026-07-07.md). IBKR US stocks:
+            // before LIVE sizing", BIGCAP_MIMIC_LADDER_2026-07-07.md). IBKR US stocks:
             // $0.005/share/side (MIN $1.00/side) + ~1-2c slippage on bigcap names;
             // live spread fed via spread_pts. lot = SHARES for equities;
             // 1 share moves $1 per price point.

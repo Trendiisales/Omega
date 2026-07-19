@@ -211,7 +211,7 @@ echo "[mac-canary-engines] persistence audit (every display engine persists)..."
 bash "$(dirname "$0")/persistence_audit.sh" || exit 1
 
 # GOLD LOT-SIZE HARD GATE (added S-2026-07-13, SESSION_HANDOFF_2026-07-13b §5):
-# the −$3,953 up-jump incident shipped XAUUSD engines at lot=1.0 — 100x the 0.01
+# the −$3,953 mimic incident shipped XAUUSD engines at lot=1.0 — 100x the 0.01
 # desk convention — and NO gate existed to catch it. Any gold-symbol engine
 # (line mentions xau/gold/xag/mgc, case-insensitive) assigning .lot > 0.05 in
 # engine_init.hpp OR omega_main.hpp is a hard FAIL. Index engines ($-normalized
@@ -294,7 +294,7 @@ python3 "$(dirname "$0")/roster_parity_audit.py" --repo "$(dirname "$0")/.." || 
 # PRE-BE LOSS GATE (added S-2026-07-17, operator mandate "why is there not a check",
 # enforcing feedback-no-prebe-loss-ever). The adverse-protection audit above only
 # checks a verdict TAG is PRESENT; it does NOT inspect the booking path, so every
-# vulnerable companion (FxUpJumpLadderCompanion LOSS_CUT/sub-BE TRAIL; GoldTrendMimicLadder
+# vulnerable companion (FxMimicLadderCompanion LOSS_CUT/sub-BE TRAIL; GoldTrendMimicLadder
 # pre-arm LOSS_CUT/WINDOW_CAP; BeCascadeCompanionEngine PREBE_CUT/PREBE_STOP/REVERSAL_CUT)
 # carried a tag, PASSED that audit, yet booked clips net<0 BEFORE break-even was covered.
 # This gate flags any companion/mimic/ladder booking site that can settle pre-BE-negative

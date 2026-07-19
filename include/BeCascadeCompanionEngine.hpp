@@ -1,7 +1,7 @@
 #pragma once
 // ═════════════════════════════════════════════════════════════════════════════
 // VENDORED into Omega S-2026-07-16 — byte-faithful snapshot of the crypto-validated
-// BE-CASCADE engine (ChimeraCrypto/include/core/UpJumpLadderCompanion.hpp, build
+// BE-CASCADE engine (ChimeraCrypto/include/core/MimicLadderCompanion.hpp, build
 // dcb645e). DO NOT hand-edit the engine logic here: it is frozen so Omega live ==
 // the certified backtest (backtest/omega_becascade_bt.cpp drives THIS class). Omega
 // consumes it via include/OmegaBeCascadeBook.hpp (namespace omega wrapper). Provenance
@@ -19,10 +19,10 @@
 //   un-BE'd leg at a time). SHADOW/PAPER: emits its own ClipRecord ledger, never places an order,
 //   never calls the parent (companion-independent).
 // ═════════════════════════════════════════════════════════════════════════════
-// UpJumpLadderCompanion — TIERED-2 + SELF-FUNDING LADDER clip book (S-2026-07-05b).
+// MimicLadderCompanion — TIERED-2 + SELF-FUNDING LADDER clip book (S-2026-07-05b).
 //
-// Successor to UpJumpCompanionEngine (single-leg). Same STANDALONE ADDITIVE,
-// observe-only, shadow contract — but every parent UPJUMP trade now runs a BOOK
+// Successor to MimicCompanionEngine (single-leg). Same STANDALONE ADDITIVE,
+// observe-only, shadow contract — but every parent MIMIC trade now runs a BOOK
 // of independent clip legs:
 //
 //   • 2 BASE tiers from entry: a TIGHT tier (banks cost fast) + a WIDE tier
@@ -43,7 +43,7 @@
 // moves / shrinks the parent. Judge STANDALONE (net>0, PF>1, WF both halves,
 // bear>=0), NEVER vs-WIDE (feedback-companion-independent-engine).
 //
-// FAITHFUL byte-exact port of crypto_upjump_tiered_ladder_sweep.py (Leg + run_trade):
+// FAITHFUL byte-exact port of crypto_mimic_tiered_ladder_sweep.py (Leg + run_trade):
 //   - fav / mfe / arm / reclip gauged from the leg's FIXED entry epx.
 //   - clip gross_bp measured from the MOVING `le` (= epx, then reset to the clip
 //     price on each reclip → "reclip = re-enter"). entry_px in the ClipRecord = le.
@@ -66,17 +66,17 @@
 
 namespace chimera {
 
-class UpJumpLadderCompanion {
+class MimicLadderCompanion {
 public:
     struct Tier { double arm = 5.0; int stall = 0; double gb = 0.0; double trail_bp = 0.0; double confirm = 0.0; };  // 0 = that lever OFF; trail_bp used only in be_floor mode; confirm>0 = per-tier BE-entry stagger (bp fav from window entry), 0 = use cfg_.confirm_bp
 
     struct Config {
-        std::string parent_tag;        // e.g. "BTC-UPJUMP-H1" (the leg we observe)
-        std::string tag;               // e.g. "BTC-UPJUMP-CLIP" (our own ledger tag)
+        std::string parent_tag;        // e.g. "BTC-MIMIC-H1" (the leg we observe)
+        std::string tag;               // e.g. "BTC-MIMIC-CLIP" (our own ledger tag)
         std::string symbol;            // e.g. "btcusdt"
         Tier    tight;                 // base tier 1 (tight)
         Tier    wide;                  // base tier 2 (wide) — ALSO the ladder-leg params
-        // STACKED BASE ARMS (S-2026-07-07 item 5, backtest/upjump_concurrent_arms_2026-07-07.txt):
+        // STACKED BASE ARMS (S-2026-07-07 item 5, backtest/mimic_concurrent_arms_2026-07-07.txt):
         // each extra tier opens ONE MORE base leg at window entry ("S1".."Sn"). Winner =
         // roster tight+wide + {arm 2/4/6%, g50 rev-only} stacked arms + cap 8: +18,360% vs
         // +10,283% roster cap5, 8/8 coins all-6, 2x-cost robust. Ladder spawns still use `wide`.
@@ -114,7 +114,7 @@ public:
         // the dedicated shadow detector engine the companion observes — parent untouched.
         bool    be_floor      = false;
         double  be_bp         = 20.0;  // gross bp move from ref required to open a leg (== cost)
-        // Internal up-jump detector (BOTH modes since S-2026-07-07w; was be_floor-only).
+        // Internal mimic detector (BOTH modes since S-2026-07-07w; was be_floor-only).
         // >0 = the companion self-detects its OWN long-event window from the price stream
         // it already receives — it does NOT read the live parent's position (independence:
         // the parent is never retuned for the companion's sake). Faithful to sw.parent(W,thr)
@@ -126,7 +126,7 @@ public:
         int     det_w         = 0;
         double  det_thr       = 0.0;
         // ── JUMP-FLOOR mode (S-2026-07-14, operator: "add these to our trades") ──
-        // Third mode, faithful to Crypto/backtest/upjump2pct_be_bt.cpp `percoin`
+        // Third mode, faithful to Crypto/backtest/mimic2pct_be_bt.cpp `percoin`
         // winning cells (17/19 plateau-validated per-coin lever map). EXPLICIT
         // operator override of the immediate-entry ban for THESE backtested cells.
         // Distinct from BOTH other modes: NOT the retired be_floor family (which
@@ -177,7 +177,7 @@ public:
         // the opens, not advance_stagger_); set cap == #tiers so no self-funding ladder spawns
         // beyond the staggered set. mimic_giveback stays uniform (g-sweep: tightening HURTS).
         bool    mimic_stagger  = false;
-        // ── S-2026-07-08 WEIGHTING + AUTO-RETIREMENT (Crypto backtest/upjump_weighting_bt.cpp) ──
+        // ── S-2026-07-08 WEIGHTING + AUTO-RETIREMENT (Crypto backtest/mimic_weighting_bt.cpp) ──
         // size_mult: per-coin notional weight (x2 robust top performer / x1 baseline).
         //   Stamped on every ClipRecord; weighted bank = Σ net_bp_real * size_mult
         //   (bank_bp_real_w). The RAW real column is untouched — retirement + parity
@@ -232,7 +232,7 @@ public:
     };
     using ClipCallback = std::function<void(const ClipRecord&)>;
 
-    explicit UpJumpLadderCompanion(Config c) : cfg_(std::move(c)) {}
+    explicit MimicLadderCompanion(Config c) : cfg_(std::move(c)) {}
 
     void set_on_clip(ClipCallback cb) { on_clip_ = std::move(cb); }
     void set_rank_out(bool v) { cfg_.rank_out = v; }   // MIMIC-FLOOR-GATE: refuse-to-arm (no new windows)
@@ -380,7 +380,7 @@ public:
     // Drive ONCE per completed parent bar (byte-exact vs python) OR per tick
     // (intra-bar; bar index = ts/H1 only advances hourly so STALL stays H1-quantised
     // and REVERSAL/RECLIP price gates fire the instant they trip). Reads the parent's
-    // settled position only, never writes to it. Long-only (UPJUMP is always long).
+    // settled position only, never writes to it. Long-only (MIMIC is always long).
     void observe(bool parent_in_pos, double parent_entry_px, double cur_px, int64_t ts_ms) {
         const int64_t bar = ts_ms / (cfg_.tf_secs * 1000);
         if (cfg_.det_w > 0) {
@@ -531,7 +531,7 @@ public:
     }
 
 private:
-    // ── internal up-jump detector (be_floor self-detect; parent never read) ──
+    // ── internal mimic detector (be_floor self-detect; parent never read) ──
     // Aggregates H1 closes from the mark stream; a bar "closes" when the next bar's
     // first mark arrives. On each completed close: run sw.parent(det_w,det_thr) and
     // drive the leg book with the detector's own (in_event, entry_px) window.
@@ -563,7 +563,7 @@ private:
         else               observe_ladder_(det_in_, det_entry_, close, ts, closed_bar);  // LADDER book (S-2026-07-07w)
     }
 
-    // ── JUMP-FLOOR mode (S-2026-07-14, faithful to upjump2pct_be_bt.cpp percoin cells) ──
+    // ── JUMP-FLOOR mode (S-2026-07-14, faithful to mimic2pct_be_bt.cpp percoin cells) ──
     // Single position per detected event. det_in_/det_entry_ mirror jf_in_/jf_E_ so
     // det_state_json()/restore_det_state() persistence works unchanged. legs_ carries
     // ONE display-only Leg ("J1") while in position so snapshot()/leg_snapshots()
@@ -925,7 +925,7 @@ private:
         return true;
     }
 
-    // HARD REVERSAL CUT (operator 2026-07-13b, after UNI-UJH -146bp / -1402 tail): runs on
+    // HARD REVERSAL CUT (operator 2026-07-13b, after UNI-MIMH -146bp / -1402 tail): runs on
     // EVERY tick (live) / fed price (backtest LOW), NOT just bar close — so a leg that reverses
     // below entry by loss_cut_bp is cut INTRA-BAR at the stop price, before the parent-reversal
     // flush can book it at a deep bar-close loss. Long-only spot => once below entry the up-move

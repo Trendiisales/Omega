@@ -1,14 +1,14 @@
 #pragma once
 // =============================================================================
-// FxUpJumpLadderCompanion — per-pair FX H1 JUMP LADDER companion books
-// (long UP-JUMP: EURUSD / GBPUSD / NZDUSD / AUDUSD; short DOWN-JUMP mirror:
+// FxMimicLadderCompanion — per-pair FX H1 JUMP LADDER companion books
+// (long MIMIC: EURUSD / GBPUSD / NZDUSD / AUDUSD; short DOWN-JUMP mirror:
 // USDCAD, S-2026-07-08c). The FX member of the no-floor ladder family (BIGCAP
 // daily = StockDayMoverLadderCompanion; this is the H1 port the S-2026-07-07x
 // instrument sweep validated; the short mirror is the S-2026-07-08 both-ways
 // sweep's first genuine FX short-side pass).
 //
 // C++ in-binary engine, faithful port of the VALIDATED research:
-//   math   : backtest/omega_upjump_ladder_bt.py run() (S-2026-07-07x, operator
+//   math   : backtest/omega_mimic_ladder_bt.py run() (S-2026-07-07x, operator
 //            order 3) — detector: close rises >= thr% off the min LOW of the
 //            last W H1 bars -> window of W bars. At the trigger close spawn
 //            TIGHT (arm 0.17thr, abs trail 0.67thr) + WIDE (arm 2.7thr, g50)
@@ -23,7 +23,7 @@
 //            control. AUDUSD NOT wired (marginal 5/9 cells, no robustness
 //            pass); USDJPY/USDCAD dead; XAU bull-beta (random captures it);
 //            GER40 bull-only (index axis, separate wire). Evidence
-//            outputs/OMEGA_UPJUMP_LADDER_2026-07-07.md · vault FxUpJumpLadder.
+//            outputs/OMEGA_MIMIC_LADDER_2026-07-07.md · vault FxMimicLadder.
 //   short  : SIGN-MIRROR of the same mechanics (cfg.short_downjump=true), the
 //            exact dir=-1 parameterization of backtest/fx_bothways_sweep.py
 //            ladder(): window arms when close <= -thr% UNDER the max HIGH of
@@ -90,14 +90,14 @@
 
 namespace omega {
 
-// ── one pair's long-only upjump-ladder book (percent-of-notional based) ──────
+// ── one pair's long-only mimic-ladder book (percent-of-notional based) ──────
 class FxLadderPair {
 public:
     struct Config {
         std::string pair     = "EURUSD";
         std::string live_sym = "EURUSD";
         int    W             = 48;        // detector lookback + window length (H1 bars)
-        double thr           = 0.5;       // upjump threshold, % off the W-bar min low
+        double thr           = 0.5;       // mimic threshold, % off the W-bar min low
         double rt_cost_bp    = 2.0;       // REAL round-trip cost (bp of entry) debited per clip
         double notional      = 10000.0;   // $ per clip; USD = pct/100 * notional
         double lot           = 1.0;       // order-path lot (units decided at LIVE flip)
@@ -145,7 +145,7 @@ public:
         // never book a loss. Default OFF = byte-identical baseline (zero blast radius).
         bool   be_floor_on_open = false;
         // ── S-2026-07-18 BOUNDED CATCH-UP (Omega port of the certified crypto
-        //   UpJumpLadderCompanion::seed_det_ring_hist mechanism; Omega cert
+        //   MimicLadderCompanion::seed_det_ring_hist mechanism; Omega cert
         //   backtest/FX_CATCHUP_OUTAGE_CERT_2026-07-18.md — NEVER carry the crypto
         //   cert across). A restart/outage over a qualifying jump close used to lose
         //   the window forever: the detector runs ONLY in live_step_ (live bars);
@@ -179,7 +179,7 @@ public:
         //   is not recoverable (no boot backfill feed; crypto uses REST klines).
         //   0 = OFF (byte-identical baseline).
         int    catchup_max_age_bars = 0;
-        // S-2026-07-08c DIRECTION flag: false = long UP-JUMP (original mechanics);
+        // S-2026-07-08c DIRECTION flag: false = long MIMIC (original mechanics);
         // true = short DOWN-JUMP sign-mirror (USDCAD; fx_bothways_sweep.py dir=-1).
         bool   short_downjump = false;
         // S-2026-07-08c AUTO-RETIREMENT latch (StockDayMoverLadderCompanion pattern):
@@ -415,7 +415,7 @@ public:
 
 private:
     Config cfg_;
-    double d_ = 1.0;                  // direction multiplier: +1 long upjump, -1 short downjump
+    double d_ = 1.0;                  // direction multiplier: +1 long mimic, -1 short downjump
     bool   retired_ = false;          // S-2026-07-08c auto-retirement latch state (new windows blocked)
     bool   retired_logged_ = false;   // one-shot retirement log
     std::vector<int64_t> ts_;
@@ -947,24 +947,24 @@ public:
 
 private:
     std::vector<FxLadderPair> pairs_;
-    std::string engine_name_ = "fx-upjump-ladder";
+    std::string engine_name_ = "fx-mimic-ladder";
     std::string state_path_ = "fxladder_companion_state.json";   // cwd = C:\Omega
     mutable std::atomic<int64_t> last_disp_write_ms_{0};   // S-2026-07-09b 1Hz display-refresh throttle
 };
 
 // Singleton — accessor mirrors omega::stockmover_ladder_book().
-inline FxLadderBook& fx_upjump_ladder_book() noexcept {
+inline FxLadderBook& fx_mimic_ladder_book() noexcept {
     static FxLadderBook inst;
     return inst;
 }
 
 // INDEX instance of the same validated ladder mechanism (US500/NAS100/GER40-bull-gated;
-// research backtest/index_upjump_ladder_sweep.py, outputs/INDEX_UPJUMP_LADDER_2026-07-07.txt).
+// research backtest/index_mimic_ladder_sweep.py, outputs/INDEX_MIMIC_LADDER_2026-07-07.txt).
 // Own persistence prefix + state file + /api/idxladder_companion.
-inline FxLadderBook& index_upjump_ladder_book() noexcept {
+inline FxLadderBook& index_mimic_ladder_book() noexcept {
     static FxLadderBook inst;
     static bool once = [] {
-        inst.set_identity("index-upjump-ladder", "idxladder_companion_state.json");
+        inst.set_identity("index-mimic-ladder", "idxladder_companion_state.json");
         return true;
     }();
     (void)once;

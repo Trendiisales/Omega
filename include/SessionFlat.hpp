@@ -1,6 +1,6 @@
 #pragma once
 // =============================================================================
-// SessionFlat.hpp — UTC weekend-window helper for the up-jump ladder mimic books
+// SessionFlat.hpp — UTC weekend-window helper for the mimic ladder mimic books
 // (S-2026-07-11). Header-only, self-contained, PURE INTEGER UTC epoch math
 // (no gmtime / localtime / tz state) -> thread-safe + reentrant + deterministic.
 //

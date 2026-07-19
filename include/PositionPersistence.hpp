@@ -379,7 +379,7 @@ inline void register_position_persistence() {
         return omega::bigcap_momo_ibkr::restore_position(ps);
     });
 
-    // (BeCascade/BrkCascade/XauUpJump multicell wires removed S-2026-07-13 code cull — families deleted.)
+    // (BeCascade/BrkCascade/XauMimic multicell wires removed S-2026-07-13 code cull — families deleted.)
 
     // Coverage now: every position-holding engine on the dashboard persists/resumes.
     // Mandate: any NEW engine MUST add persist_save/persist_restore + a wire here

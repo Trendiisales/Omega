@@ -1,13 +1,13 @@
 #pragma once
 // =============================================================================
-// StockDayMoverLadderCompanion — per-NAME BIGCAP daily-mover UP-JUMP LADDER
+// StockDayMoverLadderCompanion — per-NAME BIGCAP daily-mover MIMIC LADDER
 // (long-only) companion books. NO FLOOR anywhere — this is the successor the
 // StockDayMoverBeFloorCompanion retirement left open (BE-floor real-fill
 // -$110.7k; the no-floor giveback LADDER is the only trail family that
 // survives real fills per the S-2026-07-07 late-arm sweep).
 //
 // C++ in-binary engine, faithful port of the VALIDATED research:
-//   math   : backtest/bigcap_upjump_ladder_bt.py (S-2026-07-07 operator item 4)
+//   math   : backtest/bigcap_mimic_ladder_bt.py (S-2026-07-07 operator item 4)
 //            — parent = +3% day close-to-close -> enter NEXT close (real fill),
 //            exit on -3% day (flush at the close AFTER the -3% day), end-flush MTM.
 //            Legs: TIGHT a0.5/s2/g0 (stall-only banker) + WIDE a8/s0/g50
@@ -17,11 +17,11 @@
 //            PF 1.58, H1 +2,813 / H2 +4,231, bear +3,958; 2x-cost (16bp) PASS;
 //            neighbors plateau; ex-semis +3,875% PF 1.41; FULL 565-name universe
 //            +59,789% PF 1.29 (not list survivorship). Evidence
-//            outputs/BIGCAP_UPJUMP_LADDER_2026-07-07.md · vault BigCapUpJumpLadder.
+//            outputs/BIGCAP_MIMIC_LADDER_2026-07-07.md · vault BigCapMimicLadder.
 //
 // S-2026-07-13 REDO (operator: "the bigcap engine should be a engine that trades
 //   on trigger with 4x mimic engines" — no immediate-entry legs beyond the ONE
-//   parent; feedback-no-immediate-entry-upjump-mimic-only). Structure now:
+//   parent; feedback-no-immediate-entry-mimic-only). Structure now:
 //     PARENT (the engine, trades on trigger): ONE immediate leg at the window
 //       activation close — the WIDE-trail cell (w_arm/w_gb, tier LadW book).
 //     4x MIMIC legs (companion-at-BE): T (t_arm/t_stall, LadT), MIRROR
@@ -103,7 +103,7 @@ namespace omega {
 // own fwd_ totals + closed_ deque still record, so book accounting stays exact.
 static std::atomic<bool> g_aulad_catchup{false};
 
-// ── one stock name's long-only upjump-ladder book (returns-based) ────────────
+// ── one stock name's long-only mimic-ladder book (returns-based) ────────────
 class StockLadderSym {
 public:
     struct Config {
@@ -116,7 +116,7 @@ public:
         // the n>=30 promote gate: a book that proves negative stops digging by
         // itself instead of waiting for a manual cull. Default -$600 = ~2x the
         // worst backtested clip (BIGCAP BT worst leg -28.1% of a $10k-notional
-        // fractional leg, BIGCAP_UPJUMP_LADDER_2026-07-07.md). 0 = disabled.
+        // fractional leg, BIGCAP_MIMIC_LADDER_2026-07-07.md). 0 = disabled.
         // Un-retire = operator deletes the book file / raises the limit (loud act).
         double retire_usd    = -600.0;
         // S-2026-07-08c AGGRESSIVE RANKING (operator order; evidence
@@ -148,8 +148,8 @@ public:
         // the same way. 0 = legacy all-immediate legs (backtest/parity default).
         double be_entry_pct  = 0.0;       // % above trigger a mimic leg must see on a CLOSE to open
         int    pend_closes   = 3;         // cancel a pending mimic leg after this many closes without BE
-        // S-2026-07-16k MIMIC-ONLY (operator: "remove the upjump engines in bigcap and replace
-        // with 2x mimic engines"; feedback-no-immediate-entry-upjump-mimic-only). When true (and
+        // S-2026-07-16k MIMIC-ONLY (operator: "remove the mimic engines in bigcap and replace
+        // with 2x mimic engines"; feedback-no-immediate-entry-mimic-only). When true (and
         // be_entry_pct > 0) the window opens NO immediate PARENT leg at all — ONLY the 4 PENDING
         // BE-mimic legs (T/MIRROR/Wm/W8), so the book NEVER trades into a loss on the jump close
         // (fresh-entry forbidden). The mimic legs already carry the full protection stack: BE-entry
@@ -723,7 +723,7 @@ private:
                 // S-2026-07-13 BE-ENTRY gate: a PENDING mimic leg opens ONLY at the first close
                 // that covers +be_entry_pct off the window trigger (cost/BE made). If BE is never
                 // made within pend_closes closes the leg dies unbooked — no open-into-loss
-                // (feedback-no-immediate-entry-upjump-mimic-only). Managed from the NEXT close.
+                // (feedback-no-immediate-entry-mimic-only). Managed from the NEXT close.
                 if (L.pending) {
                     if ((cur / L.trig - 1.0) * 100.0 >= cfg_.be_entry_pct) {
                         L.pending = false; L.epx = cur; L.le = cur;
@@ -1094,7 +1094,7 @@ private:
         std::ostringstream o;
         int64_t last_ts = 0; double tot_usd = 0.0, tot_usd_real = 0.0;
         for (const auto& s : syms_) { last_ts = std::max(last_ts, s.last_ts()); tot_usd += s.book_usd(); tot_usd_real += s.book_usd_real(); }
-        o << "{\"engine\":\"stockmover-upjump-ladder\",\"shadow\":true,\"grade\":\"daily-close\",";
+        o << "{\"engine\":\"stockmover-mimic-ladder\",\"shadow\":true,\"grade\":\"daily-close\",";
         o.precision(0); o << std::fixed << "\"total_usd\":" << tot_usd
                           << ",\"total_usd_real\":" << tot_usd_real << ",\"names\":[";
         for (size_t i = 0; i < syms_.size(); ++i) { if (i) o << ","; o << syms_[i].sym_json(); }

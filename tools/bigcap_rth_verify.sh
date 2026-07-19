@@ -1,7 +1,7 @@
 #!/bin/bash
-# bigcap_rth_verify.sh — one-shot RTH live-fire proof for the bigcap up-jump ladder
+# bigcap_rth_verify.sh — one-shot RTH live-fire proof for the bigcap mimic ladder
 # =============================================================================
-# WHY: HEAD 6d2b4df2 tee'd the :7784 bigcap L1 feed into the up-jump ladder
+# WHY: HEAD 6d2b4df2 tee'd the :7784 bigcap L1 feed into the mimic ladder
 #   LIVE-CONFIRM gate + the daily-close writer (DCWRITE). The tee can only be
 #   PROVEN during a live US RTH session (13:30-20:00 UTC). This job samples the
 #   VPS just after RTH close and looks for deterministic tee evidence:

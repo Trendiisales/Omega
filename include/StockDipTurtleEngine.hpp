@@ -160,7 +160,7 @@ public:
     // winners never reached the desk headline.
     int64_t open_entry_ts() const noexcept { return pos_.active ? pos_.entry_ts : 0; }
 
-    // S-2026-07-16l STOCKDIP BE-MIMIC hooks (operator: bigcap up-jump engines killed,
+    // S-2026-07-16l STOCKDIP BE-MIMIC hooks (operator: bigcap mimic engines killed,
     // replaced by 2x BE-mimic cells layered on the ONE bigcap book that fires — StockDip).
     // The mimic runs its OWN independent book (feedback-companion-independent-engine): it
     // never touches this real position. open_cb fires one-way the instant a DIP entry opens

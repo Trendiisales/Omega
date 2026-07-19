@@ -61,7 +61,7 @@ INDEX_FUTURES = {
     # until then. Once subscribed: --symbols XAUUSD,MGC.
     "MGC":     dict(symbol="MGC",    exchange="COMEX",     currency="USD"),
     # 2026-07-09: M2K micro E-mini Russell 2000 (CME). L1-only (not in DEPTH_SYMBOLS),
-    # no depth-slot cost -- feeds the index up-jump ladder SHADOW book (M2K validated
+    # no depth-slot cost -- feeds the index mimic ladder SHADOW book (M2K validated
     # W24/thr1.5 + BE-entry0.08 = +76.5% WF both halves; live-wire this session). CME
     # bundle already entitled (same as ES/NQ); if not, resolve fails 354 -> book stays
     # quiet (safe, shadow). Only add M2K to --symbols after confirming the CME sub.
@@ -80,7 +80,7 @@ INDEX_FUTURES = {
 DEPTH_SYMBOLS = {"XAUUSD", "DJ30", "NAS100", "MGC"}
 
 
-# S-2026-07-10 BIGCAP STOCK L1: the up-jump ladder companion's LIVE-CONFIRMATION gate
+# S-2026-07-10 BIGCAP STOCK L1: the mimic ladder companion's LIVE-CONFIRMATION gate
 # (include/StockDayMoverLadderCompanion.hpp) needs a real-time top-of-book quote per bigcap
 # name to confirm "actively trading + rising" before it opens a pending +thr window. Each of
 # these tickers maps to a US-equity STK/SMART/USD contract subscribed as L1 (reqMktData, NOT
@@ -192,7 +192,7 @@ def make_contract(sym: str) -> Contract:
             currency=m["currency"],
             lastTradeDateOrContractMonth="",
         )
-    # S-2026-07-10 BIGCAP STOCK L1: US-equity top-of-book for the up-jump ladder live-
+    # S-2026-07-10 BIGCAP STOCK L1: US-equity top-of-book for the mimic ladder live-
     # confirmation gate. STK/SMART/USD -> resolve_front_month passes through (not FUT),
     # subscribe_all routes it to L1Recorder (non-CASH, not in DEPTH_SYMBOLS) broadcasting
     # contract.symbol == the ticker, which omega_main on_book forwards to on_live_tick.

@@ -82,7 +82,7 @@ inline int64_t feed_now_ms() {
 static constexpr int64_t FEED_STALE_MS = 60000;   // drop now-stamped P/C lines older than 60s
 
 // S-2026-07-16: optional TEE of each fresh per-name live price (P/C lines) to a second consumer.
-// Used to feed the bigcap up-jump LADDER's live-confirm gate (stockmover_ladder_book().on_live_tick)
+// Used to feed the bigcap mimic LADDER's live-confirm gate (stockmover_ladder_book().on_live_tick)
 // off THIS :7784 bridge — the 45 bigcap STK names ride here, not the :9701 IBKR bridge, so the ladder
 // had no live-tick source and never opened a leg. Default {} = no tee = byte-identical to the old path.
 using PriceTickCb = std::function<void(const char* sym, double px, int64_t ts_ms)>;

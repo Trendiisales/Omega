@@ -644,7 +644,7 @@ inline GoldTrendMimicRegistry& gold_trend_mimic() noexcept {
 }
 
 // S-2026-07-16l: SEPARATE registry instance for the StockDip BE-MIMIC cells (operator wire
-// order: "remove the upjump engines in bigcap and replace with 2x mimic engines"). Reuses the
+// order: "remove the mimic engines in bigcap and replace with 2x mimic engines"). Reuses the
 // exact validated GoldTrendMimicBook mechanics (pre-arm LOSS_CUT drawdown-cancel + post-arm
 // BE-floored peak-profit trail; feedback-mimic-be-floor-mandatory), keyed per-name+cell tag,
 // triggered one-way from StockDipTurtleSym's DIP open, fed the name's daily close via on_bar.
