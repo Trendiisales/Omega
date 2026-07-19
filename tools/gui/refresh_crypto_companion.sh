@@ -113,8 +113,15 @@ fi
 # 2b. COMPANION-STATE PILOT-SYM GATE (S-2026-07-19, operator rule: ZERO SHADOW on the desk).
 #     Drop every non-pilot-sym leg (shadow book clips all coins; only pilot syms are live).
 #     Self-healing at the same relay chokepoint as HOP1's negative-row/pilot-sym guard.
+#
+#     LIVE_FULL LIFT (S-2026-07-19t): pull josgp1 live_config.json so the filter can read
+#     live_full. Under live_full the whole universe is live cash -> the filter passes ALL
+#     legs (no leg is shadow-by-pilot). scp fail => filter fails SAFE to the pilot filter.
+LC_SRC="chimera-direct:/home/jo/ChimeraCrypto/config/live_config.json"
+LC_TMP="/tmp/chimera_live_config.json"
+scp -q "$LC_SRC" "$LC_TMP" 2>/dev/null || true  # fail-open: stale/missing => filter uses pilot mode
 CSGUARD="$(dirname "$0")/filter_companion_state.py"
-[ -f "$CSGUARD" ] && python3 "$CSGUARD" "$TMP"
+[ -f "$CSGUARD" ] && CRYPTO_LIVE_CONFIG="$LC_TMP" python3 "$CSGUARD" "$TMP"
 
 # 3. push to the VPS
 if scp -q "$TMP" "$DST" 2>/dev/null; then

@@ -20,9 +20,31 @@
 #
 # Twin of filter_chimera_inbound.py (last-15 CSV panel); this covers the companion-state
 # toasts + MIMIC BOOKS panel. Both gate the same desk to the same pilot set.
+#
+# LIVE_FULL LIFT (S-2026-07-19t, operator: "lift the guard to match live_full"):
+#   josgp1 config/live_config.json `live_full=true` means the WHOLE universe is live cash,
+#   not just the 9-coin pilot. Under live_full every companion leg is a REAL live leg — none
+#   is "shadow by the pilot definition" — so the pilot drop is WRONG and hides live coins
+#   (TRX/LDO/UNI/SUSHI) from the desk _cc feed. When live_full is on, PASS ALL legs. When it
+#   is off (pilot mode), keep the pilot filter. The relay (refresh_crypto_companion.sh HOP2)
+#   brings the config Mac-side; CRYPTO_LIVE_CONFIG points at it (default /tmp copy). Missing/
+#   unreadable config => fail SAFE to the pilot filter (never leaks shadow; may over-drop).
 import json
 import os
 import sys
+
+
+def _live_full() -> bool:
+    """True iff josgp1 config says live_full — then the whole universe is live cash."""
+    if os.environ.get("CRYPTO_DESK_LIVE_FULL", "").strip().lower() in ("1", "true", "yes"):
+        return True
+    cfg = os.environ.get("CRYPTO_LIVE_CONFIG", "/tmp/chimera_live_config.json")
+    try:
+        with open(cfg) as fh:
+            return bool(json.load(fh).get("live_full"))
+    except (OSError, ValueError):
+        return False  # fail SAFE to pilot filter (never leaks shadow)
+
 
 PILOT_SYMS = {
     s.strip().upper()
@@ -50,6 +72,13 @@ def main() -> int:
     legs = d.get("legs")
     if not isinstance(legs, list):
         return 0  # unknown schema -> leave alone
+
+    if _live_full():
+        # Whole universe is live cash -> every leg is a REAL live leg, none is shadow-by-pilot.
+        # Pass through untouched so the desk _cc shows all live coins.
+        print("[COMPANION-STATE-GUARD] live_full=true -> passing ALL "
+              f"{len(legs)} legs (whole universe live; pilot filter OFF)")
+        return 0
 
     kept, dropped = [], []
     for leg in legs:
