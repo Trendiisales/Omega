@@ -244,6 +244,20 @@ public:
         return n;
     }
 
+    // ── MANUAL KILL-ALL (S-2026-07-20): desk panic flatten. This book has NO
+    //    register_source, so the on_tick registry flatten can never see its open
+    //    position — this is its own closer. Force-close through book_exit_ (fires
+    //    the real broker close via close_fn_ where a token exists + books to the
+    //    central ledger) at the last ACCEPTED daily close (the only mark a daily
+    //    book has; honest, unfloored — a kill can book negative). Returns 1/0.
+    int kill_all(int64_t now_sec) noexcept {
+        if (!pos_.active) return 0;
+        const double mark = c_.empty() ? pos_.epx : c_.back();
+        book_exit_(mark, now_sec, /*fwd=*/true, "MANUAL_KILL_ALL");
+        save_live_state_();
+        return 1;
+    }
+
     // Emit this book's desk JSON object. REAL FORWARD TRADES ONLY ($0 until first live close).
     std::string sym_json() const {
         const double notl = cfg_.notional;
@@ -611,6 +625,16 @@ public:
     void stop_poller() {
         running_.store(false);
         if (thread_.joinable()) thread_.join();
+    }
+
+    // MANUAL KILL-ALL fan-out (S-2026-07-20): on_tick g_flatten_all_request routes
+    // here because these books have no register_source. Returns positions closed.
+    int kill_all(int64_t now_sec) {
+        std::lock_guard<std::mutex> lk(mu_);
+        int n = 0;
+        for (auto& s : syms_) n += s.kill_all(now_sec);
+        if (n) recompute_unlocked_();
+        return n;
     }
 
     std::string state_json() const { std::lock_guard<std::mutex> lk(mu_); return state_json_unlocked_(); }

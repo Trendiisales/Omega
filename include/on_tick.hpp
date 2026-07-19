@@ -6,6 +6,14 @@
 #include "PredictiveRanges.hpp"  // GUI predictive-range snapshot (parent-TU header; needs omega_types/omega_runtime first)
 #include "AccountingGuard.hpp"   // S-2026-06-13h independent runaway-position oversight (parent-TU header)
 #include "StallCompanion.hpp"    // giveback-clip companion zoo (native C++ port of stall_accountant.py)
+// S-2026-07-20 KILL-ALL family fan-out: the set_exec book families have NO
+// register_source (independent-engine rule) so the registry flatten loop can
+// never see their legs — each carries its own kill_all(), called below.
+#include "GoldTrendMimicLadder.hpp"        // gm + sdm (gold + stockdip/turtle mimic registries)
+#include "StockDipTurtleEngine.hpp"        // sdt (StockDip/StockTurtle daily books)
+#include "FxMimicLadderCompanion.hpp"      // fl + il (FX + index ladder books)
+#include "StockDayMoverLadderCompanion.hpp"// sl (bigcap daily ladder book)
+#include "BigCap2pctImpulseCompanion.hpp"  // bi (bigcap 2pct impulse + BE-mimic book)
 #include "XagBeFloorCompanion.hpp"// XAGPos/XAGNeg SILVER BE-floor companion H1 feed (fed from XAGUSD DOM mid below)
 #include "UsoilBeFloorCompanion.hpp"// USOILPos/USOILNeg WTI BE-floor companion H1 feed (fed from USOIL.F DOM mid below)
 // (JumpRiderEngine.hpp include REMOVED — engine culled/tombstoned S-2026-07-10)
@@ -30,8 +38,42 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             if (ps.size <= 0.0) continue;
             const bool buy_to_close = (ps.side == "SHORT");   // close SHORT => BUY
             send_live_order(ps.symbol, buy_to_close, ps.size, ps.current, "KILLALL");
-            g_open_positions.close_matching(ps, "MANUAL_KILL_ALL");
+            // S-2026-07-20: a close_matching miss used to be SILENT — the broker
+            // close fired but the engine slot stayed armed (book can re-manage a
+            // position that no longer exists). Now loud so the operator sees it.
+            if (!g_open_positions.close_matching(ps, "MANUAL_KILL_ALL")) {
+                printf("[KILL-ALL][NO-CLOSER] %s %s size=%.2f -- broker close SENT but no "
+                       "closer wired: engine slot NOT cleared\n",
+                       ps.symbol.c_str(), ps.side.c_str(), ps.size);
+            }
             ++n_flat;
+        }
+        // S-2026-07-20 FAMILY FAN-OUT (SESSION_HANDOFF_2026-07-20h fix, chimera
+        // S-18s pattern): the 7 set_exec book families (gm/sdm/sdt/fl/il/sl/bi)
+        // have NO register_source — the loop above can never see their legs, so
+        // a panic kill left their live broker positions (MGC, XAU, single stocks)
+        // open and their books free to keep managing/reopening. Each family now
+        // force-closes its own book through its own close/ledger path.
+        {
+            auto px_of = [](const std::string& s) -> double {
+                std::lock_guard<std::mutex> lk(g_book_mtx);
+                auto bi_ = g_bids.find(s); auto ai_ = g_asks.find(s);
+                if (bi_ != g_bids.end() && ai_ != g_asks.end()
+                    && bi_->second > 0.0 && ai_->second > 0.0)
+                    return 0.5 * (bi_->second + ai_->second);
+                return 0.0;
+            };
+            const int64_t now = nowSec();
+            const int n_gm  = omega::gold_trend_mimic().kill_all(px_of, now);
+            const int n_sdm = omega::stockdip_trend_mimic().kill_all(px_of, now);
+            const int n_sdt = omega::stock_dipturtle_book().kill_all(now);
+            const int n_fl  = omega::fx_mimic_ladder_book().kill_all(now);
+            const int n_il  = omega::index_mimic_ladder_book().kill_all(now);
+            const int n_sl  = omega::stockmover_ladder_book().kill_all(now);
+            const int n_bi  = omega::bigcap_impulse_book().kill_all(now);
+            printf("[KILL-ALL] book families flattened: gm=%d sdm=%d sdt=%d fl=%d il=%d "
+                   "sl=%d bi=%d (booked closes + disarmed pendings)\n",
+                   n_gm, n_sdm, n_sdt, n_fl, n_il, n_sl, n_bi);
         }
         printf("[KILL-ALL] manual panic flatten on trading thread -- %d position(s) "
                "flattened (opposing MKT) + engine slots cleared\n", n_flat);

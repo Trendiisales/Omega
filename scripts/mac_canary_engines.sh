@@ -345,4 +345,18 @@ bash "$(dirname "$0")/persist_restore_semantics_audit.sh" || {
   exit 1
 }
 
+# KILL-ALL FAMILY-COVERAGE GATE (added S-2026-07-20, SESSION_HANDOFF_2026-07-20h
+# fix): the desk KILL ALL flattens only registry-visible positions; the set_exec
+# book families (no register_source by the independent-engine rule) were
+# invisible -- live MGC/XAU/stock legs survived a panic kill. Every set_exec
+# book singleton must now be covered by the on_tick kill_all() fan-out or be
+# documented in scripts/killall_coverage_allowlist.txt. Derived from
+# engine_init.hpp at runtime (zero-parse = FAIL).
+echo ""
+echo "[mac-canary-engines] KILL-ALL family-coverage audit (every set_exec book reachable by the panic button)..."
+bash "$(dirname "$0")/killall_coverage_audit.sh" || {
+  echo "[mac-canary-engines] FAIL: a live-order book family is invisible to KILL ALL -- see killall_coverage_audit.sh output above."
+  exit 1
+}
+
 exit 0

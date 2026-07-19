@@ -1,0 +1,4 @@
+# killall_coverage_audit.sh allowlist — documented exceptions ONLY.
+# Format: <set_exec-var-or-accessor> <reason>
+# (empty today: all 7 set_exec book families gm/sdm/sdt/fl/il/sl/bi are covered
+#  by the on_tick KILL-ALL fan-out, S-2026-07-20)

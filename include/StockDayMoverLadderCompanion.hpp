@@ -381,6 +381,35 @@ public:
         return cleared;
     }
 
+    // ── MANUAL KILL-ALL (S-2026-07-20): desk panic flatten. This book has NO
+    //    register_source, so the on_tick registry flatten can never see its legs —
+    //    this is its own closer. OPEN legs are force-closed through book_clip_
+    //    (fires the real broker close via close_fn_ where a live token exists +
+    //    books honestly at the best available mark: live L1 mid, else last daily
+    //    close, else leg entry). Stray tokens on non-open legs are flattened
+    //    unbooked (flush_unconfirmed convention). PENDING legs disarmed, window
+    //    state cleared so nothing respawns. Returns legs cleared.
+    int kill_all(int64_t now_sec) noexcept {
+        const double mark = lq_.px > 0.0 ? lq_.px : (c_.empty() ? 0.0 : c_.back());
+        int n = 0;
+        for (Leg& L : legs_) {
+            if (L.open && !L.clipped && !L.dead) {
+                ++n;
+                book_clip_(L, mark > 0.0 ? mark : L.le, now_sec, /*fwd=*/true, "MANUAL_KILL_ALL");
+            } else if (!L.token.empty() && close_fn_) {
+                close_fn_(cfg_.live_sym, true, cfg_.lot, mark > 0.0 ? mark : L.le, L.token);
+                L.token.clear();
+            }
+            if (L.pending) ++n;                            // no position yet: disarm only
+        }
+        const bool had_state = n || win_ || win_pend_ || exit_pend_ || !legs_.empty();
+        legs_.clear();
+        win_ = false; win_pend_ = false; exit_pend_ = false;
+        spawned_ = 0; bar_ = 0; win_entry_ = 0.0; pend_ref_px_ = 0.0; pend_ref_ts_ = 0;
+        if (had_state) save_live_state_();
+        return n;
+    }
+
     // S-2026-07-10 IN-BINARY DAILY-CLOSE WRITER support: latest live L1 mid + its ms-timestamp for
     // this name (from on_live_tick / the IBKR bridge). Returns false when the name has never ticked
     // (ts<=0) or has no valid px. The writer additionally checks the ts falls on the current UTC day
@@ -1071,6 +1100,16 @@ public:
     void stop_poller() {
         running_.store(false);
         if (thread_.joinable()) thread_.join();
+    }
+
+    // MANUAL KILL-ALL fan-out (S-2026-07-20): on_tick g_flatten_all_request routes
+    // here because these books have no register_source. Returns legs cleared.
+    int kill_all(int64_t now_sec) {
+        std::lock_guard<std::mutex> lk(mu_);
+        int n = 0;
+        for (auto& s : syms_) n += s.kill_all(now_sec);
+        if (n) recompute_unlocked_();
+        return n;
     }
 
     std::string state_json() const { std::lock_guard<std::mutex> lk(mu_); return state_json_unlocked_(); }

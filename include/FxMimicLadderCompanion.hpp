@@ -342,6 +342,32 @@ public:
         live_step_(ts_sec, o);
     }
 
+    // ── MANUAL KILL-ALL (S-2026-07-20): desk panic flatten. This book has NO
+    //    register_source, so the on_tick registry flatten can never see its legs —
+    //    this is its own closer. Force-close every ENTERED leg through book_clip_
+    //    (fires the real broker close via close_fn_ where a live token exists +
+    //    books the clip) at the best available mark (live disp mid, else last H1
+    //    close, else entry). NOTE: book_clip_ is this book's single accounting
+    //    chokepoint — a be_floor_on_open book floors the BOOKED clip there by
+    //    design; the broker close itself is a real market order either way.
+    //    PENDING legs never opened -> disarmed, no book. Window state cleared so
+    //    the killed window cannot respawn/reclip. Returns legs cleared.
+    int kill_all(int64_t now_sec) noexcept {
+        if (legs_.empty() && !win_) return 0;
+        const double mark = disp_mid_ > 0.0 ? disp_mid_ : (c_.empty() ? 0.0 : c_.back());
+        int n = 0;
+        for (Leg& L : legs_) {
+            if (L.pending) { ++n; continue; }              // no position yet: disarm only
+            if (L.entry <= 0.0) continue;
+            ++n;
+            book_clip_(L, mark > 0.0 ? mark : L.entry, now_sec, /*fwd=*/true, "MANUAL_KILL_ALL");
+        }
+        legs_.clear();
+        win_ = false; age_ = 0; nclips_ = 0; last_reclip_px_ = 0.0;
+        save_live_state_();
+        return n;
+    }
+
     // Emit this pair's desk JSON object. REAL FORWARD CLIPS ONLY ($0 until first live clip).
     std::string pair_json() const {
         const double notl = cfg_.notional;
@@ -917,6 +943,15 @@ public:
             last_disp_write_ms_.compare_exchange_strong(last, now_ms, std::memory_order_relaxed)) {
             recompute_and_write();
         }
+    }
+
+    // MANUAL KILL-ALL fan-out (S-2026-07-20): on_tick g_flatten_all_request routes
+    // here because these books have no register_source. Returns legs cleared.
+    int kill_all(int64_t now_sec) {
+        int n = 0;
+        for (auto& p : pairs_) n += p.kill_all(now_sec);
+        if (n) recompute_and_write();
+        return n;
     }
 
     // Index book publishes under its own engine name + state file (same class/mechanism).

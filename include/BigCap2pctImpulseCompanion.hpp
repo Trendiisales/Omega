@@ -241,6 +241,32 @@ public:
         return n;
     }
 
+    // ── MANUAL KILL-ALL (S-2026-07-20): desk panic flatten. This book has NO
+    //    register_source, so the on_tick registry flatten can never see it — this
+    //    is its own closer. Force-close the parent position (book_clip_) and every
+    //    OPEN mimic leg (book_mimic_clip_) at the last accepted daily close (the
+    //    only mark a daily book has; honest, unfloored). PENDING mimic legs never
+    //    opened -> disarmed, no book. Window/latch state cleared. Returns cleared.
+    int kill_all(int64_t now_sec) noexcept {
+        int n = 0;
+        const double mark = c_.empty() ? 0.0 : c_.back();
+        if (in_pos_) {
+            ++n;
+            book_clip_(mark > 0.0 ? mark : entry_px_, now_sec, /*fwd=*/true, "MANUAL_KILL_ALL");
+            in_pos_ = false; entry_px_ = 0; mfe_ = 0; held_ = 0;
+        }
+        for (MLeg& L : mlegs_) {
+            if (L.open && !L.clipped && !L.dead) {
+                ++n;
+                book_mimic_clip_(L, mark > 0.0 ? mark : L.le, now_sec, /*fwd=*/true, "MANUAL_KILL_ALL");
+                L.dead = true;
+            } else if (L.pending && !L.dead) { ++n; L.dead = true; }   // disarm only
+        }
+        mlegs_.clear(); mspawned_ = 0; entry_pend_ = false;
+        if (n) save_live_state_();
+        return n;
+    }
+
     // Emit this name's desk JSON object. REAL FORWARD TRADES ONLY ($0 until first live clip).
     std::string sym_json() const {
         const double notl = cfg_.notional;
@@ -828,6 +854,16 @@ public:
     void stop_poller() {
         running_.store(false);
         if (thread_.joinable()) thread_.join();
+    }
+
+    // MANUAL KILL-ALL fan-out (S-2026-07-20): on_tick g_flatten_all_request routes
+    // here because these books have no register_source. Returns positions/legs cleared.
+    int kill_all(int64_t now_sec) {
+        std::lock_guard<std::mutex> lk(mu_);
+        int n = 0;
+        for (auto& s : syms_) n += s.kill_all(now_sec);
+        if (n) recompute_unlocked_();
+        return n;
     }
 
     std::string state_json() const { std::lock_guard<std::mutex> lk(mu_); return state_json_unlocked_(); }

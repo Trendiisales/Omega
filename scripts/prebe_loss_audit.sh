@@ -82,7 +82,13 @@ EMITTER_RE='(book_clip_|jf_book_|emit_clip_|emit_be_clip_)[[:space:]]*\('
 # real column books the WORSE-OF H1 close (gross_real = (cur/le-1)), which can be
 # BELOW BE when price gapped through the stop between closes. Those are the exact
 # pre-BE-negative clips this gate exists to expose, so they stay RISK-by-default.
-SAFE_REASON_RE='^(BE_FLOOR|RESTORE_FLOOR|FLOOR_TRAIL_STOP|FLOOR_TRAIL_CLIP)$'
+# MANUAL_KILL_ALL (S-2026-07-20): the operator panic flatten (on_tick KILL-ALL
+# family fan-out). NOT a strategy exit — a forced close at the live mark MUST
+# book the honest (possibly negative) fill; flooring a kill would clamp the
+# ledger to a fill the broker never gave (the S-17f model-vs-execution class).
+# The no-prebe-loss rule governs what a strategy can BOOK BY ITS OWN LOGIC, not
+# what the operator forces; hence SAFE here by exemption, not by floor.
+SAFE_REASON_RE='^(BE_FLOOR|RESTORE_FLOOR|FLOOR_TRAIL_STOP|FLOOR_TRAIL_CLIP|MANUAL_KILL_ALL)$'
 # Any quoted ALL-CAPS token on an emitter line is treated as a reason.
 REASON_TOKEN_RE='"[A-Z][A-Z0-9_]+"'
 # FILE-level compliance markers -> the whole header is BE-floored-on-open.

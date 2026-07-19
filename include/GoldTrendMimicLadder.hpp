@@ -242,6 +242,7 @@ public:
     //    analog of the validated REST-F/M1 model (level fills overstate 3-4x; real
     //    crossing fills survive the 1-2bp penetration + slip stress).
     void on_tick(double px, int64_t ts_sec) noexcept {
+        if (px > 0.0) last_px_ = px;   // KILL-ALL mark (best available live price)
         if (!cfg_.resting_exec || px <= 0.0 || legs_.empty()) return;
         bool changed = false;
         std::vector<Leg> still; still.reserve(legs_.size());
@@ -292,6 +293,7 @@ public:
     //    manage=false (registry pre-arm / seed replay) = gate/SMA upkeep ONLY -- persisted
     //    legs are never counted, capped or clipped on replayed historical bars.
     void on_h1_bar(double h, double l, double c, int64_t ts_sec, bool bull, bool manage = true) noexcept {
+        if (manage && c > 0.0) last_px_ = c;   // KILL-ALL mark (live bars only, not seed replay)
         if (!ext_regime_) bull_ = bull;   // external XAU H1 regime feed (set_bull) wins once live
         if (!manage || legs_.empty()) return;
         std::vector<Leg> still; still.reserve(legs_.size());
@@ -377,6 +379,34 @@ public:
         save_open_();
     }
 
+    // ── MANUAL KILL-ALL (S-2026-07-20): desk panic flatten. These books have NO
+    //    register_source (independent-engine rule) so the on_tick registry loop can
+    //    never see their legs — this is their own closer. Force-close every ENTERED
+    //    leg through book_clip_ (fires the real broker close via close_fn_ where a
+    //    live token exists + books the clip to the ledger) at the best available
+    //    mark: live px from the caller's lookup, else the last seen live px/close.
+    //    HONEST fill (S-17f rule): the booked ret is the real mark, NOT floored —
+    //    a kill can book negative. PENDING legs never opened -> disarmed, no book.
+    //    Returns legs cleared (booked + disarmed).
+    int kill_all(double px, int64_t now_sec) noexcept {
+        if (legs_.empty()) return 0;
+        const double mark = px > 0.0 ? px : last_px_;
+        int n = 0;
+        for (Leg& L : legs_) {
+            if (!L.open) continue;
+            ++n;
+            if (L.pending) { L.open = false; continue; }   // no position yet: disarm only
+            double ret = 0.0;
+            if (mark > 0.0 && L.entry > 0.0) ret = L.dir * (mark / L.entry - 1.0) * 100.0;
+            else std::printf("[GMIMIC][%s] KILL-ALL: no live mark for %s -- leg booked at entry (ret=0)\n",
+                             cfg_.trigger_tag.c_str(), cfg_.live_sym.c_str());
+            book_clip_(L, ret, now_sec, "MANUAL_KILL_ALL");
+        }
+        legs_.clear();
+        save_open_();
+        return n;
+    }
+
     // desk JSON: REAL forward clips only ($0 until first live clip).
     std::string json() const {
         std::ostringstream o; o << std::fixed;
@@ -401,6 +431,7 @@ private:
     Config cfg_;
     bool   bull_ = true;
     bool   ext_regime_ = false;   // true once the registry regime feed has spoken
+    double last_px_ = 0.0;        // last seen LIVE px/close (KILL-ALL mark fallback)
     struct Leg { int dir = 0, li = 0, bars = 0, pbars = 0; double entry = 0, peak = 0, trig = 0;
                  double trough = 0;   // min signed ret% seen (MAE); NOT persisted -> resets on restart
                  bool armed = false, open = false, pending = false;
@@ -617,6 +648,18 @@ public:
                     reg_bull_ ? "BULL" : "BEAR");
         std::fflush(stdout);
     }
+    // ── MANUAL KILL-ALL fan-out (S-2026-07-20): fired from the on_tick
+    //    g_flatten_all_request block. These books have no register_source, so the
+    //    registry flatten loop can never reach them — this is their panic closer.
+    //    px_of resolves a live mid per book live_sym (0 = unknown -> book falls
+    //    back to its last seen live mark). Returns total legs cleared.
+    int kill_all(const std::function<double(const std::string&)>& px_of, int64_t now_sec) {
+        std::lock_guard<std::mutex> lk(mu_);
+        int n = 0;
+        for (auto& b : books_) n += b.kill_all(px_of ? px_of(b.live_sym()) : 0.0, now_sec);
+        return n;
+    }
+
     std::string state_json() const {
         std::lock_guard<std::mutex> lk(mu_);
         std::ostringstream o; o << "{\"engine\":\"gold-trend-mimic\",\"shadow\":true,\"books\":[";
