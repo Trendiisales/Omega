@@ -108,7 +108,12 @@ public:
         // +13.9%/leg PF2.79 DD-2.6, calendar-2022 -1.9 -> +0.3, 2x-cost PF2.22, slip-robust.
         // Gate is trigger-time only (bear trigger spawns nothing); pending/open legs are NOT
         // cancelled on a regime flip (tested: delta -0.3, irrelevant). Fail-open until warm.
-        bool   live_book    = false; // true after the operator live-flip: json shadow:false
+        bool   live_book    = false; // true after the operator live-flip: json shadow:false.
+                                     // S-2026-07-19p: this ALSO now GATES real orders — the three
+                                     // open_fn_ call sites are wrapped in `if (cfg_.live_book ...)`, so a
+                                     // book with live_book=false is shadow-log ONLY and can never place a
+                                     // real broker order (fixes the P1 latent-live bug where any mimic
+                                     // fired real MGC under mode=LIVE regardless of this flag).
         // ── S-2026-07-18 BOUNDED CATCH-UP on the parent RESTORE re-fire (Omega port of the
         //   certified crypto bounded-catch-up class; own cert backtest/GOLDMIMIC_CATCHUP_
         //   CERT_2026-07-18.md — never carry the crypto cert across). Background: the parent
@@ -181,7 +186,7 @@ public:
             if (be) { L.pending = true; L.pbars = 0; }   // wait for +be_entry_pct before opening any order
             else {                                        // legacy: enter at the trigger close now
                 L.pending = false; L.entry = entry_px;
-                if (open_fn_ && gate_fn_) {
+                if (cfg_.live_book && open_fn_ && gate_fn_) {
                     const double tp = entry_px * (cfg_.arm_pct / 100.0);
                     if (gate_fn_(cfg_.live_sym, tp, cfg_.lot)) L.token = open_fn_(cfg_.live_sym, dir > 0, cfg_.lot, entry_px);
                 }
@@ -247,7 +252,7 @@ public:
                 if ((L.dir > 0 && px >= lvl) || (L.dir < 0 && px <= lvl)) {
                     L.entry = px; L.pending = false; L.bars = 0; L.peak = 0.0; L.trough = 0.0;
                     L.armed = false; L.entry_ts = ts_sec;
-                    if (open_fn_ && gate_fn_) { const double tp = L.entry * (cfg_.arm_pct / 100.0);
+                    if (cfg_.live_book && open_fn_ && gate_fn_) { const double tp = L.entry * (cfg_.arm_pct / 100.0);
                         if (gate_fn_(cfg_.live_sym, tp, cfg_.lot))
                             L.token = open_fn_(cfg_.live_sym, L.dir > 0, cfg_.lot, L.entry); }
                     std::printf("[GMIMIC][%s] BE-ENTER(tick) %s @%.2f (level %.2f trig %.2f)\n",
@@ -324,7 +329,7 @@ public:
                 if (fret >= cfg_.be_entry_pct) {                       // BE made -> ENTER at the BE level
                     L.entry = L.trig * (1.0 + L.dir * cfg_.be_entry_pct / 100.0);
                     L.pending = false; L.bars = 0; L.peak = 0.0; L.trough = 0.0; L.armed = false; L.entry_ts = ts_sec;
-                    if (open_fn_ && gate_fn_) { const double tp = L.entry * (cfg_.arm_pct / 100.0);
+                    if (cfg_.live_book && open_fn_ && gate_fn_) { const double tp = L.entry * (cfg_.arm_pct / 100.0);
                         if (gate_fn_(cfg_.live_sym, tp, cfg_.lot)) L.token = open_fn_(cfg_.live_sym, L.dir > 0, cfg_.lot, L.entry); }
                     std::printf("[GMIMIC][%s] BE-ENTER %s @%.2f (trig %.2f)\n",
                                 cfg_.trigger_tag.c_str(), leg_engine_(L.li).c_str(), L.entry, L.trig);

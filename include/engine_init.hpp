@@ -1877,7 +1877,8 @@ static void init_engines(const std::string& cfg_path)
             {   omega::GoldTrendMimicBook::Config c; c.trigger_tag="GoldDon10m"; c.live_sym="XAUUSD.M";
                 c.legs={{"T",0.08},{"W",0.20}};
                 c.arm_pct=1.00; c.lc_pct=1.0; c.cap_bars=144; c.rt_cost_bp=5.0; c.be_entry_pct=0.10; c.no_prebe_loss=true; c.pend_bars=12;
-                c.notional=40000.0; c.lot=1.0; gm.add(std::move(c)); }  // LOT-GATE-OK shadow book; lot inert until live flip
+                c.resting_exec=true; c.live_book=true;   // S-2026-07-19p LIVE FLIP (operator: all profitable engines live). Real MGC via resting-exec, BE-floored (no_prebe_loss + be_entry 0.10 + lc 1.0). Standalone-certified in 6mo faithful BT (T PF1.37 / W PF1.33, both-halves+, worst -1.05%); forward/resting re-cert owed -- protection (BE-floor+lc+cost-gate) bounds the tail.
+                c.notional=40000.0; c.lot=1.0; gm.add(std::move(c)); }  // LOT-GATE-OK: 1 MGC micro-future contract/leg (2 legs T+W = 2 MGC), NOT a 100oz CFD lot -- same sizing basis as the live XAU_4h_DonchN20 cell; LIVE via live_book gate
             // XAU-H1 SMA200 regime gate seed (bear-gate proviso): warm from boot, 1101-bar CSV.
             gm.seed_xau_regime_h1_csv(omega::resolve_seed_path("phase1/signal_discovery/warmup_XAUUSD_H1.csv"));
             // USTEC_4h_ZMR book REMOVED here S-2026-07-14 (intrabar FAIL, see verdict above).
