@@ -8,7 +8,7 @@ logged, never closed), or silently-missing (gold gave back $142 uncaught) passed
 while doing nothing. This test asserts FUNCTION, not existence. It is the single source of truth for
 "is our profit/loss protection actually working" and runs at every session start.
 
-NINE CHECKS (each pass/fail independently; overall RED if any fail):
+TEN CHECKS (each pass/fail independently; overall RED if any fail):
   [1] ALIVE               — the REAL in-binary C++ StallCompanion on the VPS wrote its aggregate
                             companion_state.json in the last N min (weekend-guarded). Re-pointed
                             2026-07-06 off the retired Mac python file+crontab (false RED source).
@@ -37,6 +37,12 @@ NINE CHECKS (each pass/fail independently; overall RED if any fail):
                             the IBS $400 giveback rode in a book whose arm never latched, and Rider4h
                             was invisible to every audit. RED = an uncovered leg can ride profit
                             back down right now, or the gate itself is not running.
+  [10] CATASTROPHE-BREACH — compile the LIVE CatastrophicGuard.hpp into a sandbox harness
+                            (tools/catastrophic_guard_selftest.cpp) and drive check() through
+                            the BREACH branch in all 6 modes (shadow, live-universal,
+                            per-engine precedence, noise band, unknown-pnl, NO-CLOSER).
+                            Added S-2026-07-20n: guard was ARMED-verified in prod but the
+                            trigger path had never fired anywhere (rare-event standing rule).
 
 Exit 0 = all green. Exit 1 = one or more RED. Writes a status file the SessionStart hook surfaces.
 """
@@ -475,6 +481,43 @@ def check_profit_lock_coverage():
         record("[9] PROFIT-LOCK-COVERAGE", True,
                "runtime sweep armed; no uncovered live leg in 24h")
 
+# ---- [10] CATASTROPHE-BREACH (guard's rare-event trigger path proven in sandbox) ----
+# S-2026-07-20 standing rule (20i audit item 5): a rare-event protection must prove its
+# TRIGGER path in a sandbox, not just its arming. CatastrophicGuard's ARMED boot line was
+# production-verified (S-20k c465f08e) but the breach branch (loss > catastrophe_x *
+# per_trade_usd -> flatten hook) had never executed anywhere. Same compile/cache pattern
+# as [3]: compile the LIVE header (include/CatastrophicGuard.hpp) into
+# tools/catastrophic_guard_selftest.cpp and drive check() through all 6 branches
+# (shadow-no-flatten, live-universal, per-engine precedence, noise band, unknown-pnl
+# skip, NO-CLOSER). Compile-fail = RED (live header broken).
+CATG_HDR = os.path.join(REPO, "include", "CatastrophicGuard.hpp")
+CATG_SRC = os.path.join(REPO, "tools", "catastrophic_guard_selftest.cpp")
+CATG_BIN = os.path.join(REPO, "build", "catastrophic_guard_selftest")
+
+def check_catastrophe_breach():
+    if not (os.path.exists(CATG_HDR) and os.path.exists(CATG_SRC)):
+        record("[10] CATASTROPHE-BREACH", False, "CatastrophicGuard.hpp / harness source missing"); return
+    try:
+        deps = [CATG_HDR, CATG_SRC, os.path.join(REPO, "include", "OpenPositionRegistry.hpp")]
+        stale = (not os.path.exists(CATG_BIN)
+                 or os.path.getmtime(CATG_BIN) < max(os.path.getmtime(p) for p in deps))
+        if stale:
+            os.makedirs(os.path.dirname(CATG_BIN), exist_ok=True)
+            cc = subprocess.run(["c++", "-std=c++17", "-O0", "-I", os.path.join(REPO, "include"),
+                                 CATG_SRC, "-o", CATG_BIN], capture_output=True, text=True, timeout=120)
+            if cc.returncode != 0:
+                record("[10] CATASTROPHE-BREACH", False,
+                       f"harness COMPILE failed (live header broken?): {cc.stderr.strip().splitlines()[-1][:140]}")
+                return
+        r = subprocess.run([CATG_BIN], capture_output=True, text=True, timeout=60)
+        fired = r.returncode == 0 and "CATGUARD-SELFTEST PASS" in r.stdout
+        tail = " | ".join(ln for ln in r.stdout.strip().splitlines())[:220]
+        detail = ("LIVE CatastrophicGuard sandbox: breach->flatten proven on all 6 branches"
+                  if fired else f"BREACH PATH BROKEN *** {tail}")
+        record("[10] CATASTROPHE-BREACH", fired, detail)
+    except Exception as e:
+        record("[10] CATASTROPHE-BREACH", False, f"harness error: {e}")
+
 def main():
     check_scheduled_alive()
     check_real_not_shadow()
@@ -485,6 +528,7 @@ def main():
     check_befloor_real_honesty()
     check_stall_bank_ledger_parity()
     check_profit_lock_coverage()
+    check_catastrophe_breach()
     overall = all(ok for _,ok,_ in results)
     ts = time.strftime("%Y-%m-%d %H:%M:%S")
     lines = [f"PROTECTION SELF-TEST {'GREEN -- all protection FUNCTIONAL' if overall else 'RED -- PROTECTION NOT WORKING'}  ({ts})"]
