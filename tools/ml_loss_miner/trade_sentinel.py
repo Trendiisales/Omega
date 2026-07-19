@@ -350,9 +350,28 @@ def triage_loss(row: pd.Series, df_all: pd.DataFrame, score: float) -> tuple[str
                     "statistically unusual in size/shape. Rule out data glitch (x1000 class, "
                     "data_integrity_gate.py) and booking error before treating as market loss.")
 
+    # 9. companion/mimic reversal-exit into a loss — the DOMINANT class on the crypto ledger,
+    #    which has no mfe/mae so rules 2/4 can't fire. ENGINE_EXIT on a companion = the mimic
+    #    closed on its reversal signal net-negative (gave a favorable move back to a loss).
+    if net < 0 and reason in ("ENGINE_EXIT", "REVERSAL", "REVERSAL_EXIT", "ENGINE_FLIP", "FLIP"):
+        flags.append("REVERSAL_GIVEBACK")
+        if is_companion:
+            sugg.append("TUNE: companion REVERSAL-EXIT closed net-negative — the mimic rode a favorable "
+                        "move then gave it back to a loss on its reversal signal. Backtest-certify (a) a "
+                        "tighter per-cell giveback-lock g<1.0 so profit locks BEFORE the reversal "
+                        "(feedback-profit-lock-mandatory; NEVER uniform — certify per cell, uniform 0.3-0.5 "
+                        "killed 5/7 books) and (b) the reversal-exit threshold/timing. Judge the companion "
+                        "STANDALONE, never vs WIDE (feedback-companion-independent-engine).")
+        else:
+            sugg.append("TUNE: engine reversal/flip exit closed net-negative — backtest a profit-lock "
+                        "giveback clamp (g<1.0, per-cell) and the flip threshold before wiring "
+                        "(feedback-profit-lock-mandatory).")
+
     if not sugg:
-        sugg.append("REVIEW: no rule matched — inspect manually; if genuine, feed into mine_losses.py "
-                    "pattern mining as sample grows.")
+        sugg.append("REVIEW: no mapped rule for this (book, exit_reason) — the crypto ledger lacks "
+                    "mfe/mae/regime so the giveback/cost/regime rules can't evaluate. Enrich the export "
+                    "with those columns to unlock them; meanwhile run mine_losses.py for the dimensional "
+                    "split and inspect the raw fill.")
 
     error_flags = [f for f in flags if f in ("DUPLICATE_BOOKING", "NEGATIVE_HOLD", "SLIPPAGE_ANOMALY")]
     verdict = ("ERROR-SUSPECT" if error_flags
@@ -432,6 +451,65 @@ def fmt_ts(ts) -> str:
         return "?"
 
 
+def cluster_guidance(book: str, reason: str, worst_eng: str, worst_net: float) -> str:
+    """One certifiable PROPOSAL per (book, exit_reason) cluster. Never a fix — always 'backtest X'."""
+    is_comp = str(book).startswith("companion")
+    r = (reason or "UNKNOWN").upper()
+    tail = f" Worst cell: `{worst_eng}` {worst_net:+.0f}."
+    if r in ("ENGINE_EXIT", "REVERSAL", "REVERSAL_EXIT", "ENGINE_FLIP", "FLIP") and is_comp:
+        return ("**Companion reversal-exit is the dominant $ drain here.** The mimics rode favorable "
+                "moves then gave them back to losses on the reversal signal (a coordinated market "
+                "reversal hits every cell at once). Backtest-certify, PER CELL: (1) a tighter giveback-lock "
+                "g<1.0 so profit locks before the reversal (feedback-profit-lock-mandatory — uniform 0.3-0.5 "
+                "killed 5/7 books, so certify each cell), (2) the reversal-exit threshold/timing. Judge each "
+                "companion STANDALONE, never vs WIDE (feedback-companion-independent-engine)." + tail)
+    if "FLOOR" in r or "CLIP" in r:
+        return ("S-17f honest floored tails — the floor REDUCES not eliminates the gap/restart pierce. "
+                "Individually tiny; act only if this aggregate keeps growing or the tails cluster in a "
+                "service-restart window (then avoid mid-market deploys with open legs). If recurring "
+                "WITHOUT restarts, backtest a wider confirm / tighter reclip on the worst cells." + tail)
+    if r in ("LOSS_CUT", "SL", "SL_HIT", "STOP", "PREBE_CUT"):
+        return ("Designed-stop cluster — backtest LOSS_CUT_PCT width (READ the config comment block above "
+                "the line first, per repo rule) or a BE-ENTRY conversion (feedback-no-prebe-loss-ever). "
+                "Run mine_losses.py for the regime/session split before wiring." + tail)
+    if r in ("TRAIL_STOP", "TRAIL"):
+        return ("Trail-stop cluster closing red — the trail may arm before BE is covered. Backtest the "
+                "BE-floor-on-open recipe (confirm>=2xRT + anchor le=epx) for this engine." + tail)
+    return ("No mapped fix pattern for this (book, exit_reason) yet. Run mine_losses.py for the "
+            "dimensional (regime x weekday x symbol) split; enrich the ledger with mfe/mae/regime to "
+            "unlock the giveback/cost/regime rules." + tail)
+
+
+def aggregate_losses(triage: list[tuple]) -> list[dict]:
+    """Cluster the triaged losses by (system, book, exit_reason) and rank by TOTAL $ lost.
+    This is the 'act here first' view: 117 per-trade lines collapse into a handful of ranked
+    systemic drivers, each with ONE certifiable proposal. Uses only always-present fields
+    (net_pnl / system / book / exit_reason / symbol / engine) so it survives the crypto ledger's
+    missing mfe/mae/regime."""
+    from collections import defaultdict
+    clusters: dict = defaultdict(lambda: {"n": 0, "sum": 0.0, "coins": defaultdict(float),
+                                          "worst_eng": "", "worst_net": 0.0})
+    for row, _verdict, _flags, _sugg, _score in triage:
+        reason = (str(row["exit_reason"]) or "UNKNOWN").upper()
+        key = (str(row["system"]), str(row["book"]), reason)
+        c = clusters[key]
+        net = float(row["net_pnl"])
+        c["n"] += 1
+        c["sum"] += net
+        c["coins"][str(row["symbol"])] += net
+        if net < c["worst_net"]:
+            c["worst_net"] = net
+            c["worst_eng"] = str(row["engine"])
+    out = []
+    for (system, book, reason), c in clusters.items():
+        top = sorted(c["coins"].items(), key=lambda kv: kv[1])[:5]
+        out.append({"system": system, "book": book, "reason": reason, "n": c["n"],
+                    "sum": c["sum"], "avg": c["sum"] / c["n"] if c["n"] else 0.0,
+                    "top_coins": top, "worst_eng": c["worst_eng"], "worst_net": c["worst_net"],
+                    "guidance": cluster_guidance(book, reason, c["worst_eng"], c["worst_net"])})
+    return sorted(out, key=lambda d: d["sum"])  # most negative total first
+
+
 def render(new_neg: pd.DataFrame, triage: list[tuple], win_ideas: list[dict],
            n_new: int, n_total: int, out_path: Path) -> None:
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
@@ -441,9 +519,29 @@ def render(new_neg: pd.DataFrame, triage: list[tuple], win_ideas: list[dict],
     L.append(f"Scanned {n_total} closed trades across both systems; **{n_new} new since last run**, "
              f"of which **{len(triage)} negative** (triaged below). Every suggestion is a PROPOSAL — "
              "backtest-certify before wiring anything (standing doctrine).")
+    cov = globals().get("SYS_COVERAGE", "")
+    if cov:
+        L.append("")
+        L.append(f"_Per-system coverage (closed trades pulled): {cov}._ An empty ledger means that "
+                 "system had no closed trades in range — it is pulled every run, never skipped.")
     L.append("")
     if triage:
-        L.append("## 🔴 New negative trades — per-trade triage")
+        clusters = aggregate_losses(triage)
+        tot = sum(c["sum"] for c in clusters)
+        L.append("## 📊 Loss clusters — ranked by $ impact (ACT HERE FIRST)")
+        L.append("")
+        L.append(f"The {len(triage)} negative trades collapse into **{len(clusters)} systemic "
+                 f"driver(s)**, total **{tot:+.2f}**. Each carries ONE certifiable proposal — "
+                 "backtest before wiring (nothing here is auto-applied).")
+        L.append("")
+        for c in clusters:
+            coins = ", ".join(f"{s} {v:+.0f}" for s, v in c["top_coins"])
+            L.append(f"### `{c['system']}/{c['book']}` · exit `{c['reason']}` — "
+                     f"**{c['sum']:+.2f}** / {c['n']} trades (avg {c['avg']:+.2f})")
+            L.append(f"- top coins by $: {coins}")
+            L.append(f"- ➤ {c['guidance']}")
+            L.append("")
+        L.append("## 🔴 Per-trade triage (detail)")
         L.append("")
         for row, verdict, flags, sugg, score in triage:
             L.append(f"### {row['engine']} {row['symbol']} {row['side']} → **{row['net_pnl']:+.2f}** "
@@ -503,6 +601,14 @@ def main() -> None:
     if df.empty:
         print("No data loaded. Nothing to triage.", file=sys.stderr)
         sys.exit(1)
+
+    # both-systems coverage — surface which system actually contributed (operator: the tool must
+    # cover BOTH; an empty Omega ledger is stated, never silently hidden behind a chimera-only report).
+    sys_counts = df.groupby("system").size().to_dict()
+    for s in ("omega", "chimera"):
+        sys_counts.setdefault(s, 0)
+    global SYS_COVERAGE
+    SYS_COVERAGE = ", ".join(f"{s}={n}" for s, n in sorted(sys_counts.items()))
 
     state = load_state()
     seen = set(state["seen_keys"]) if not args.full else set()
