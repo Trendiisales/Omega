@@ -240,6 +240,9 @@ a{color:var(--blu);text-decoration:none}
     <span class="lbl">CRYPTO MIMIC BOOKS — LIVE open legs (real Binance fills, g_mimic_mirror · S-18al) · unrealized $ marked at live WS px · never vs-WIDE</span>
     <span id="ccrinfo" class="lbl" style="margin-left:auto">…</span>
   </div>
+  <!-- OVERALL live PnL at the TOP of the box (operator S-2026-07-19: overall PnL up top,
+       then each mimic gets its own PnL line under the parent trade it mimics). -->
+  <div id="ccrtotal" style="font-size:15px;font-weight:700;margin-bottom:6px">…</div>
   <div style="overflow:auto;max-height:340px"><table id="ccrtab"><tr><td class="l d">loading…</td></tr></table></div>
 </div>
 
@@ -1269,6 +1272,7 @@ function drawCCReal(){
  if(!holds.length){
   el('ccrtab').innerHTML='<tr><td class="l d">no live open legs</td></tr>';
   el('ccrinfo').innerHTML='<span class="d">0 open legs</span>';
+  el('ccrtotal').innerHTML='OVERALL <span class="d">$0.00</span> <span class="d" style="font-size:10px;font-weight:400">unrealized · no live open legs</span>';
   return;
  }
  var bySym={};holds.forEach(function(h){if(!h||!h.coin)return;(bySym[h.coin]=bySym[h.coin]||[]).push(h);});
@@ -1300,8 +1304,11 @@ function drawCCReal(){
   });
  });
  el('ccrtab').innerHTML=h;
- el('ccrinfo').innerHTML=nlegs+' leg(s) · '+syms.length+' coin(s)'+(gotU?' · '+fmt$(totU)+' unrl':'')
-  +' <span class="d" style="font-size:9px">(real Binance holds, live_mirror only)</span>';
+ /* OVERALL live PnL up top (operator S-2026-07-19), big + colored; per-mimic lines nest below. */
+ el('ccrtotal').innerHTML='OVERALL '
+  +(gotU?'<span style="color:'+(totU>=0?'var(--grn)':'var(--red)')+'">'+fmt$(totU)+'</span>':'<span class="d">—</span>')
+  +' <span class="d" style="font-size:10px;font-weight:400">unrealized · '+nlegs+' live leg(s) across '+syms.length+' coin(s)</span>';
+ el('ccrinfo').innerHTML='<span class="d" style="font-size:9px">real Binance holds · live_mirror · live fills</span>';
 }
 function pollCC(){fetch('/api/crypto_companion').then(function(r){return r.json();}).then(function(j){
  /* key by companion TAG (grid cell identity, S-2026-07-12). Fallback to sym for a not-yet-
