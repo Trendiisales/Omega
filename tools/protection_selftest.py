@@ -12,8 +12,14 @@ NINE CHECKS (each pass/fail independently; overall RED if any fail):
   [1] ALIVE               — the REAL in-binary C++ StallCompanion on the VPS wrote its aggregate
                             companion_state.json in the last N min (weekend-guarded). Re-pointed
                             2026-07-06 off the retired Mac python file+crontab (false RED source).
-  [2] REAL, NOT SHADOW    — the companion has a real EFFECT path (banks a clip), not log-only theatre.
-  [3] FIRES ON TRIGGER    — inject a synthetic peak->giveback into a sandbox companion; assert it clips.
+  [2] REAL, NOT SHADOW    — the LIVE C++ StallCompanion header has a real EFFECT path (banks a
+                            clip), not log-only theatre. Repointed off retired python S-2026-07-20i.
+  [3] FIRES ON TRIGGER    — compile the LIVE StallCompanion.hpp into a sandbox harness
+                            (tools/stall_companion_selftest.cpp) and drive a synthetic
+                            peak->giveback through StallBook::step in BOTH live modes
+                            (pct REVERSAL_CLIP + be-mode FLOOR_CLIP); assert clips bank.
+                            Repointed off the RETIRED Mac python S-2026-07-20i — the old
+                            [3] proved dead code clips, not what ships in Omega.exe.
   [4] EFFECT RECONCILE    — no live armed position has given back past the trail while still UNCLIPPED.
   [5] BINARY-CLOSE-PATH   — in-binary guards have a registered closer (can close, not just detect).
   [6] INPUT-FRESHNESS     — the companion's inputs are fresh (stale feed = wrong peak = missed clip).
@@ -37,8 +43,9 @@ Exit 0 = all green. Exit 1 = one or more RED. Writes a status file the SessionSt
 import os, sys, json, subprocess, tempfile, shutil, time, datetime
 
 HOME = os.path.expanduser("~")
-COMPANION = os.path.join(HOME, "stall-accountant", "stall_accountant.py")
-COMP_DIR  = os.path.join(HOME, "stall-accountant")
+# S-2026-07-20i: the retired Mac python stall_accountant.py is no longer referenced by any
+# check — [2]/[3] now prove the LIVE C++ StallCompanion (include/StallCompanion.hpp).
+COMP_DIR  = os.path.join(HOME, "stall-accountant")   # VPS-synced state mirror ([4]/[6] inputs)
 STATE     = os.path.join(COMP_DIR, "companion_state.json")
 CLOSED    = os.path.join(COMP_DIR, "companion_closed.csv")
 STATUS    = os.path.join(HOME, ".claude", "protection_selftest_STATUS.txt")
@@ -122,48 +129,62 @@ def check_scheduled_alive():
 
 # ---- [2] REAL, NOT SHADOW -----------------------------------------------------
 def check_real_not_shadow():
-    # the scheduled protection must have a real EFFECT path (write a banked clip), not just log/track.
-    try: src = open(COMPANION).read()
-    except Exception as e: record("[2] REAL-NOT-SHADOW", False, f"cannot read companion: {e}"); return
-    banks = ("companion_closed" in src) and ("_close(" in src or "CLOSED" in src)
+    # the LIVE protection (C++ StallCompanion in Omega.exe) must have a real EFFECT path
+    # (write a banked clip), not just log/track. S-2026-07-20i: repointed off the RETIRED
+    # Mac python source at ~/stall-accountant (dead code passing for the live protection).
+    hdr = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                       "include", "StallCompanion.hpp")
+    try: src = open(hdr).read()
+    except Exception as e: record("[2] REAL-NOT-SHADOW", False, f"cannot read StallCompanion.hpp: {e}"); return
+    banks = ("companion_closed" in src) and ("close_(" in src) and ("REVERSAL_CLIP" in src)
     # shadow tell-tale: a protection that ONLY tracks peak/locked with no close/bank action
-    only_logs = ("locked" in src and "_close(" not in src and "companion_closed" not in src)
+    only_logs = ("mfe" in src and "close_(" not in src and "companion_closed" not in src)
     ok = banks and not only_logs
-    detail = f"companion has real bank/close path={banks}; log-only-shadow={only_logs}"
+    detail = f"live C++ StallCompanion has real bank/close path={banks}; log-only-shadow={only_logs}"
     if not ok: detail += "  *** SHADOW THEATRE -- records but never closes ***"
     record("[2] REAL-NOT-SHADOW", ok, detail)
 
 # ---- [3] FIRES ON SYNTHETIC TRIGGER ------------------------------------------
+# S-2026-07-20i repoint (effect-verification audit): the old [3] sandbox-fired the
+# RETIRED Mac python stall_accountant.py — a green [3] proved DEAD code clips, not
+# the C++ StallCompanion actually shipped in Omega.exe. Now: compile the LIVE
+# header (include/StallCompanion.hpp) into a tiny harness and drive StallBook::step
+# through a synthetic peak->giveback in BOTH live modes (pct REVERSAL_CLIP +
+# be-mode FLOOR_CLIP incl. pre-confirm-flat assert). Binary cached in build/,
+# rebuilt when header or harness source is newer.
+REPO         = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+STALL_HDR    = os.path.join(REPO, "include", "StallCompanion.hpp")
+STALL_SRC    = os.path.join(REPO, "tools", "stall_companion_selftest.cpp")
+STALL_BIN    = os.path.join(REPO, "build", "stall_companion_selftest")
+
 def check_fires_on_trigger():
-    # DETERMINISTIC: pre-seed an already-OPEN + ARMED companion (peak +8%), then feed a single state
-    # where it has given back to +1% -> one run MUST REVERSAL_CLIP. (Two-cycle live timing was flaky;
-    # pre-seeding removes the subprocess-timing race so a real break can't hide behind a flake.)
-    sb = tempfile.mkdtemp(prefix="protselftest_")
+    if not (os.path.exists(STALL_HDR) and os.path.exists(STALL_SRC)):
+        record("[3] FIRES-ON-TRIGGER", False, "StallCompanion.hpp / harness source missing"); return
     try:
-        fake_crypto = os.path.join(sb, "fake_crypto.json")
-        entry = 100.0
-        key = f"CRYPTO|SelfTest|TESTSYM|{round(entry,4)}"
-        now = int(time.time()); bar = now // (4*3600)
-        # pre-seeded open position: peaked at +8%, still open, armed
-        json.dump({key: {"book":"CRYPTO","eng":"SelfTest","sym":"TESTSYM","side":"LONG","entry":entry,
-                         "open_ts":now,"open_bar":bar,"mfe_pct":8.0,"ext_bar":bar,"last_upnl":80.0}},
-                  open(os.path.join(sb,"companion_positions.json"),"w"))
-        # live mark now +1% (<= peak 8 * (1-0.4)=4.8) -> reversal
-        json.dump({"slots":[{"key":"k","sym":"TESTSYM","strat":"SelfTest","pos":1,
-                             "entry_px":entry,"px":101.0,"unreal_usd":10.0}]}, open(fake_crypto,"w"))
-        env = dict(os.environ, COMPANION_DIR=sb, CRYPTO_STATE=fake_crypto, SKIP_OMEGA="1",
-                   STALL_GATE_PCT="2.0", REVERSAL_GIVEBACK="0.40")
-        r = subprocess.run([sys.executable, COMPANION], env=env, capture_output=True, text=True)
-        clipped = ""
-        sb_closed = os.path.join(sb, "companion_closed.csv")
-        if os.path.exists(sb_closed): clipped = open(sb_closed).read()
-        fired = "REVERSAL_CLIP" in clipped or "STALL_CLIP" in clipped
-        detail = ("pre-armed +8% peak -> +1% giveback -> companion "
-                  + ("CLIPPED (fired correctly)" if fired else "DID NOT FIRE *** broken ***"))
-        if not fired and r.stdout: detail += f" | last: {r.stdout.strip().splitlines()[-1][:120]}"
-        record("[3] FIRES-ON-TRIGGER", fired, detail)
-    finally:
-        shutil.rmtree(sb, ignore_errors=True)
+        stale = (not os.path.exists(STALL_BIN)
+                 or os.path.getmtime(STALL_BIN) < max(os.path.getmtime(STALL_HDR),
+                                                      os.path.getmtime(STALL_SRC)))
+        if stale:
+            os.makedirs(os.path.dirname(STALL_BIN), exist_ok=True)
+            cc = subprocess.run(["c++", "-std=c++17", "-O0", "-I", os.path.join(REPO, "include"),
+                                 STALL_SRC, "-o", STALL_BIN], capture_output=True, text=True, timeout=120)
+            if cc.returncode != 0:
+                record("[3] FIRES-ON-TRIGGER", False,
+                       f"harness COMPILE failed (live header broken?): {cc.stderr.strip().splitlines()[-1][:140]}")
+                return
+        sb = tempfile.mkdtemp(prefix="protselftest_")
+        try:
+            r = subprocess.run([STALL_BIN, sb], capture_output=True, text=True, timeout=60)
+            fired = r.returncode == 0 and "STALL-SELFTEST PASS" in r.stdout
+            tail = " | ".join(ln for ln in r.stdout.strip().splitlines())[:220]
+            detail = ("LIVE C++ StallBook sandbox: " +
+                      ("pct REVERSAL_CLIP + be-mode FLOOR_CLIP both FIRED" if fired
+                       else f"DID NOT FIRE *** broken *** {tail}"))
+            record("[3] FIRES-ON-TRIGGER", fired, detail)
+        finally:
+            shutil.rmtree(sb, ignore_errors=True)
+    except Exception as e:
+        record("[3] FIRES-ON-TRIGGER", False, f"harness error: {e}")
 
 # ---- [4] EFFECT RECONCILIATION (no unclipped giveback) -----------------------
 def check_effect_reconcile():
