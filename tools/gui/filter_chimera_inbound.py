@@ -19,6 +19,7 @@
 # append-only SOURCE kept its rows and the relay re-pushed them within 2 min ("came back
 # after the fix"). A relay-level guard + a complete-reset script (reset_crypto_desk_trades.sh)
 # close that recurrence permanently.
+import os
 import sys
 
 # Companion-clip exit reasons (MimicLadderCompanion.hpp). All must be net>=0 on a floored
@@ -26,6 +27,21 @@ import sys
 CLIP_REASONS = {
     "FLOOR_TRAIL_STOP", "FLOOR_TRAIL_CLIP", "BE_TRAIL_CLIP", "STALL_CLIP",
     "REVERSAL_CLIP", "REVERSAL_CUT", "PREBE_CUT", "PREBE_STOP",
+}
+
+# CRYPTO-DESK PILOT-SYM GATE (S-2026-07-19, operator hard rule: ZERO SHADOW on the desk).
+# The josgp1 companion SHADOW book clips ALL coins, but LIVE cash is gated to the pilot syms
+# only (project-crypto-live-cutover-4002: Binance pilot; project-crypto-shadow-ledger-isolation:
+# "operator wants zero shadow 2026-07-19"). Every non-pilot row on chimera_inbound.csv is a
+# SHADOW clip (e.g. AAVE-*-BECASC companion clips) — DISPLAY-ONLY, never real cash, and the
+# operator does not want it on the desk. Drop every row whose sym is not a pilot sym here, at
+# the same self-healing relay chokepoint as the negative-row guard, so the desk shows only the
+# live pilot regardless of what the append-only source re-books. Override the pilot set with
+# CRYPTO_DESK_PILOT_SYMS="LTC,ETH,..." (comma-list, sym-column values) if the pilot widens.
+PILOT_SYMS = {
+    s.strip().upper()
+    for s in os.environ.get("CRYPTO_DESK_PILOT_SYMS", "LTC,LTCUSDT").split(",")
+    if s.strip()
 }
 
 
@@ -45,15 +61,22 @@ def main() -> int:
         i_net = cols.index("net_usd")
         i_reason = cols.index("reason")
         i_strat = cols.index("strat")
+        i_sym = cols.index("sym")
     except ValueError:
         return 0  # unknown schema -> pass through untouched (fail-open, never lose data blind)
 
     kept = [hdr]
     dropped = []
+    shadow_dropped = []
     for ln in lines[1:]:
         f = ln.split(",")
-        if len(f) <= max(i_net, i_reason, i_strat):
+        if len(f) <= max(i_net, i_reason, i_strat, i_sym):
             kept.append(ln)
+            continue
+        # PILOT-SYM GATE (S-2026-07-19): non-pilot sym = SHADOW clip -> never on the desk.
+        # LIVE- rows are real Binance cash (live mirror is pilot-sym anyway) — keep unconditionally.
+        if f[i_sym].strip().upper() not in PILOT_SYMS and not f[i_reason].startswith("LIVE-"):
+            shadow_dropped.append((f[i_sym], f[i_strat], f[i_reason]))
             continue
         try:
             net = float(f[i_net])
@@ -74,13 +97,16 @@ def main() -> int:
             continue
         kept.append(ln)
 
-    if dropped:
+    if dropped or shadow_dropped:
         with open(path, "w") as out:
             out.write("\n".join(kept) + "\n")
         for strat, reason, net in dropped:
             kind = "companion clip" if reason in CLIP_REASONS else "trade"
             print(f"[DESK-TRADE-GUARD] DROPPED negative crypto {kind}: {strat} {reason} "
                   f"net=${net:.2f} (operator rule: no negative crypto trades on the desk)")
+        for sym, strat, reason in shadow_dropped:
+            print(f"[DESK-TRADE-GUARD] DROPPED SHADOW crypto row (non-pilot sym {sym}): "
+                  f"{strat} {reason} (operator rule: zero shadow on the desk; pilot={sorted(PILOT_SYMS)})")
     return 0
 
 

@@ -110,6 +110,12 @@ if [ ! -s "$TMP" ] || ! grep -q '"legs"' "$TMP"; then
   echo "[$TS] pulled file missing/invalid — not pushing"; exit 0
 fi
 
+# 2b. COMPANION-STATE PILOT-SYM GATE (S-2026-07-19, operator rule: ZERO SHADOW on the desk).
+#     Drop every non-pilot-sym leg (shadow book clips all coins; only pilot syms are live).
+#     Self-healing at the same relay chokepoint as HOP1's negative-row/pilot-sym guard.
+CSGUARD="$(dirname "$0")/filter_companion_state.py"
+[ -f "$CSGUARD" ] && python3 "$CSGUARD" "$TMP"
+
 # 3. push to the VPS
 if scp -q "$TMP" "$DST" 2>/dev/null; then
   echo "[$TS] pushed $(wc -c < "$TMP") bytes -> VPS"
