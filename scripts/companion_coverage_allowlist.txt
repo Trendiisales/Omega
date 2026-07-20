@@ -26,11 +26,9 @@
 # --- MAIN-DEFAULTS-COVER, CERTIFICATION OWED (grandfathered S-2026-07-17t;
 #     each was already live under the main book's uncertified defaults when
 #     the gate was introduced; burn down opportunistically) ---
-AudusdSydneyOpen    MAIN-DEFAULTS-COVER, certification owed (session open engine, fixed TP/SL own manage)
-EurusdLondonOpen    MAIN-DEFAULTS-COVER, certification owed (session open engine, fixed TP/SL own manage)
+# AudusdSydneyOpen / EurusdLondonOpen / NzdusdAsianOpen / UsdjpyAsianOpen: REMOVED
+#   S-2026-07-21c Phase 3 purge -- dead FX-open engines deleted (never dispatched).
 GbpusdLondonOpen    MAIN-DEFAULTS-COVER, certification owed (session open engine, fixed TP/SL own manage)
-NzdusdAsianOpen     MAIN-DEFAULTS-COVER, certification owed (session open engine, fixed TP/SL own manage)
-UsdjpyAsianOpen     MAIN-DEFAULTS-COVER, certification owed (session open engine, fixed TP/SL own manage)
 EMACrossGold        MAIN-DEFAULTS-COVER, certification owed
 GoldOrbRetrace      MAIN-DEFAULTS-COVER, certification owed (intraday ORB, fixed TP own manage)
 GoldOrbRetraceLDN   MAIN-DEFAULTS-COVER, certification owed (intraday ORB, fixed TP own manage)

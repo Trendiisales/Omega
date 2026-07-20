@@ -206,14 +206,12 @@ inline void register_position_persistence() {
             return false;
         });
 
-    // ---- LivePos archetype: scalpers + FX session-open engines (7) ----
+    // ---- LivePos archetype: scalpers + FX session-open engines (3) ----
+    // S-2026-07-21c Phase 3 purge: Eurusd/Usdjpy/Audusd/Nzdusd Open wire_livepos
+    //   REMOVED (dead FX-open engines, never dispatched); GbpusdLondonOpen kept.
     wire_livepos(g_gold_midscalper,     "MidScalperGold",   "XAUUSD");
     wire_livepos(g_gold_microscalper,   "MicroScalperGold", "XAUUSD");
-    wire_livepos(g_eurusd_london_open,  "EurusdLondonOpen", "EURUSD");
-    wire_livepos(g_usdjpy_asian_open,   "UsdjpyAsianOpen",  "USDJPY");
     wire_livepos(g_gbpusd_london_open,  "GbpusdLondonOpen", "GBPUSD");
-    wire_livepos(g_audusd_sydney_open,  "AudusdSydneyOpen", "AUDUSD");
-    wire_livepos(g_nzdusd_asian_open,   "NzdusdAsianOpen",  "NZDUSD");
 
     // ---- CrossPosition / IdxOpenPosition archetype (14) ----
     // Globals + symbols + tag strings mirror the GUI register_source() labels in
