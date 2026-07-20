@@ -55,9 +55,25 @@ for k,s in enumerate(uni):
     time.sleep(11)
 app.disconnect()
 PYEOF
-if [ "$(ls $TMP/*.csv 2>/dev/null | wc -l)" -ge 20 ]; then
+NCSV=$(ls $TMP/*.csv 2>/dev/null | wc -l | tr -d ' ')
+# DATA-ONLY yfinance fallback: IBKR-4002 goes handshake-dead (port open, API not
+# accepting sessions -> "no handshake" -> 0 CSVs) while the basket froze silently.
+# Operator rule feedback-no-bulk-pulls-production-gateway: never bulk-pull the live
+# exec gateway; the ~23-name bigcap set via yfinance is a tiny reliable data source.
+if [ "$NCSV" -lt 20 ]; then
+  echo "[$TS] qlib_refresh: IBKR thin ($NCSV) — DATA-ONLY yfinance fallback"
+  $PY "$TOOLS/refresh_qlib_yf.py" --universe "$QD/instruments/bigcap.txt" --out "$TMP" || true
+  NCSV=$(ls $TMP/*.csv 2>/dev/null | wc -l | tr -d ' ')
+fi
+if [ "$NCSV" -ge 20 ]; then
+  BEFORE=$(tail -1 "$QD/calendars/day.txt" 2>/dev/null)
   $PY "$TOOLS/omega_to_qlib.py" --input "$TMP" --out "$QD" --universe BIGCAP && echo "[$TS] qlib re-dumped through $(tail -1 $QD/calendars/day.txt)"
+  AFTER=$(tail -1 "$QD/calendars/day.txt" 2>/dev/null)
   bash "$TOOLS/refresh_gui.sh" >/dev/null 2>&1 || true
-  bash "$TOOLS/retrain_qlib.sh" || echo "[$TS] qlib_refresh: RETRAIN step failed — model will go stale, check retrain_qlib.log"  # data fresh -> retrain pred.pkl so as_of advances
-else echo "[$TS] qlib_refresh: thin pull ($(ls $TMP/*.csv 2>/dev/null|wc -l)) — kept existing qlib"; fi
+  if [ "$AFTER" != "$BEFORE" ]; then
+    bash "$TOOLS/retrain_qlib.sh" || echo "[$TS] qlib_refresh: RETRAIN step failed — model will go stale, check retrain_qlib.log"  # new session -> retrain pred.pkl so as_of advances
+  else
+    echo "[$TS] qlib_refresh: no new session (still $AFTER, US day not closed) — skip retrain"
+  fi
+else echo "[$TS] qlib_refresh: STILL thin ($NCSV) after yfinance fallback — kept existing qlib (feeds_selftest will alarm)"; fi
 rm -rf "$TMP"

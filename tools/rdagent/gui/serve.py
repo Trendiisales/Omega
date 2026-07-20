@@ -85,6 +85,18 @@ def latest_closes() -> dict[str, float]:
 class Handler(SimpleHTTPRequestHandler):
     data_path = str(Path.home() / "Omega" / "data" / "rdagent" / "latest.json")
 
+    def end_headers(self):  # noqa: N802
+        # Never let the browser cache the panel shell/JS. A committed banner-logic
+        # fix MUST reach an already-open tab on reload, not sit behind a stale
+        # cache. 2026-07-20: the operator's tab held the pre-10:18 calendar-day
+        # banner JS and flagged Friday's (current) basket as "3 trading-days
+        # behind" over a normal weekend — a false STALE. latest.json was already
+        # no-store; the HTML shell was not. Add no-store idempotently for all GETs.
+        if not any(h.lower().startswith(b"cache-control:")
+                   for h in getattr(self, "_headers_buffer", [])):
+            self.send_header("Cache-Control", "no-store")
+        super().end_headers()
+
     def do_GET(self):  # noqa: N802
         if self.path.split("?")[0] in ("/latest.json", "/data/latest.json"):
             p = Path(self.data_path)
