@@ -1183,8 +1183,17 @@ static void init_engines(const std::string& cfg_path)
         //   cell_enable_mask = bits 0,3 = 0x09 (Donchian PF=1.15 + Keltner PF=1.03)
         //   S-NEXT 2026-05-17: RangeExpand (bit 5) removed — PF=0.82 on fresh tape,
         //   negative all 3 WF folds. Was 0x29, now 0x09.
-        g_xau_tf_4h.shadow_mode = false;  // S-2026-07-01: LIVE on IBKR 4002 paper (FIX-cutover shadow reason moot on IBKR)
-        g_xau_tf_4h.enabled     = true;
+        // S-2026-07-21: DISARM from live real-money (IBKR 4001, paper_only=0). Faithful
+        // re-cert 2026-07-20 FAILED: full-span +$3902 PF1.29 is ALL 2024-26 bull beta —
+        // 2022-23 bear is a net loser (−$19 base / −$195 at 2x-cost) and the engine is
+        // BIDIRECTIONAL, NOT bull-gated; WF early (H1) half negative (−$302 base / −$497 2x).
+        // Same bear-neg / not-bull-gated / one-regime profile that culled the sibling gold
+        // engines this session, and matches this block's own bear WF-fail comments. Harness:
+        // backtest/XauTrendFollow4h2hBacktest.cpp (LC=1.5 applied), data XAUUSD_2022_2026 +
+        // _2022_2023 bear, both CERTIFIED CLEAN. Re-cert path = long-only bull-gate + rerun;
+        // then re-list in tools/live_routing_selftest.py CERTIFIED_LIVE. enabled=false = no fire.
+        g_xau_tf_4h.shadow_mode = false;
+        g_xau_tf_4h.enabled     = false;  // S-2026-07-21 DISARM (faithful-FAIL, was live real-money)
         // S-2026-06-17: in-flight cold-loss protection (was 0.0/OFF by default).
         // Faithful per-TF backtest (backtest/losscut_xau_faithful.py, 2yr XAU
         // M30->H4): LC=1.5% holds net (+20) while cutting maxDD -38% (-449->-278)
@@ -1296,8 +1305,17 @@ static void init_engines(const std::string& cfg_path)
         // the new cells are auditable against the S115 backtest CSV from
         // day one.  Service-level mode=SHADOW (config.ini) is the outer
         // safety net while we validate fill rates.
-        g_xau_tf_1h.shadow_mode = false;  // S-2026-07-01: LIVE on IBKR 4002 paper (FIX-cutover shadow reason moot on IBKR)
-        g_xau_tf_1h.enabled     = true;
+        // S-2026-07-21: DISARM from live real-money (IBKR 4001, paper_only=0). Faithful
+        // re-cert 2026-07-20 FAILED cross-regime: BULL 2024-26 passes (both halves + 2x),
+        // but 2022 BEAR is decisively net-negative (−$1,412 base / −$1,919 at 2x, PF0.74,
+        // BOTH WF halves neg) and the engine is NOT bull-gated; live-shadow bear record
+        // (PF0.66-0.87, engine_init L1314-1325 note) confirms the D1-EMA200 macro gate does
+        // NOT rescue bear. Genuine bull-only edge but bleeds through risk-off on real money.
+        // Harness: scratchpad xtf1h_cert.cpp over XauTrendFollow1hEngine.hpp; data CERTIFIED
+        // CLEAN. Re-cert path = hard bull-regime gate certified on the live ledger, then
+        // re-list in tools/live_routing_selftest.py CERTIFIED_LIVE. enabled=false = no fire.
+        g_xau_tf_1h.shadow_mode = false;
+        g_xau_tf_1h.enabled     = false;  // S-2026-07-21 DISARM (faithful-FAIL bear, was live real-money)
         // S-2026-06-17 cold-loss protection. Faithful M30->H1 backtest: LC=0.5%
         // -> net +337, maxDD -44% (-602->-339), worst -191->-27. Tighter than H4
         // (faster TF). See backtest/losscut_xau_faithful.py.
@@ -1516,7 +1534,11 @@ static void init_engines(const std::string& cfg_path)
         // S-2026-06-19: TrendRider bank-and-reload companions on the 4h + D1 hosts.
         // SHADOW. Banks +N*ATR per host cell + reloads while the cell stays open
         // (validated D1+4h both-halves both regimes; 2h marginal/1h hurts -> not wired).
-        g_rider_4h.enabled = true; g_rider_4h.shadow_mode = false;  // S-2026-07-01: LIVE on IBKR 4002 paper (operator all-engines cutover)
+        // S-2026-07-21: DISARM from live real-money (IBKR 4001, paper_only=0). Faithful
+        // retest 2026-07-20 FAILED: PF1.26, 2022 −$640 PF0.75, not bull-gated. enabled=false
+        // stops dispatch/fire/GUI. Re-enable only after a bull-gate + bear-inclusive PASS
+        // (then re-list in tools/live_routing_selftest.py CERTIFIED_LIVE).
+        g_rider_4h.enabled = false; g_rider_4h.shadow_mode = false;  // S-2026-07-21 DISARM (faithful-FAIL, was live real-money)
         g_rider_4h.N = 2.5; g_rider_4h.lot = 0.01; g_rider_4h.tag = "XauTrendRider4h";
         g_rider_4h.init(omega::kXauTfNumCells);
         // S-2026-07-12 DISABLED (operator cull order). GOLD_PHASE1B: RiderD1 standalone
@@ -3611,8 +3633,14 @@ static void init_engines(const std::string& cfg_path)
         // HARD shadow: novel edge, fat-tail dependent, bull-only sample. Forward-
         // log only; do NOT flip to live until the shadow ledger + a bear-inclusive
         // dataset confirm. Reuses the existing bundled H1 + M30 warmup CSVs.
-        g_gold_volbrk_m30.shadow_mode = false;   // S-2026-07-01: LIVE on IBKR 4002 paper (operator all-engines cutover overrides HARD-shadow pin)
-        g_gold_volbrk_m30.enabled     = true;
+        // S-2026-07-21: DISARM from live real-money (IBKR 4001, paper_only=0). Faithful
+        // retest 2026-07-20 FAILED: bear-negative, not bull-gated. The S-07-01 all-engines
+        // cutover flipped this live against THIS block's own "do NOT flip to live until a
+        // bear-inclusive dataset confirms" guidance. enabled=false stops dispatch/fire/GUI.
+        // Re-enable only after a bull-gate + bear-inclusive faithful PASS (then re-list in
+        // tools/live_routing_selftest.py CERTIFIED_LIVE). shadow_mode left as-is (moot: off).
+        g_gold_volbrk_m30.shadow_mode = false;
+        g_gold_volbrk_m30.enabled     = false;  // S-2026-07-21 DISARM (faithful-FAIL, was live real-money)
         g_gold_volbrk_m30.lot         = 0.01;
         g_gold_volbrk_m30.max_spread  = 0.80;   // gold $ (~80 pts)
         g_gold_volbrk_m30.init();
@@ -4167,8 +4195,13 @@ static void init_engines(const std::string& cfg_path)
         // (gap-through-SL) regimes; SLOPE12 removes counter-trend 3-bar
         // fires. Both orthogonal, ANDed when stacked. Shadow A/B 60+ days
         // before flipping enabled=true.
-        g_xau_threebar_30m.shadow_mode        = false;  // S-2026-07-01: LIVE on IBKR 4002 paper (operator all-engines cutover)
-        g_xau_threebar_30m.enabled            = true;   // RESURRECTED-SHADOW 2026-06-18 (cull-audit): the 2026-06-15 "-$371 6mo shadow-book" cull was POLLUTED basis (same batch as wrongly-killed GoldOrb). Faithful re-check (backtest/threebar30m_xau_S35P3_backtest.cpp, production engine M30, 2024-26): PF1.29 n365, ALL YEARS POSITIVE — NOT a net loser. CAVEAT: bull-only window (no 2022 bear) + 2025-concentrated + long-only -> SHADOW-CANDIDATE, bear-test owed before any live size. [STALE-NOTE FIXED S-2026-07-17s: "shadow_mode=true" here was superseded by the S-2026-07-01 all-engines IBKR-4002-paper cutover — shadow_mode=false on the line above is INTENTIONAL; boot shadow=0 is correct, not drift.] See AUDITED_CONFIGS.tsv + CULL_LEDGER.tsv.
+        // S-2026-07-21: DISARM from live real-money (IBKR 4001, paper_only=0). Faithful
+        // retest 2026-07-20 FAILED: PF1.29 bear-negative, live cold-cut unverified, bull-only
+        // sample — matching THIS block's own "bear-test owed before any live size" caveat.
+        // enabled=false stops dispatch/fire/GUI. Re-enable only after bull-gate + bear PASS
+        // (then re-list in tools/live_routing_selftest.py CERTIFIED_LIVE).
+        g_xau_threebar_30m.shadow_mode        = false;
+        g_xau_threebar_30m.enabled            = false;  // S-2026-07-21 DISARM (faithful-FAIL, was live real-money). RESURRECTED-SHADOW 2026-06-18 (cull-audit): the 2026-06-15 "-$371 6mo shadow-book" cull was POLLUTED basis (same batch as wrongly-killed GoldOrb). Faithful re-check (backtest/threebar30m_xau_S35P3_backtest.cpp, production engine M30, 2024-26): PF1.29 n365, ALL YEARS POSITIVE — NOT a net loser. CAVEAT: bull-only window (no 2022 bear) + 2025-concentrated + long-only -> SHADOW-CANDIDATE, bear-test owed before any live size. [STALE-NOTE FIXED S-2026-07-17s: "shadow_mode=true" here was superseded by the S-2026-07-01 all-engines IBKR-4002-paper cutover — shadow_mode=false on the line above is INTENTIONAL; boot shadow=0 is correct, not drift.] See AUDITED_CONFIGS.tsv + CULL_LEDGER.tsv.
         g_xau_threebar_30m.long_only          = true;   // S96: short side no edge
         g_xau_threebar_30m.lot                = 0.01;
         g_xau_threebar_30m.max_spread         = 1.0;
