@@ -310,6 +310,21 @@ bash "$(dirname "$0")/prebe_loss_audit.sh" || {
   exit 1
 }
 
+# COMMENTED-OPTIN GATE (G2, added 2026-07-21c). The NAS100 arm0 profit-lock was
+# researched (+34.4%), coded, left COMMENTED OUT, never enabled -- it bled giveback
+# for weeks while a session reported it "done". A commented-out CERTIFIED IMPROVEMENT
+# is invisible to the build; no gate objected. This audit fails the canary on any
+# commented-out member-config assignment in engine_init.hpp that is not in
+# scripts/commented_optin_allowlist.txt with a documented "dead because" reason -- so
+# the next arm0 must be consciously wired, deleted, or allowlisted. Regression-tested:
+# catches the exact `// if (ic.tag=="NAS100") c.wide_arm_pct = 0.0;` form.
+echo ""
+echo "[mac-canary-engines] commented-optin gate (no certified fix left commented off)..."
+bash "$(dirname "$0")/commented_optin_audit.sh" || {
+  echo "[mac-canary-engines] FAIL: an un-allowlisted commented config assignment -- see commented_optin_audit.sh output above."
+  exit 1
+}
+
 # COMPANION GIVEBACK-COVERAGE GATE (added S-2026-07-17t, IndexBearShort $400
 # giveback: the leg's ONLY profit lock was the shared main stall book, whose
 # uncertified gold-era gate_pct=1.5 arm sat 0.03% above the leg's 1.47% peak, so

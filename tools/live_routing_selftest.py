@@ -50,6 +50,24 @@ SCRAPPED = {
 def sh(cmd):
     return subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=60)
 
+def broker_fill_stats(host):
+    """UN-FAKEABLE money check: count rows in the live trade ledger that actually
+    hit the broker (broker_entry_filled=1 OR broker_close_filled=1) vs total rows.
+    A config flag (paper_only=0) is a CLAIM; a broker fill is PROOF. If exec says
+    'live' but this returns 0 fills, the system is EFFECTIVELY SHADOW no matter what
+    the flag says. This is the check whose absence let a shadow book be reported as
+    'live real money' (2026-07-21). Returns (total_rows, filled_rows) or (None,None)."""
+    ps = (r"$tot=0; $fill=0; "
+          r"Get-ChildItem C:\Omega\logs\trades\omega_trade_closes*.csv -ErrorAction SilentlyContinue "
+          r"| Where-Object { $_.Name -notmatch 'bak|archive|pre_|tmp|removed' } | ForEach-Object { "
+          r"  Import-Csv $_.FullName | ForEach-Object { $tot++; "
+          r"    if ($_.broker_entry_filled -eq '1' -or $_.broker_close_filled -eq '1') { $fill++ } } }; "
+          r"Write-Output ('LEDGER tot=' + $tot + ' brokerfilled=' + $fill)")
+    b64 = base64.b64encode(ps.encode("utf-16-le")).decode()
+    r = sh(f'ssh {host} powershell -NoProfile -EncodedCommand {b64}')
+    m = re.search(r'tot=(\d+)\s+brokerfilled=(\d+)', r.stdout)
+    return (int(m.group(1)), int(m.group(2))) if m else (None, None)
+
 def main():
     ps = (r"cd C:\Omega; git rev-parse --short HEAD; "
           r"Select-String -Path logs\omega_service_stdout.log,logs\omega_2026-07-20.log "
@@ -75,9 +93,26 @@ def main():
         port = int(m.group(1)) if (m := re.search(r'port=(\d+)', exec_ln)) \
                else (int(m.group(1)) if (m := re.search(r':(\d{4})\b', exec_ln)) else -1)
         po   = int(m.group(1)) if (m := re.search(r'paper_only=(\d+)', exec_ln)) else -1
-        ok = (port == EXPECT_PORT and po == EXPECT_PAPER_ONLY)
-        print(f"EXEC: port={port} paper_only={po}  ->  {'LIVE REAL-MONEY' if ok else 'NOT the expected live account'}  [{'GREEN' if ok else 'RED'}]")
-        if not ok: red.append(f"exec port={port} paper_only={po} (want {EXPECT_PORT}/0)")
+        cfg_live = (port == EXPECT_PORT and po == EXPECT_PAPER_ONLY)
+        if not cfg_live:
+            print(f"EXEC: port={port} paper_only={po}  ->  NOT the expected live account  [RED]")
+            red.append(f"exec port={port} paper_only={po} (want {EXPECT_PORT}/0)")
+        else:
+            # config says live -- now PROVE it with actual broker fills, don't trust the flag.
+            tot, fill = broker_fill_stats(HOST)
+            if tot is None:
+                print(f"EXEC: port={port} paper_only={po} = EXEC-CONFIGURED-LIVE, but broker-fill "
+                      f"ledger UNREADABLE -> cannot prove real trading  [RED]")
+                red.append("broker-fill ledger unreadable -- cannot prove live")
+            elif fill == 0:
+                print(f"EXEC: port={port} paper_only={po} = EXEC-CONFIGURED-LIVE, but "
+                      f"{fill}/{tot} ledger rows hit the broker")
+                print(f"      ==> 0 BROKER FILLS: this book is EFFECTIVELY SHADOW, NOT real-money "
+                      f"trading. 'paper_only=0' is a CLAIM, not proof.  [RED]")
+                red.append(f"exec configured-live but 0/{tot} broker fills -- SHADOW not live")
+            else:
+                print(f"EXEC: port={port} paper_only={po}, {fill}/{tot} ledger rows broker-filled "
+                      f"->  LIVE REAL-MONEY TRADING CONFIRMED  [GREEN]")
 
     # (b) per-engine routing
     print("\n--- per-engine routing (shadow=0 => routes REAL 4001 orders) ---")

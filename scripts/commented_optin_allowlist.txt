@@ -1,0 +1,25 @@
+# commented_optin_allowlist.txt -- G2 guardrail allowlist (scripts/commented_optin_audit.sh)
+#
+# Each NON-# line below is a KNOWN, DOCUMENTED-DEAD commented-out config assignment in
+# include/engine_init.hpp. The audit trims leading/trailing whitespace and requires every
+# commented member-assignment in engine_init.hpp to appear here. A NEW one (the next arm0:
+# a certified improvement left commented off) is UNKNOWN -> canary FAIL until consciously
+# wired, deleted, or allowlisted with a reason.
+#
+# REASONS (why each is dead, not a crime):
+#  - g_nbm_gold_london.shadow_mode : intentionally NOT compiled (documented in-line L377).
+#  - c.legs / c.arm_pct / c.lc_pct / c.notional (L1725-1750, L1900-1902) : RETIRED mimic-ladder
+#    cells (GoldTrendMimicLadder shadow books), kept as commented reference, gm.add() disabled.
+#  - tr.engine="GbpusdLondonOpen" / "XauusdFvg" (L7092/L7115) : telemetry-doc example strings in
+#    a comment, not live config.
+#
+# --- frozen signatures (regenerated 2026-07-21c; re-run the audit if engine_init edits these) ---
+//     c.arm_pct=0.15; c.lc_pct=1.0; c.cap_bars=24; c.rt_cost_bp=15.0; c.be_entry_pct=0.15; c.no_prebe_loss=true; c.pend_bars=12; gm.add(std::move(c)); }
+//     c.arm_pct=0.25; c.lc_pct=1.0; c.cap_bars=24; c.rt_cost_bp=15.0; c.be_entry_pct=0.15; c.no_prebe_loss=true; c.pend_bars=6; gm.add(std::move(c)); }
+//     c.arm_pct=1.00; c.lc_pct=0.5; c.cap_bars=96; c.rt_cost_bp=5.0; c.be_entry_pct=0.10; c.pend_bars=12;
+//     c.legs={{"T",0.08},{"W",0.20}};
+//     c.legs={{"T",0.08},{"W",0.30}};
+//     c.notional=40000.0; c.lot=1.0; gm.add(std::move(c)); }  // LOT-GATE-OK shadow book; lot inert until live flip
+//   tr.engine="GbpusdLondonOpen".
+//   tr.engine="XauusdFvg" (set in XauusdFvgEngine::_close).
+// g_nbm_gold_london.shadow_mode = true;  // intentionally NOT compiled --
