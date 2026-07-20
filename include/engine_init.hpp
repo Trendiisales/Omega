@@ -3957,11 +3957,22 @@ static void init_engines(const std::string& cfg_path)
         // 2026-06-23 stale-seed fix (mirrors gold_regime): restore live-accurate D1-trend state
         // across restarts first; only warm-seed from the (stale-prone) H4 CSV on a true cold start.
         // start_recording() so it self-captures live H4 going forward.
+        // S-2026-07-20 boot re-seed (operator-ordered): a restart landing just after an
+        // H4 close eats that close's dump append -> gold_d1_trend_h4.csv mtime stale up
+        // to the next H4 close (weekend: 52h) -> feeds_selftest RED + 30-min staleness
+        // nag with nothing actually broken. regen_live_dump_from_csv() rewrites the dump
+        // at boot as the ts-deduped union of its rows + the nightly-refreshed warmup CSV,
+        // so mtime+content are boot-fresh (gap bounded by OmegaSeedRefresh 23:30Z).
+        // gold_regime()'s H1 dump above deliberately NOT given the same treatment: its
+        // dump is its own seed source with a "pure live history" invariant (RegimeState
+        // sink contract), the hole self-heals within 1h (H1 cadence vs 120min cap), and
+        // there is no fresher external source to merge.
         {
             omega::gold_d1_trend().set_live_dump(log_root_dir() + "/gold_d1_trend_h4.csv");
             if (!omega::gold_d1_trend().load_state(log_root_dir() + "/gold_d1_trend_state.dat"))
                 omega::gold_d1_trend().seed_from_h4_csv("phase1/signal_discovery/warmup_XAUUSD_H4.csv");
             omega::gold_d1_trend().start_recording();
+            omega::gold_d1_trend().regen_live_dump_from_csv("phase1/signal_discovery/warmup_XAUUSD_H4.csv");
         }
         fflush(stdout);
 

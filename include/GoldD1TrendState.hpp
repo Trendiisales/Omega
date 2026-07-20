@@ -39,6 +39,7 @@
 #include <ctime>
 #include <deque>
 #include <fstream>
+#include <map>
 #include <string>
 #include <vector>
 #include <algorithm>
@@ -226,6 +227,75 @@ struct GoldD1TrendState {
         if (dump_path_.empty() || !recording_ || c <= 0.0) return;
         std::ofstream f(dump_path_, std::ios::app);
         if (f.is_open()) f << ts_ms << ',' << c << ',' << h << ',' << l << ',' << c << "\n";  // o,h,l,c (o=c placeholder)
+    }
+
+    // ---- boot re-seed of the live dump (S-2026-07-20, operator-ordered) ----
+    //   A deploy-restart that lands just after an H4 close eats that close's append ->
+    //   the dump's mtime+content go stale for up to the next H4 close (weekend: 52h) ->
+    //   feeds_selftest RED + staleness nag while nothing is actually broken. Fix: at boot,
+    //   rewrite the dump as the ts-deduped union of its existing rows and the nightly-
+    //   refreshed warmup CSV (OmegaSeedRefresh 23:30Z), so mtime AND content are boot-fresh;
+    //   any remaining content gap is bounded by warmup freshness, and a genuinely-stalled
+    //   H4 writer still trips the monitor because between boots only live appends move mtime.
+    //   Consumers unaffected: XauTF4h append_fresh_h4 and StallCompanion gold_4h_bull_ both
+    //   want ordered ts,o,h,l,c closes and already tolerate warmup/dump overlap. Warmup ts
+    //   is bar_START_ms -> normalised +4h to the dump's close-ts convention so the same bar
+    //   dedupes against its live-appended row (live/dump row wins on collision). NEVER
+    //   truncates to empty: writes only when the merge produced rows.
+    size_t regen_live_dump_from_csv(const std::string& warmup_path) const noexcept {
+        if (dump_path_.empty()) return 0;
+        std::map<int64_t, std::string> rows;   // close_ts_ms -> "o,h,l,c"
+        auto parse = [](const std::string& line, long long& ts, double& o, double& h,
+                        double& l, double& c) -> bool {
+            if (std::sscanf(line.c_str(), "%lld,%lf,%lf,%lf,%lf", &ts, &o, &h, &l, &c) != 5)
+                return false;
+            if (ts <= 0 || c <= 0.0) return false;
+            if (ts < 100000000000LL) ts *= 1000LL;   // seconds-vs-ms guard (seed_refresh)
+            return true;
+        };
+        size_t n_warm = 0, n_live = 0;
+        {
+            std::ifstream f(omega::resolve_seed_path(warmup_path));
+            std::string line;
+            while (f.is_open() && std::getline(f, line)) {
+                long long ts; double o, h, l, c;
+                if (!parse(line, ts, o, h, l, c)) continue;   // skips header
+                char buf[128];
+                std::snprintf(buf, sizeof(buf), "%.5f,%.5f,%.5f,%.5f", o, h, l, c);
+                rows[ts + 14400000LL] = buf;                  // bar_start -> close ts
+                ++n_warm;
+            }
+        }
+        {
+            std::ifstream f(dump_path_);
+            std::string line;
+            while (f.is_open() && std::getline(f, line)) {
+                long long ts; double o, h, l, c;
+                if (!parse(line, ts, o, h, l, c)) continue;
+                char buf[128];
+                std::snprintf(buf, sizeof(buf), "%.5f,%.5f,%.5f,%.5f", o, h, l, c);
+                rows[ts] = buf;                               // live row wins on collision
+                ++n_live;
+            }
+        }
+        if (rows.empty()) {
+            printf("[GoldD1Trend][DUMP-REGEN] no rows from warmup or dump -- dump left untouched\n");
+            fflush(stdout);
+            return 0;
+        }
+        std::ofstream out(dump_path_, std::ios::trunc);
+        if (!out.is_open()) {
+            printf("[GoldD1Trend][DUMP-REGEN] cannot rewrite '%s' -- dump left as-is\n", dump_path_.c_str());
+            fflush(stdout);
+            return 0;
+        }
+        for (const auto& kv : rows) out << kv.first << ',' << kv.second << "\n";
+        const int64_t last_ts_s = rows.rbegin()->first / 1000;
+        const int64_t age_min = ((int64_t)std::time(nullptr) - last_ts_s) / 60;
+        printf("[GoldD1Trend][DUMP-REGEN] warmup=%zu live=%zu -> %zu merged rows, last bar age=%lldmin (dump boot-fresh)\n",
+               n_warm, n_live, rows.size(), (long long)age_min);
+        fflush(stdout);
+        return rows.size();
     }
 };
 
