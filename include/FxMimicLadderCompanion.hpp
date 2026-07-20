@@ -125,24 +125,17 @@ public:
         // pending leg if BE is not made within pend_bars. 0 = legacy enter-at-trigger.
         double be_entry_pct  = 0.0;       // >0 = wait for +be% before opening
         int    pend_bars     = 4;         // cancel a pending leg if BE not made within this many bars
-        // BE-FLOOR-ON-OPEN (operator hard rule feedback-no-prebe-loss-ever, S-2026-07-17). When
-        // true, EVERY booked clip is floored at break-even so this SHADOW companion can NEVER
-        // realize net<0 before cost is covered — the operator's GBPUSD "not allowed to be
-        // negative" fix. BE = the price at which the clip's net pct (rt_cost_bp AND the leg's
-        // Layer-3 weekend-carry haircut both folded in) == 0; a long clip's fill is floored UP
-        // to BE, a short clip's DOWN (std::max(entry,level) shape borrowed from the retired
-        // BeFloor family, WITHOUT touching those files). This is a single-chokepoint floor in
-        // book_clip_(), so it covers ALL three exits at once — the pre-arm LOSS_CUT (a straight
-        // reversal now books ~BE=0 instead of −5·thr), the post-arm TRAIL_STOP, and the
-        // WINDOW_EXIT flush. Crucially the arm/trail/LC/flush STATE MACHINE is UNCHANGED: same
-        // close triggers, same timing, same clip COUNT — only the booked amount is clamped, so
-        // booked_pct == max(unfloored_pct, 0) per clip. That STRICTLY dominates the unfloored
-        // book (net, both WF halves and worst-clip can only improve), so the validated edge is
-        // preserved while nNeg==0 is guaranteed by construction. It does NOT hard-stop at BE
-        // pre-arm (which would churn/kill winners — the documented crypto-sibling failure mode);
-        // legs still ride to their real triggers, only the P&L is floored. Pair with BE-ENTRY
-        // (be_entry_pct >= true RT) so a leg opens only after price has cleared cost and can then
-        // never book a loss. Default OFF = byte-identical baseline (zero blast radius).
+        // BE-FLOOR-ON-OPEN family flag (feedback-no-prebe-loss-ever S-17, HONESTY-CORRECTED
+        // S-2026-07-20). ⚠ The original semantics ("EVERY booked clip floored at break-even,
+        // nNeg==0 by construction") were the crypto S-17f accounting tautology: book_clip_
+        // clamped fill/pct up to BE while a real market close below BE realizes the loss — the
+        // shadow book and the ledger TradeRecord could not show a tail that the broker paid.
+        // S-2026-07-20 HONEST LEDGER (operator order): the booking clamp is REMOVED; book_clip_
+        // books the price a real order fills at (worse-of stop level vs pierce extreme). The
+        // DESIGN pillars stay: BE-ENTRY (be_entry_pct — leg opens only after price clears cost)
+        // + unchanged triggers/timing/clip count. nNeg>0 now means a real sub-BE exit happened
+        // (gap-through / LOSS_CUT) — the floor REDUCES the tail, it does not erase it. This flag
+        // now only marks the confirmed-entry floored FAMILY (catchup_replay_ eligibility).
         bool   be_floor_on_open = false;
         // ── S-2026-07-18 BOUNDED CATCH-UP (Omega port of the certified crypto
         //   MimicLadderCompanion::seed_det_ring_hist mechanism; Omega cert
@@ -500,28 +493,22 @@ private:
         return cfg_.pair + SUF[(ti >= 0 && ti < NT_) ? ti : 0];
     }
 
-    // Book one clip at `fill` (stop level for trail/LC — resting-stop convention, in-calibration
-    // with the research; observed close for window flush). pct is net of rt_cost_bp.
+    // Book one clip at `fill` = the price a REAL order fills at (worse-of stop level vs the
+    // intrabar pierce extreme for trail/LC; observed close for window flush). pct is net of
+    // rt_cost_bp. ── S-2026-07-20 HONEST LEDGER (operator order; the crypto S-17f/20z class,
+    // Omega edition): the old block here CLAMPED the booked fill UP to break-even
+    // (`fill=max(fill,be)` + `pct=max(pct,0)`, "nNeg==0 by construction") — an accounting
+    // tautology: a real market close below BE realizes the loss while the shadow/forward book
+    // and the ledger TradeRecord showed +0. The DESIGN (BE-ENTRY confirm, triggers, timing,
+    // clip count) is untouched; only the BOOKING is now the real fill. nNeg>0 in this book now
+    // means a real sub-BE exit happened — never restate nNeg==0 as an execution guarantee.
     void book_clip_(const Leg& L, double fill, int64_t ts_sec, bool fwd, const char* reason) noexcept {
-        // BE-FLOOR-ON-OPEN (feedback-no-prebe-loss-ever): clamp the exit fill to break-even so
-        // this clip can never realize net<0. BE = the price where the FULL net pct below (rt
-        // cost + the (1-f) Layer-3 weekend haircut) == 0: long floored UP to BE, short DOWN.
-        // Every exit (LOSS_CUT / TRAIL_STOP / WINDOW_EXIT) routes through here, so one clamp
-        // floors them all; triggers + timing + clip count are untouched -> booked pct becomes
-        // max(unfloored, 0), which strictly dominates the unfloored book (edge preserved,
-        // nNeg==0 by construction). Clamping the FILL (not just the pct) keeps the recorded
-        // exit price, ledger fill and Closed record consistent with the floored pct.
-        if (cfg_.be_floor_on_open && L.entry > 0.0) {
-            const double be = L.entry * (1.0 + d_ * (cfg_.rt_cost_bp / 1.0e4
-                              + (1.0 - cfg_.weekend_carry_frac) * L.wknd_gap_adj / 100.0));
-            fill = (d_ > 0.0) ? std::max(fill, be) : std::min(fill, be);
-        }
         double pct = (L.entry > 0)
                      ? d_ * (fill / L.entry - 1.0) * 100.0 - cfg_.rt_cost_bp / 100.0 : 0.0;
         // LAYER 3 (weekend carry-fraction): forgo the (1-f) share of the weekend gap move(s)
         // this leg carried -> size-scaled carry across the closed gap (apply_layer3() math).
         if (cfg_.weekend_carry_frac < 1.0) pct -= (1.0 - cfg_.weekend_carry_frac) * L.wknd_gap_adj;
-        if (cfg_.be_floor_on_open && pct < 0.0) pct = 0.0;   // fp-safety: never a hair negative
+        if (pct < 0.0 && pct > -1e-9) pct = 0.0;             // IEEE-754 dust only, never a real tail
         if (!fwd) return;
         if (!L.token.empty() && close_fn_) close_fn_(cfg_.live_sym, d_ > 0, cfg_.lot, fill, L.token);
         if (ledger_fn_) ledger_fn_(leg_engine_(L.ti), cfg_.live_sym, d_ > 0, L.entry, fill, cfg_.lot, L.entry_ts, ts_sec, reason);
@@ -639,7 +626,9 @@ private:
                     const double px = seq[k];
                     if (!L.armed) {
                         const double cut = L.entry * lc_lvl_mult;   // long: below entry; short: rally above
-                        if (d_ * (px - cut) <= 0) { book_clip_(L, cut, ts_sec, fwd, "LOSS_CUT"); closed = true; break; }
+                        if (d_ * (px - cut) <= 0) {   // HONEST fill: worse-of stop level vs pierce extreme (gap-through books its real tail)
+                            const double f = (d_ > 0) ? std::min(cut, px) : std::max(cut, px);
+                            book_clip_(L, f, ts_sec, fwd, "LOSS_CUT"); closed = true; break; }
                         if (d_ * (px - L.arm_px) >= 0) { L.armed = true; if (d_ * (px - L.peak) > 0) L.peak = px; }
                     } else {
                         if (d_ * (px - L.peak) > 0) L.peak = px;    // favorable extreme (peak/trough)
@@ -650,7 +639,9 @@ private:
                         const double stop = (L.trail_abs > 0.0)
                                             ? (L.peak - d_ * L.trail_abs)
                                             : (L.entry + (1.0 - gbf) * (L.peak - L.entry));   // peak-profit trail (sign-neutral)
-                        if (d_ * (px - stop) <= 0) { book_clip_(L, stop, ts_sec, fwd, "TRAIL_STOP"); closed = true; break; }
+                        if (d_ * (px - stop) <= 0) {   // HONEST fill: worse-of stop level vs pierce extreme
+                            const double f = (d_ > 0) ? std::min(stop, px) : std::max(stop, px);
+                            book_clip_(L, f, ts_sec, fwd, "TRAIL_STOP"); closed = true; break; }
                     }
                 }
                 if (!closed) still.push_back(std::move(L));

@@ -77,15 +77,15 @@ public:
         // trade is genuinely in the black. Backtest: +2-3% win-rate, zero faded-breakout reds, at
         // ~8-10% lower net (skips fades that would have recovered + gives up the first be of a move).
         double be_entry_pct = 0.0;   // >0 = wait for +be% before entering; 0 = enter at trigger
-        // NO-PRE-BE-LOSS (operator hard rule feedback-no-prebe-loss-ever, S-2026-07-17): a BE-ENTRY
-        // leg (be_entry_pct>0) opens ONLY once the move has cleared +be_entry_pct off the trigger, so
-        // the round-trip cost is covered BY CONSTRUCTION (wire be_entry_pct >= rt_cost_bp/100). With
-        // this flag on, its pre-arm floor is BE FROM OPEN: any reversal to ret<=0 exits at 0 (BE_FLOOR)
-        // and NEVER books the -lc_pct LOSS_CUT -- so a leg can never book a negative clip before BE is
-        // covered, INCLUDING a straight-adverse leg that never showed MFE (which the pre_arm_be_pct
-        // ratchet alone did NOT protect). WINDOW_CAP is likewise BE-floored. Requires be_entry_pct>0
-        // (a leg opened at the trigger has no cost buffer to floor against). Default OFF -> every book
-        // with be_entry_pct==0 or the flag unset is byte-identical to the validated legacy behaviour.
+        // NO-PRE-BE-LOSS (feedback-no-prebe-loss-ever S-17, HONESTY-CORRECTED S-2026-07-20): a
+        // BE-ENTRY leg (be_entry_pct>0) opens ONLY once the move has cleared +be_entry_pct off the
+        // trigger (cost covered by construction). With this flag on, the EXIT TIMING is BE-floored:
+        // any reversal to ret<=0 exits IMMEDIATELY (BE_FLOOR) instead of riding to the -lc_pct cut —
+        // that design pillar is unchanged. ⚠ The BOOKING clamp (exit booked at 0.0 / WINDOW_CAP
+        // clamped >=0) was the crypto S-17f accounting tautology and is REMOVED (S-2026-07-20
+        // HONEST LEDGER, operator order): every exit now books the OBSERVED ret at the trigger —
+        // a real market close slightly below BE (or a gap-through) books its true small tail.
+        // nNeg>0 = real sub-BE exits; the floor REDUCES the tail, it does not erase it.
         bool   no_prebe_loss = false;
         int    pend_bars   = 6;      // cancel a PENDING leg if BE not made within this many bars
         int    cap_bars    = 12;     // INDEPENDENT window: flush an ENTERED leg after this many bars
@@ -271,12 +271,15 @@ public:
             if (!L.armed) {
                 // NO-PRE-BE-LOSS (feedback-no-prebe-loss-ever): a BE-ENTRY leg is BE-floored from open --
                 // reversal to/through the entry exits at 0, never the -lc cut, incl. a straight-adverse leg.
+                // S-2026-07-20 HONEST LEDGER: BE_FLOOR exits book the ACTUAL observed ret at the
+                // trigger (<=0 — the price a real market close realizes), never a clamped 0.0.
+                // Timing/design unchanged (still exits the moment ret<=0); only the booking is real.
                 if (cfg_.no_prebe_loss && cfg_.be_entry_pct > 0.0) {
-                    if (ret <= 0.0) { book_clip_(L, 0.0, ts_sec, "BE_FLOOR"); closed = true; changed = true; }
+                    if (ret <= 0.0) { book_clip_(L, ret, ts_sec, "BE_FLOOR"); closed = true; changed = true; }
                     else if (L.peak >= cfg_.arm_pct) L.armed = true;
                 // pre-arm BE-ratchet (see Config::pre_arm_be_pct): reversal to BE once shown MFE.
                 } else if (cfg_.pre_arm_be_pct > 0.0 && L.peak >= cfg_.pre_arm_be_pct) {
-                    if (ret <= 0.0) { book_clip_(L, 0.0, ts_sec, "BE_FLOOR"); closed = true; changed = true; }
+                    if (ret <= 0.0) { book_clip_(L, ret, ts_sec, "BE_FLOOR"); closed = true; changed = true; }
                 } else if (ret <= -cfg_.lc_pct) { book_clip_(L, ret, ts_sec, "LOSS_CUT"); closed = true; changed = true; }
                 else if (L.peak >= cfg_.arm_pct) L.armed = true;
             } else {
@@ -353,24 +356,27 @@ public:
                     // NO-PRE-BE-LOSS (feedback-no-prebe-loss-ever): a BE-ENTRY leg (opened at the
                     // cost-covered level) is BE-floored FROM OPEN -- any reversal to ret<=0 exits at
                     // 0 (BE_FLOOR), never the -lc cut, incl. a straight-adverse leg that showed no MFE.
+                    // S-2026-07-20 HONEST LEDGER: every exit books the OBSERVED ret at the pierce
+                    // extreme (worse-of vs the level — ret <= level at trigger by construction), never
+                    // the clamped 0.0 / resting-level figure. A gap through the level books its real
+                    // tail. Timing/design unchanged; only the booking is the real fill.
                     if (cfg_.no_prebe_loss && cfg_.be_entry_pct > 0.0) {
-                        if (ret <= 0.0) { book_clip_(L, 0.0, ts_sec, "BE_FLOOR"); closed = true; break; }
+                        if (ret <= 0.0) { book_clip_(L, ret, ts_sec, "BE_FLOOR"); closed = true; break; }
                     // pre-arm BE-ratchet: once shown pre_arm_be_pct MFE, a reversal exits at BE
                     // (never rides a pre-arm winner back to the -lc cut). 0 = disabled.
                     } else if (cfg_.pre_arm_be_pct > 0.0 && L.peak >= cfg_.pre_arm_be_pct) {
-                        if (ret <= 0.0) { book_clip_(L, 0.0, ts_sec, "BE_FLOOR"); closed = true; break; }
-                    } else if (ret <= -cfg_.lc_pct) { book_clip_(L, -cfg_.lc_pct, ts_sec, "LOSS_CUT"); closed = true; break; }
+                        if (ret <= 0.0) { book_clip_(L, ret, ts_sec, "BE_FLOOR"); closed = true; break; }
+                    } else if (ret <= -cfg_.lc_pct) { book_clip_(L, ret, ts_sec, "LOSS_CUT"); closed = true; break; }
                     if (L.peak >= cfg_.arm_pct) L.armed = true;
                 } else {
-                    const double stop_ret = (1.0 - gb) * L.peak;   // keep (1-gb) of peak -> BE-floored (>=0)
-                    if (ret <= stop_ret) { book_clip_(L, stop_ret, ts_sec, "TRAIL_STOP"); closed = true; break; }
+                    const double stop_ret = (1.0 - gb) * L.peak;   // keep (1-gb) of peak (design level unchanged)
+                    if (ret <= stop_ret) { book_clip_(L, ret, ts_sec, "TRAIL_STOP"); closed = true; break; }
                 }
             }
             if (!closed && L.bars >= cfg_.cap_bars) {   // INDEPENDENT window flush at the close
-                double ret = L.dir * (c / L.entry - 1.0) * 100.0;
-                // NO-PRE-BE-LOSS: a BE-ENTRY leg reaching the cap can never book below BE
-                // (belt-and-braces; the pre-arm BE floor already exits any sub-BE leg first).
-                if (cfg_.no_prebe_loss && cfg_.be_entry_pct > 0.0 && ret < 0.0) ret = 0.0;
+                const double ret = L.dir * (c / L.entry - 1.0) * 100.0;
+                // S-2026-07-20 HONEST LEDGER: the old no_prebe_loss clamp (ret<0 -> 0.0) hid the
+                // real close of a sub-BE cap flush; the honest observed close books now.
                 book_clip_(L, ret, ts_sec, "WINDOW_CAP"); closed = true;
             }
             if (!closed) still.push_back(std::move(L));
