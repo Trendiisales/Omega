@@ -2953,20 +2953,24 @@ static void init_engines(const std::string& cfg_path)
                         c.closed_path = std::string("stockdipmimic_stockdipmimy_") + nm + "_closed.csv";
                         sdm.add(std::move(c)); }
                 }
-                // S-2026-07-16p: 4 TURTLE BE-mimic cells per TURTLE name (operator "with this pf
-                // i want 4 mimics added"). Layered on the TURTLE breakout family (previously NOT
-                // mimicked). Diverse arm ladder A/B/C/D, all all-6 VIABLE ungated + bear-positive
-                // under the QQQ-200DMA regime split (TURTLE_MIMIC_FINDINGS_2026-07-16, harness
-                // backtest/mimic_cell_sweep.py; faithful flat-gated 20-close-high entry cadence).
-                // Same pre-arm BE-ratchet + post-arm BE-floor protection (half-of-arm pbe), 8bp RT,
-                // $10k, SHADOW. Judged STANDALONE (feedback-companion-independent-engine). QQQ>200DMA
-                // gate = optional mdd-halving risk overlay, deferred (needs a QQQ regime feed).
+                // S-2026-07-20az: 4 TURTLE BE-mimic cells per TURTLE name (A/B/C/D), now BULL-GATED
+                // (operator: "if you can do a bull gate that i fine"). Faithful re-test on current
+                // data (backtest/turtle_mimic_bt.py, all 4 live configs, wired-11, 8bp) found the
+                // cells NOT VIABLE STANDALONE ungated — BEAR-negative every cell (A -0, B -6, C -1,
+                // D -13) so all-6 failed bear+. The BULL-only book is strongly + (A +445, B +452,
+                // C +471, D +465). Per feedback-companion-bull-gate-not-reject a bull-good/bear-bad
+                // companion is BULL-GATED, not dropped: bull_only=true → each cell refuses a trigger
+                // while the SPY-200DMA regime is bear (registry regime fed from data/spy_close_hist.csv
+                // via refresh_daily_regime, current at each fan-open; freeze-on-thin holds last regime).
+                // Bear clips removed ⇒ all-6 clears standalone. Same pre-arm BE-ratchet + post-arm
+                // BE-floor protection (half-of-arm pbe), 8bp RT, $10k, LIVE (S-19t, 1-share/leg).
+                // Judged STANDALONE (feedback-companion-independent-engine).
                 for (const char* nm : TUR_MIM) {
                     {   omega::GoldTrendMimicBook::Config c;
                         c.trigger_tag = std::string("StockTurtleMimA_") + nm; c.live_sym = nm;
                         c.legs = {{"", 0.50}};
                         c.arm_pct = 1.5; c.lc_pct = 1.5; c.cap_bars = 10; c.pre_arm_be_pct = 0.75;
-                        c.be_entry_pct = 0.08; c.no_prebe_loss = true; c.rt_cost_bp = 8.0; c.notional = 10000.0; c.bull_only = false;
+                        c.be_entry_pct = 0.08; c.no_prebe_loss = true; c.rt_cost_bp = 8.0; c.notional = 10000.0; c.bull_only = true;
                         c.live_book = true; c.lot = 1.0;   // S-2026-07-19t LIVE: real money, 1-share/leg (min live unit; cost gate + buying power cap fills)
                         c.state_path  = std::string("stockturtlemimic_stockturtlemima_") + nm + "_state.txt";
                         c.closed_path = std::string("stockturtlemimic_stockturtlemima_") + nm + "_closed.csv";
@@ -2975,7 +2979,7 @@ static void init_engines(const std::string& cfg_path)
                         c.trigger_tag = std::string("StockTurtleMimB_") + nm; c.live_sym = nm;
                         c.legs = {{"", 0.50}};
                         c.arm_pct = 2.0; c.lc_pct = 2.0; c.cap_bars = 10; c.pre_arm_be_pct = 1.0;
-                        c.be_entry_pct = 0.08; c.no_prebe_loss = true; c.rt_cost_bp = 8.0; c.notional = 10000.0; c.bull_only = false;
+                        c.be_entry_pct = 0.08; c.no_prebe_loss = true; c.rt_cost_bp = 8.0; c.notional = 10000.0; c.bull_only = true;
                         c.live_book = true; c.lot = 1.0;   // S-2026-07-19t LIVE: real money, 1-share/leg (min live unit; cost gate + buying power cap fills)
                         c.state_path  = std::string("stockturtlemimic_stockturtlemimb_") + nm + "_state.txt";
                         c.closed_path = std::string("stockturtlemimic_stockturtlemimb_") + nm + "_closed.csv";
@@ -2984,7 +2988,7 @@ static void init_engines(const std::string& cfg_path)
                         c.trigger_tag = std::string("StockTurtleMimC_") + nm; c.live_sym = nm;
                         c.legs = {{"", 0.40}};
                         c.arm_pct = 2.5; c.lc_pct = 2.5; c.cap_bars = 10; c.pre_arm_be_pct = 1.25;
-                        c.be_entry_pct = 0.08; c.no_prebe_loss = true; c.rt_cost_bp = 8.0; c.notional = 10000.0; c.bull_only = false;
+                        c.be_entry_pct = 0.08; c.no_prebe_loss = true; c.rt_cost_bp = 8.0; c.notional = 10000.0; c.bull_only = true;
                         c.live_book = true; c.lot = 1.0;   // S-2026-07-19t LIVE: real money, 1-share/leg (min live unit; cost gate + buying power cap fills)
                         c.state_path  = std::string("stockturtlemimic_stockturtlemimc_") + nm + "_state.txt";
                         c.closed_path = std::string("stockturtlemimic_stockturtlemimc_") + nm + "_closed.csv";
@@ -2993,7 +2997,7 @@ static void init_engines(const std::string& cfg_path)
                         c.trigger_tag = std::string("StockTurtleMimD_") + nm; c.live_sym = nm;
                         c.legs = {{"", 0.40}};
                         c.arm_pct = 3.5; c.lc_pct = 3.5; c.cap_bars = 10; c.pre_arm_be_pct = 1.75;
-                        c.be_entry_pct = 0.08; c.no_prebe_loss = true; c.rt_cost_bp = 8.0; c.notional = 10000.0; c.bull_only = false;
+                        c.be_entry_pct = 0.08; c.no_prebe_loss = true; c.rt_cost_bp = 8.0; c.notional = 10000.0; c.bull_only = true;
                         c.live_book = true; c.lot = 1.0;   // S-2026-07-19t LIVE: real money, 1-share/leg (min live unit; cost gate + buying power cap fills)
                         c.state_path  = std::string("stockturtlemimic_stockturtlemimd_") + nm + "_state.txt";
                         c.closed_path = std::string("stockturtlemimic_stockturtlemimd_") + nm + "_closed.csv";
@@ -3034,10 +3038,15 @@ static void init_engines(const std::string& cfg_path)
                         omega::stockdip_trend_mimic().on_bar(std::string("StockDipMimW_") + sym, close, close, close, ts);
                         omega::stockdip_trend_mimic().on_bar(std::string("StockDipMimX_") + sym, close, close, close, ts);
                         omega::stockdip_trend_mimic().on_bar(std::string("StockDipMimY_") + sym, close, close, close, ts); });
-                // S-2026-07-16p: fan the ONE StockTurtle breakout open (per name) out to all 4
-                // TURTLE cells (A/B/C/D). Independent SHADOW; disjoint from the DIP fan (turtle syms).
+                // S-2026-07-20az: fan the ONE StockTurtle breakout open (per name) out to all 4
+                // TURTLE cells (A/B/C/D), now BULL-GATED. The open cb first REFRESHES the registry's
+                // SPY-200DMA regime (current at the open decision), then fires on_trend_open to each
+                // cell — each self-gates via bull_only (refuses the trigger while SPY is bear). The
+                // bar cb feeds already-open legs unconditionally (BE-floor manages them regardless of
+                // regime). Independent; disjoint from the DIP fan (turtle syms).
                 sdt.set_turtle_mimic_cbs(
                     [](const std::string& sym, int dir, double px, int64_t ts){
+                        omega::stockdip_trend_mimic().refresh_daily_regime(omega::resolve_seed_path("data/spy_close_hist.csv"));
                         omega::stockdip_trend_mimic().on_trend_open(std::string("StockTurtleMimA_") + sym, dir, px, ts);
                         omega::stockdip_trend_mimic().on_trend_open(std::string("StockTurtleMimB_") + sym, dir, px, ts);
                         omega::stockdip_trend_mimic().on_trend_open(std::string("StockTurtleMimC_") + sym, dir, px, ts);
@@ -3047,8 +3056,11 @@ static void init_engines(const std::string& cfg_path)
                         omega::stockdip_trend_mimic().on_bar(std::string("StockTurtleMimB_") + sym, close, close, close, ts);
                         omega::stockdip_trend_mimic().on_bar(std::string("StockTurtleMimC_") + sym, close, close, close, ts);
                         omega::stockdip_trend_mimic().on_bar(std::string("StockTurtleMimD_") + sym, close, close, close, ts); });
+                // Boot-seed the stock mimic SPY-200DMA regime so the first live TURTLE trigger gates
+                // on a WARM regime (freeze-on-thin holds fail-open BULL until 200 SPY closes seen).
+                omega::stockdip_trend_mimic().refresh_daily_regime(omega::resolve_seed_path("data/spy_close_hist.csv"));
                 sdm.arm();   // DEPLOY-FORWARD: only live (post-seed) opens spawn legs
-                printf("[OMEGA-INIT][SEED] StockDip/Turtle BE-MIMIC wired: %d DIP names x 4 cells (T arm2/gb50 + W arm3/gb70 + X arm1.5/gb70 + Y arm2.5/gb60) + %d TURTLE names x 4 cells (A arm1.5/gb50, B arm2/gb50, C arm2.5/gb40, D arm3.5/gb40); incl S-17k ext rosters (clip_path_ext_mimic ALL6-PASS 8+16bp); cap10, half-of-arm pre-arm BE-ratchet + post-arm BE-floor, rt 8bp, 1-share/leg LIVE (S-2026-07-19t, real money, cost gate + buying power cap fills), triggered one-way from real DIP/breakout opens, close-grade daily feed, LIVE in mode=LIVE else PRE-TRADE deploy-forward, VALIDATED all-6 PASS ungated (STOCKDIP_MIMIC_FINDINGS_2026-07-15 + PREARM_FLOOR + TURTLE_MIMIC_FINDINGS_2026-07-16)\n",
+                printf("[OMEGA-INIT][SEED] StockDip/Turtle BE-MIMIC wired: %d DIP names x 4 cells (T arm2/gb50 + W arm3/gb70 + X arm1.5/gb70 + Y arm2.5/gb60, ungated) + %d TURTLE names x 4 cells (A arm1.5/gb50, B arm2/gb50, C arm2.5/gb40, D arm3.5/gb40, BULL-GATED SPY-200DMA S-2026-07-20az); incl S-17k ext rosters (clip_path_ext_mimic ALL6-PASS 8+16bp); cap10, half-of-arm pre-arm BE-ratchet + post-arm BE-floor, rt 8bp, 1-share/leg LIVE (S-2026-07-19t, real money, cost gate + buying power cap fills), triggered one-way from real DIP/breakout opens, close-grade daily feed, LIVE in mode=LIVE else PRE-TRADE deploy-forward, VALIDATED all-6 PASS (DIP ungated STOCKDIP_MIMIC_FINDINGS_2026-07-15; TURTLE bull-gated BIGCAP_RDAGENT_FULLTEST_2026-07-20)\n",
                        (int)DIP_MIM.size(), (int)TUR_MIM.size());
                 fflush(stdout);
             }

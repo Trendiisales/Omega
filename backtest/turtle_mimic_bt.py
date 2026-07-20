@@ -129,8 +129,9 @@ def fmt(s):
     pf="inf" if s['pf']==float('inf') else f"{s['pf']:.2f}"
     return f"n={s['n']:4d} net={s['net']:+8.1f}% avg={s['avg']:+5.2f}% PF={pf:>4} WR={s['wr']:4.1f}% worst={s['worst']:+6.2f}% mdd={s['mdd']:+7.1f}%"
 
-def report(tag, data, ents, reg, arm,gb,lc,cap, be):
+def report(tag, data, ents, reg, arm,gb,lc,cap, be, bull_gate=False):
     cl=run(data,ents,reg,arm,gb,lc,cap,be)
+    if bull_gate: cl=[x for x in cl if x['bull']]   # SPY/universe-200DMA bull-gate: drop bear-entry clips
     s=stats(cl); h1,h2=half(cl); s1=stats(h1); s2=stats(h2)
     sb=stats(sub(cl,lambda x:x['bull'])); sr=stats(sub(cl,lambda x:not x['bull'])); y22=stats(yr(cl,"2022"))
     rc=defaultdict(lambda:[0,0.0])
@@ -151,8 +152,12 @@ def main():
     tot=sum(len(ents[s]) for s in NAMES)
     print(f"TURTLE-MIMIC  names={len(NAMES)}  total_entries={tot}  per-name:")
     print("  "+"  ".join(f"{s}:{len(ents[s])}" for s in NAMES))
-    for label,arm,gb,lc,be in (("T (Tight)",2.0,0.50,2.0,1.0),("W (Wide)",3.0,0.70,3.0,1.5)):
-        print(f"\n================= VARIANT {label}  (shipped mimic cell) =================")
-        report(f"TURTLE-mimic {label}", data,ents,reg, arm,gb,lc,10, be)
+    LIVE=(("A",1.5,0.50,2.0,0.75),("B",2.0,0.50,2.0,1.0),("C",2.5,0.40,2.0,1.25),("D",3.5,0.40,2.0,1.75))
+    print("\n########## UNGATED (baseline — the NOT-VIABLE finding) ##########")
+    for label,arm,gb,lc,be in LIVE:
+        report(f"TURTLE-mimic {label} UNGATED", data,ents,reg, arm,gb,lc,10, be)
+    print("\n########## BULL-GATED (SPY/universe-200DMA — shipped S-2026-07-20az) ##########")
+    for label,arm,gb,lc,be in LIVE:
+        report(f"TURTLE-mimic {label} BULL-GATE", data,ents,reg, arm,gb,lc,10, be, bull_gate=True)
 
 if __name__=="__main__": main()

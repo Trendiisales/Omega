@@ -654,6 +654,32 @@ public:
                     reg_bull_ ? "BULL" : "BEAR");
         std::fflush(stdout);
     }
+    // S-2026-07-20az: idempotent daily-regime refresh for the STOCK mimic BULL-GATE (operator:
+    // bull-gate the TURTLE mimic cells instead of culling them — bear-negative standalone but
+    // bull-positive +445..+471). Re-reads the "ts,close" daily history and recomputes the SMA200
+    // bull flag FROM SCRATCH (clears prior state, so repeated calls never drift), then propagates
+    // to every bull_only book via set_bull. Freeze-on-thin: a missing file or <200 rows HOLDS the
+    // last known regime (never flips a bull_only book on a blind feed). Called at boot and again
+    // immediately before each (rare) TURTLE fan-open so the gate is current at the open decision.
+    // Feed = data/spy_close_hist.csv (SPY-200DMA, OmegaMacroRegime nightly; same series BigCapHi52
+    // gates on). Distinct from the gold XAU-H1 feed above — this registry is the stock singleton.
+    void refresh_daily_regime(const std::string& path) {
+        std::lock_guard<std::mutex> lk(mu_);
+        std::ifstream f(path);
+        if (!f.is_open()) return;                 // hold last regime on a missing feed
+        std::vector<double> cl; std::string line;
+        while (std::getline(f, line)) {
+            const size_t p = line.rfind(',');
+            if (p == std::string::npos) continue;
+            const double c = std::atof(line.c_str() + p + 1);
+            if (c > 0.0) cl.push_back(c);         // skips a "ts,close" header (atof->0)
+        }
+        if ((int)cl.size() < 200) return;         // not warm enough -> hold last regime
+        reg_closes_.clear(); reg_sum_ = 0.0;
+        for (size_t i = cl.size() - 200; i < cl.size(); ++i) { reg_closes_.push_back(cl[i]); reg_sum_ += cl[i]; }
+        reg_bull_ = cl.back() >= reg_sum_ / 200.0;
+        for (auto& b : books_) if (b.wants_regime()) b.set_bull(reg_bull_);
+    }
     // ── MANUAL KILL-ALL fan-out (S-2026-07-20): fired from the on_tick
     //    g_flatten_all_request block. These books have no register_source, so the
     //    registry flatten loop can never reach them — this is their panic closer.
