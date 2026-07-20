@@ -2293,7 +2293,11 @@ static void init_engines(const std::string& cfg_path)
                 c.catchup_max_age_bars = 24;
                 // NAS100 upside opt-in: arm0 (engage the 10% trail FROM ENTRY) = NAS100 +34.4%
                 // (robust: WF+ both halves, bear -12.4->+0.4). Flip below for the max NAS catch.
-                // if (std::string(ic.tag) == "NAS100") c.wide_arm_pct = 0.0;
+                // S-2026-07-21: ENABLED (operator: NAS100 gave small pops back to BE instead of
+                // locking -- the +0.5% arm never engaged on sub-0.5% pops, e.g. +0.05% open legs /
+                // +0.25% batch banked only via MANUAL_KILL_ALL). arm0 engages the 10%-giveback trail
+                // from entry -> locks 90% of peak from the first tick up. Certified +34.4% robust.
+                if (std::string(ic.tag) == "NAS100") c.wide_arm_pct = 0.0;
                 il.add(std::move(c));
             }
             // S-2026-07-09 COMPLETE FEED-MIGRATION — FULL revert of the c1a83306 seam fix.
