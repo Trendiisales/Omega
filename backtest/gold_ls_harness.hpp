@@ -253,6 +253,50 @@ private:
     std::optional<ParsedRow> pending_;
 };
 
+// Reads an OHLC BAR csv (ts,o,h,l,c[,spr...]) directly as MinuteBars — one row
+// = one MinuteBar with its real O,H,L,C preserved (NOT tick-collapsed). Use for
+// m1-bar / H1 / D1 files where MinuteCsvReader (which aggregates tick->1m and so
+// flattens each bar to o=h=l=c=close) would destroy the high/low. Header is
+// optional: if the first line's first field is non-numeric it's skipped. ts is
+// normalised to seconds via the same magnitude heuristic as the tick reader.
+class MinuteBarCsvReader {
+public:
+    explicit MinuteBarCsvReader(std::string path) : path_(std::move(path)), in_(path_) {
+        if (!in_) throw std::runtime_error("Cannot open bar CSV: " + path_);
+        std::string first;
+        std::streampos p0 = in_.tellg();
+        if (!std::getline(in_, first)) throw std::runtime_error("Empty bar CSV: " + path_);
+        const auto f = split_csv_line(first);
+        // header if the timestamp field doesn't parse as a number
+        if (!f.empty() && parse_double(f[0]).has_value()) in_.seekg(p0); // headerless: rewind
+        // else: keep past the header line
+    }
+    bool next(MinuteBar& out) {
+        out = {};
+        std::string line;
+        while (std::getline(in_, line)) {
+            if (line.empty()) continue;
+            const auto f = split_csv_line(line);
+            if (f.size() < 5) continue;
+            int64_t es=0; if (!parse_ts(f[0], es)) continue;
+            auto o=parse_double(f[1]), h=parse_double(f[2]), l=parse_double(f[3]), c=parse_double(f[4]);
+            if (!o||!h||!l||!c) continue;
+            MinuteBar b; b.t=es; b.open=*o; b.high=*h; b.low=*l; b.close=*c; b.samples=1;
+            if (!b.valid()) continue;
+            out=b; return true;
+        }
+        return false;
+    }
+private:
+    static bool parse_ts(const std::string& raw, int64_t& es) {
+        auto dv = parse_double(raw); if (!dv) return false;
+        double v=*dv; const double a=std::fabs(v);
+        if (a>1e17) v/=1e9; else if (a>1e14) v/=1e6; else if (a>1e11) v/=1e3;
+        es=(int64_t)std::floor(v); return es>0;
+    }
+    std::string path_; std::ifstream in_;
+};
+
 // N-minute bar aggregator (fed 1m bars).
 class BarAggregator {
 public:

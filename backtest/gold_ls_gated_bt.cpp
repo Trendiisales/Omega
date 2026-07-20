@@ -60,6 +60,10 @@ struct Params {
     int   bull_sma      = 0;
     // shipped-gate replica: block long in sustained-bear per omega::gold_regime().
     bool  regime_bear   = false;
+    // read the input as an OHLC BAR csv (ts,o,h,l,c) instead of a tick/quote file.
+    // Bar files must NOT go through MinuteCsvReader (it tick-collapses each row to
+    // o=h=l=c=close, destroying the high/low the Donchian/stops need).
+    bool  barcsv        = false;
 };
 
 // Rolling simple moving average of the last N values.
@@ -230,10 +234,10 @@ int main(int argc, char** argv) {
         else if (a=="--viab_reward_atr") p.viab_reward_atr = std::atof(val("3.0").c_str());
         else if (a=="--bull_sma") p.bull_sma = std::atoi(val("0").c_str());
         else if (a=="--regime_bear") p.regime_bear = (std::atoi(val("1").c_str())!=0);
+        else if (a=="--barcsv") p.barcsv = true;
     }
     if (file.empty()) { std::fprintf(stderr, "need --file\n"); return 2; }
 
-    MinuteCsvReader reader(file);
     BarAggregator agg(p.bar_min);
     ATR atr(p.atr_p);
     EMA ema_f(p.ema_fast), ema_s(p.ema_slow), ema_mean(p.mean_p);
@@ -415,10 +419,12 @@ int main(int argc, char** argv) {
         (void)have_prev_ema; (void)last_ema_f; (void)last_ema_s; (void)ny_or_end;
     };
 
-    while (reader.next(m)) {
-        regime.on_minute(m);
-        auto done = agg.update(m);
-        if (done) process_bar(*done);
+    if (p.barcsv) {
+        MinuteBarCsvReader reader(file);   // ts,o,h,l,c bar rows -> MinuteBars (OHLC preserved)
+        while (reader.next(m)) { regime.on_minute(m); auto done = agg.update(m); if (done) process_bar(*done); }
+    } else {
+        MinuteCsvReader reader(file);      // tick/quote -> 1m aggregation
+        while (reader.next(m)) { regime.on_minute(m); auto done = agg.update(m); if (done) process_bar(*done); }
     }
     if (auto f = agg.flush()) process_bar(*f);
 
