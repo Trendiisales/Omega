@@ -1729,6 +1729,11 @@ static void on_tick_gold(
     g_engine_heartbeat.pulse("Rider4H");  // S-2026-06-29 ENABLED+NO_PULSE fix
     // S118 2026-05-19: H1 long-only ensemble tick management.
     g_xau_tf_1h.on_tick(bid, ask, now_ms_g, bracket_on_close);
+    // S-2026-07-20: GoldBullTrendGated -- long-only bull-GATED trend ensemble
+    // (DONCH 1h + EMA 30m). Self-aggregates both TFs internally from this tick;
+    // regime (gold_regime, fed at top of on_tick_gold) + slow-SMA dual gate.
+    g_gold_bull_trend.on_tick(bid, ask, now_ms_g, bracket_on_close);
+    g_engine_heartbeat.pulse("GoldBullTrendGated");
     // S42 2026-05-31: SessionMomentum x2 -- clock-based session-window long.
     // feed_tick() self-aggregates H1 + manages the open position (time exit).
     g_xau_sess_nypm.feed_tick(bid, ask, now_ms_g, bracket_on_close);

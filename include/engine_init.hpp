@@ -3850,6 +3850,27 @@ static void init_engines(const std::string& cfg_path)
                         std::printf("[OMEGA-INIT] GoldCampaignD1Anch (structural campaign CORE, D1-anchor pullback, symmetric L/S) -- shadow, warm-seeded\n");
                     }
 
+                    // S-2026-07-20: GoldBullTrendGated -- long-only bull-regime-GATED trend
+                    //   ensemble (DONCH 1h Donchian-20 + EMA 30m 20/50). Self-aggregates 30m+1h
+                    //   from on_tick. Certified HONEST gap-through fills + PARITY-exact vs the
+                    //   shipped engine: under the regime + slow-SMA dual gate DONCH bull +1126bp
+                    //   PF1.64 / bear -13bp (flat), EMA bull +784bp PF1.98 / bear -70bp (flat).
+                    //   Ungated = BULL BETA (bleeds -534/-362 in the 2022 bear) -> gated, long-
+                    //   only, SHADOW. ONE bull + ONE bear window only: multi-window cert OWED
+                    //   before any live promotion. MGC = XAU proxy (no MGC minute data).
+                    {
+                        g_gold_bull_trend.enabled       = true;
+                        g_gold_bull_trend.shadow_mode   = true;   // SHADOW: uncertified bull-beta, single-window
+                        g_gold_bull_trend.lot           = 0.01;
+                        g_gold_bull_trend.bypass_cost_gate = false; // PRODUCTION: real ExecutionCostGuard + daily-halt (parity-only knob stays OFF)
+                        g_gold_bull_trend.use_regime_gate  = true;  // shared sustained-bear brain
+                        g_gold_bull_trend.use_sma_gate     = true;  // slow-SMA bull-trend confirm
+                        g_gold_bull_trend.init();
+                        g_gold_bull_trend.warmup();               // seeds both cells; prints [GBT-SEED] lines
+                        g_engine_heartbeat.register_engine("GoldBullTrendGated", g_gold_bull_trend.enabled, 3600, 0, 24);
+                        std::printf("[OMEGA-INIT] GoldBullTrendGated (long-only bull-GATED trend: DONCH 1h-N20 + EMA 30m-20/50) -- shadow, warm-seeded, dual-gate\n");
+                    }
+
                     // S-2026-06-03: GoldSeasonal (XAUUSD early-week long, Mon+Tue). The one
                     //   new gold edge found after exhausting price/book signals — calendar
                     //   axis. +24.5%/yr Sharpe 1.88 engine-driven on M5 (real 21:00 daily

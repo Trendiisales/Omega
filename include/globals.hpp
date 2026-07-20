@@ -1093,6 +1093,17 @@ static omega::GoldTsmomD1V2Engine g_gold_tsmom_d1;
 // EXACT (20/20 closed trades to the entry-second, 3 eras).
 #include "GoldCampaignD1AnchEngine.hpp"
 static omega::GoldCampaignD1AnchEngine g_gold_campaign_d1;
+// S-2026-07-20: GoldBullTrendGated -- long-only, bull-regime-GATED XAU/MGC trend
+//   ensemble (DONCH 1h Donchian-20 + EMA 30m 20/50). Certified on HONEST gap-
+//   through fills (backtest/gold_ls_gated_bt.cpp) + PARITY-exact vs the shipped
+//   engine (backtest/gold_bull_trend_parity_bt.cpp): under the regime + slow-SMA
+//   dual gate, DONCH bull +1126bp PF1.64 / bear -13bp (flat); EMA bull +784bp
+//   PF1.98 / bear -70bp (flat). Ungated it is BULL BETA (bleeds -534/-362 in the
+//   2022 bear) -- THAT is why it is gated+long-only+SHADOW. ONE bull + ONE bear
+//   window only: multi-window cert OWED before any live promotion. MGC = XAU
+//   proxy (no MGC minute data). Self-aggregates from on_tick (30m+1h internal).
+#include "GoldBullTrendGatedEngine.hpp"
+static omega::GoldBullTrendGatedEngine g_gold_bull_trend;
 // S-2026-06-03: GoldSeasonal -- XAUUSD early-week long seasonality (Mon+Tue).
 //   +24%/yr Sharpe 1.84 (daily sim) / +24.5% Sharpe 1.88 (M5 engine-driven, real
 //   21:00 break), win 61%, +ve every year 2024/25/26, both WF halves+, cost-robust
