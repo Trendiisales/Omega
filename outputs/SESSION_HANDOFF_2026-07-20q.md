@@ -29,7 +29,27 @@ findings `Crypto/backtest/MIMIC_ALTERNATIVE_SEARCH_FINDINGS_2026-07-20.md`.
 Vault: Memory-Chimera `MimicShadowEntryBasisError` (status + new DONE block) + index + log
 [17.08]. Auto-memory `feedback-shadow-entry-basis-honesty` + MEMORY.md updated.
 
-## ⚡ OPERATOR DECISION PENDING (the only open BECASC item)
+## ⚡⚡ NEW OPERATOR ORDER (2026-07-20, supersedes the (a)/(b) question below) — BUILD THE HONEST LEDGER, CORRECT COST, RUN NOW
+Operator (verbatim intent): sick of dishonest ledgers/inconsistency — **build the honest ledger,
+use the CORRECT cost (measured, not hand-quoted 30/60), run it now.** Spec:
+1. **Engine-side honest booking (ChimeraCrypto `MimicLadderCompanion.hpp`):** add per-leg
+   `fill_px` recorded at the REAL open (`cur` at the moment of open in `intrabar_confirm_opens_`
+   AND `step_leg_`'s open block AND reclip path — the same px `announce_open_` hands the mirror).
+   `emit_clip_` + `book_mimic_stop_` book gross from `fill_px`, NEVER from anchored `le`.
+   Shadow ledger == mirror economics by construction, all cells, forever.
+2. **Correct cost:** per-coin MEASURED RT from DepthLiquidationModel → CryptoCostLedger
+   `safe_cost_bps` (memory `feedback-crypto-cost-authoritative-depth-model` — never hand-quote
+   20/30/35/60 again). Re-cert the fleet with per-coin measured base cost (stress = 2× measured).
+3. Deploy to josgp1 (deploy_to_box.sh — Mac edits stay UNCOMMITTED for its guard; NEVER
+   git reset on josgp1), boot gates green, then the honest ledger is the ONLY record.
+4. **Omega side ("what is waiting for us on Omega"):** SAME anchored-basis audit owed —
+   `FxMimicLadderCompanion` (be_floor_on_open book-clamp), `GoldTrendMimicLadder`,
+   SurvivorPortfolio mimic arms: any shadow clip booked from an anchor a real order can't
+   fill at is inflated the same way. Audit each booking site vs the price a real order fills
+   at; re-cert with IBKR measured cost (XAU RT = 2*0.00015*px+spread, memory
+   `project-ibkr-cost-basis`). Nothing on Omega is trusted until this audit runs.
+
+## OPERATOR DECISION PENDING (kept for reference; subsumed by the order above)
 Design space exhausted. Only living cells anywhere: the **8 anchored-live survivors
 (7 DOGE + 1 RUNE wide-g tail lanes, c944c79)**. Choose:
 - **(a) Allowlist re-arm:** build per-cell allowlist mechanism in LiveMimicMirror (substr
