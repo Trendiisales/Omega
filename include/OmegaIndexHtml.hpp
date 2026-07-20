@@ -1134,7 +1134,17 @@ function pollTrades(){
        real trade-history log. Drop them from LAST-15 entirely; MIMIC-LIVE (real Binance cash) and
        EDGE (real forward $, isPaperClip()=false for both) still show. */
     var cryptoDisp=(res[1]||[]).filter(function(t){return !isPaperClip(t);});
-    var all=(res[0]||[]).concat(cryptoDisp).concat(sd).concat(live);
+    /* S-2026-07-20 (operator: "why do these nas trades not appear in last 5 trade list"): the
+       INDEX/FX mimic LADDER forward clips (idxladder/fxladder_companion pairs[].trades[]) were
+       fetched only by pollIxLad/pollFxLad for their own panels -- never folded into "all books".
+       They are REAL forward $ clips (like the stock book / EDGE), so list them. Money still totals
+       via the separate _ixladtot/_fxladtot (ladTot, realized-only) -> rows here are display+count
+       only, no double-count into ALL-TIME. */
+    var lad=[];[window._ixlad,window._fxlad].forEach(function(j){((j&&j.pairs)||[]).forEach(function(p){
+      (p.trades||[]).forEach(function(t){lad.push({book:'ladder',engine:(t.flavor||((p.pair||'')+'Lad')),
+        symbol:p.pair||p.live_sym||'',side:t.dir||'long',price:safe(t.entry),exitPrice:safe(t.exit),
+        net_pnl:safe(t.usd),exitReason:t.reason||'',entryTs:safe(t.entry_ts),exitTs:safe(t.exit_ts)});});});});
+    var all=(res[0]||[]).concat(cryptoDisp).concat(sd).concat(live).concat(lad);
     /* S-2026-07-12 operator: fold the CHIMERA EDGE realized (e.g. TIA-TSMOM +7.65) into the
        crypto PnL — it was showing in LAST-15 but never in the total. EDGE trades only
        (engine !~ CLIP) so it's additive to _cctot (the companion-clip book), no double-count.
@@ -1160,9 +1170,9 @@ function pollTrades(){
        we had, i.e. 2 or 4 or 1"): count ALL closed trades across every book, and how many are MIMIC
        engines (*Mimic tag). Shown next to the panel title. */
     var nAll=all.length, nMimic=all.filter(function(t){return /mimic/i.test(t.engine||'');}).length,
-        nStock=sd.length, nCrypto=cryptoDisp.length;
+        nStock=sd.length, nCrypto=cryptoDisp.length, nLad=lad.length;
     var cn=document.getElementById('alltradesn');
-    if(cn)cn.innerHTML='· '+nAll+' total ('+nMimic+' mimic'+(nStock?' · '+nStock+' stock':'')+(nCrypto?' · '+nCrypto+' crypto':'')+')';
+    if(cn)cn.innerHTML='· '+nAll+' total ('+nMimic+' mimic'+(nStock?' · '+nStock+' stock':'')+(nCrypto?' · '+nCrypto+' crypto':'')+(nLad?' · '+nLad+' ladder':'')+')';
     var top=all.slice(0,15);
     var el=document.getElementById('alltrades'); if(!el)return;
     if(!top.length){ el.innerHTML='<tr><td class="l d">no closed trades yet</td></tr>'; return; }
@@ -1231,7 +1241,8 @@ function pollRdagent(){
                +' <span class="d" style="font-size:9px">'+esc(p.shares)+'sh@'+fmt2(safe(p.avg_cost),2)+'</span>';
       }
       var sty=buy?' style="background:rgba(40,160,90,0.12)"':(dim?' style="opacity:0.45"':'');
-      return '<tr'+sty+'><td class="num">'+esc(b.rank)+'</td><td class="l">'+esc(b.instrument||'')+
+)OMEGAD6"
+R"OMEGAD7(      return '<tr'+sty+'><td class="num">'+esc(b.rank)+'</td><td class="l">'+esc(b.instrument||'')+
         '</td><td>'+act+'</td><td class="num">'+fmt2(safe(b.price),2)+'</td><td class="num">'+esc(b.percentile)+
         '</td><td class="num" style="color:'+col5+'">'+(c5>=0?'+':'')+fmt2(c5,1)+'%</td><td class="num" style="color:'+col20+'">'+(c20>=0?'+':'')+fmt2(c20,1)+'%</td><td class="num">'+pnlCell+'</td></tr>';
     };
@@ -1247,8 +1258,7 @@ function pollRdagent(){
 }
 setInterval(pollRdagent,5000);pollRdagent();
 
-)OMEGAD6"
-R"OMEGAD7(/* ── crypto mimic books — DYNAMIC render, no baked roster (S-2026-07-13 panel rewrite) ──
+/* ── crypto mimic books — DYNAMIC render, no baked roster (S-2026-07-13 panel rewrite) ──
    Live truth 13-07: KILL_IMMEDIATE_CLIPS + KILL_IMMEDIATE_PARENTS culled the entire immediate-
    entry clip grid (68 cells + daily cascades) on josgp1. The box now runs ONLY
    companion-at-BE MIMIC books (permitted class — never opens underwater, confirm=20bp,
@@ -1421,7 +1431,8 @@ function renderCompanionOpenTrades(pfx, open, trades, pxPrec){
   trades.forEach(function(t){var u=safe(t.usd);
    var dt=t.exit_ts?new Date(t.exit_ts*1000).toISOString().slice(5,16).replace('T',' '):'';
    th+='<tr><td class="l">'+esc(t.flavor)+'</td><td class="l">'+esc(t.dir)+'</td><td class="l">'+esc(t.tier)+'</td>'
-     +'<td class="num">'+fmt2(safe(t.entry),pxPrec)+'</td><td class="num">'+fmt2(safe(t.exit),pxPrec)+'</td>'
+)OMEGAD7"
+R"OMEGAD8(     +'<td class="num">'+fmt2(safe(t.entry),pxPrec)+'</td><td class="num">'+fmt2(safe(t.exit),pxPrec)+'</td>'
      +'<td class="num" style="color:'+(u>0?'var(--grn)':(u<0?'var(--red)':'var(--t2)'))+'">'+fmtc$(u)+'</td>'
      +'<td class="l d">'+esc(t.reason||'')+'</td><td class="l d">'+dt+'</td></tr>';});
   tt.innerHTML=th; tw.style.display='';
@@ -1436,8 +1447,7 @@ function renderCompanionOpenTrades(pfx, open, trades, pxPrec){
    Schema: {ts,lot,dpp,bars,deploy_ts,desk_pts,desk_usd,open:[{flavor,dir,tier,entry,wm,cur,
    upnl_pts,upnl_usd,entry_ts}],trades:[{flavor,dir,tier,entry,exit,pts,usd,reason,entry_ts,
    exit_ts}],flavors:[{name,dir,clips,wins,book_pts,book_usd,runners:[{tier,gb_bp,clips,wins,
-)OMEGAD7"
-R"OMEGAD8(   pts,usd}]}]}. RETIRED S-2026-07-07e (real-fill re-validation negative, registry §5) — panel folds the
+   pts,usd}]}]}. RETIRED S-2026-07-07e (real-fill re-validation negative, registry §5) — panel folds the
    REAL columns (usd_real/pts_real) of the persisted forward history; no new arms. */
 function drawGold(){var j=window._gold||null;
  var h='<tr><td class="l lbl">book</td><td class="l lbl">dir</td><td class="lbl">tier</td><td class="lbl">gb bp</td>'
@@ -1590,7 +1600,8 @@ function drawIndex(){var j=window._idx||null;
    var bcol=(bu>0?'var(--grn)':(bu<0?'var(--red)':'var(--t2)'));
    runs.forEach(function(c){
     h+='<tr>';
-    if(firstSym){h+='<td class="l" rowspan="'+prows+'" style="font-weight:700">'+esc(p.sym)+'</td>';firstSym=false;}
+)OMEGAD8"
+R"OMEGAD9(    if(firstSym){h+='<td class="l" rowspan="'+prows+'" style="font-weight:700">'+esc(p.sym)+'</td>';firstSym=false;}
     if(first){h+='<td class="l" rowspan="'+rs+'" style="font-weight:600">'+esc(fl.name)+'</td>'
                 +'<td class="l" rowspan="'+rs+'">'+esc(fl.dir)+'</td>';}
     h+='<td class="l">'+esc(c.tier)+'</td><td class="num">'+safe(c.gb_bp)+'</td>'
@@ -1608,8 +1619,7 @@ function drawIndex(){var j=window._idx||null;
    +allTrades.length+' closed trade'+(allTrades.length===1?'':'s')+openTxt+' · '+syms.length+' syms · pre-trade · additive';
  renderCompanionOpenTrades('ic',allOpen,allTrades,2);
 }
-)OMEGAD8"
-R"OMEGAD9(function pollIndex(){fetch('/api/index_companion').then(function(r){return r.json();}).then(function(j){
+function pollIndex(){fetch('/api/index_companion').then(function(r){return r.json();}).then(function(j){
  if(j&&(j.syms||[]).length)window._idx=j;
  window._idxtot=(((window._idx||{}).syms)||[]).reduce(function(s,p){return s+safe(p.usd_real);},0);/* S-2026-07-10: ALL-TIME folds REALIZED forward clips ONLY (usd_real). Open-leg unrealized MTM removed from the header -- the index ladder's stacked no-floor legs mark red between reclips and dragged ALL-TIME as a phantom drop; per-panel DESK still shows uPnL. (model usd is a max(0,.) clamp, still never folds.) */
  drawIndex();
@@ -1758,7 +1768,8 @@ setInterval(pollBc2pct,15000);pollBc2pct();
 var ROWS=[],WIN=1;
 function parseShadow(txt){
  /* HEADER-DRIVEN parse of omega_shadow.csv. The 06-12 rewrite hardcoded a
-    12-column layout that never matched the real 41-column file (col 0 is
+)OMEGAD9"
+R"OMEGAD10(    12-column layout that never matched the real 41-column file (col 0 is
     trade_id, not ts) -> parseInt('0') falsy -> EVERY row skipped -> all
     analytics showed "$0 / no pre-trade closes". Map columns by header name. */
  var out=[];var ls=txt.split('\n');if(ls.length<2)return out;
@@ -1778,8 +1789,7 @@ function parseShadow(txt){
    epx:ix.entry_px!==undefined?(parseFloat(f[ix.entry_px])||0):0,
    xpx:ix.exit_px!==undefined?(parseFloat(f[ix.exit_px])||0):0,
    pnl:parseFloat(f[ix.net_pnl])||0,
-)OMEGAD9"
-R"OMEGAD10(   size:ix.size!==undefined?(parseFloat(f[ix.size])||0):0,
+   size:ix.size!==undefined?(parseFloat(f[ix.size])||0):0,
    mfe:ix.mfe!==undefined?(parseFloat(f[ix.mfe])||0):0,
    mae:ix.mae!==undefined?(parseFloat(f[ix.mae])||0):0,
    hold:ix.hold_sec!==undefined?(parseInt(f[ix.hold_sec],10)||0):0,
@@ -1909,7 +1919,8 @@ function compClipRows(){var cl=window._compClosed||[];if(!cl.length)return '';
    +'<td class="num '+c+'" style="font-size:10px">'+fmt$(p)+'</td><td colspan="2" class="l d" style="font-size:10px">'+esc(d.book||'')+'</td></tr>';}).join('');
  return '<tr><td class="l d" colspan="7" style="padding-top:6px">companion clips — recent closes (paper, additive; why COMP-BANK moved)</td></tr>'+rows;}
 /* S-19c (operator "WHY IS THE COMP LEDGER STILL THERE" -- S-19b only fixed the Σ line's units,
-   not location): the per-symbol/per-book crypto companion breakdown formerly rendered here
+)OMEGAD10"
+R"OMEGAD11(   not location): the per-symbol/per-book crypto companion breakdown formerly rendered here
    (cryptoLedgerRows()) was a pure DUPLICATE of what drawCC() already renders into #cctab under
    CRYPTO MIMIC BOOKS -- same per-coin rows, same per-book bp figures, same PAPER caption. Removed
    the duplicate injection into ENGINE LEDGER entirely rather than relocating it; the real thing
@@ -1918,8 +1929,7 @@ function drawLedger(){var t=el('ledger');/* S-19b/19c: crypto companion PAPER ba
     anywhere in this function -- its bp detail lives ONLY in #cctab (CRYPTO MIMIC BOOKS, drawCC) */
  var omc=safe((window._comptot||{}).all);/* OMEGA (XAU stall-clip) companion all-time bank, $ (additive) -- same bucket the header ALL-TIME folds */
  var fxc=safe(window._fxtot),gbc=safe(window._goldtot),ixc=safe(window._idxtot),xgc=safe(window._xagtot),uoc=safe(window._usoiltot),smc=safe(window._smtot),flc=safe(window._fxladtot),ilc=safe(window._ixladtot);/* FX + gold + xag + usoil + stockmover/fx/index-ladder forward books, $ (additive, all-time) */
-)OMEGAD10"
-R"OMEGAD11( if(!ROWS.length){var z=omc+fxc+gbc+ixc+xgc+uoc+smc+flc+ilc;/* crypto PAPER NOT in Σ, S-18w */t.innerHTML='<tr><td class="l d" colspan="7">no closes in ledger</td></tr>'+compClipRows();el('ledgern').textContent=z?((omc?'companion '+fmt$(omc):'')+(fxc?' · fx '+fmt$(fxc):'')+(gbc?' · gold '+fmt$(gbc):'')+(ixc?' · idx '+fmt$(ixc):'')+(xgc?' · xag '+fmt$(xgc):'')+(uoc?' · usoil '+fmt$(uoc):'')+(smc?' · stk '+fmt$(smc):'')+(flc?' · fxlad '+fmt$(flc):'')+(ilc?' · ixlad '+fmt$(ilc):'')+' · Σ '+fmt$(z)):'';return;}
+ if(!ROWS.length){var z=omc+fxc+gbc+ixc+xgc+uoc+smc+flc+ilc;/* crypto PAPER NOT in Σ, S-18w */t.innerHTML='<tr><td class="l d" colspan="7">no closes in ledger</td></tr>'+compClipRows();el('ledgern').textContent=z?((omc?'companion '+fmt$(omc):'')+(fxc?' · fx '+fmt$(fxc):'')+(gbc?' · gold '+fmt$(gbc):'')+(ixc?' · idx '+fmt$(ixc):'')+(xgc?' · xag '+fmt$(xgc):'')+(uoc?' · usoil '+fmt$(uoc):'')+(smc?' · stk '+fmt$(smc):'')+(flc?' · fxlad '+fmt$(flc):'')+(ilc?' · ixlad '+fmt$(ilc):'')+' · Σ '+fmt$(z)):'';return;}
  var by={};
  ROWS.forEach(function(r){var k=r.eng||'?';if(!by[k])by[k]={n:0,pnl:0,w:0,sym:r.sym,last:0};
   var e=by[k];e.n++;e.pnl+=r.pnl;if(r.pnl>0)e.w++;if(r.ts>e.last){e.last=r.ts;e.sym=r.sym;}});
@@ -2075,7 +2085,8 @@ function drawBlot(){fetch('/api/shadow_trades').then(function(r){return r.json()
  var newest=safe(a[a.length-1].exitTs);
  if(window._lastClose===undefined)window._lastClose=newest;
  else if(newest>window._lastClose){
-  var fresh=a.filter(function(t){return safe(t.exitTs)>window._lastClose;});
+)OMEGAD11"
+R"OMEGAD12(  var fresh=a.filter(function(t){return safe(t.exitTs)>window._lastClose;});
   var net=fresh.reduce(function(s,t){return s+safe(t.pnl);},0);
   window._lastClose=newest;
   var why=fresh.slice(0,4).map(function(t){return (t.engine||'?').replace(/Engine$/,'')+' '+(t.symbol||'')+' '+fmt$(safe(t.pnl));}).join(', ')+(fresh.length>4?' +'+(fresh.length-4):'');
@@ -2087,8 +2098,7 @@ function drawHist(){var h=el('hist');if(!h)return;/* TRADE HISTORY panel removed
   var dd=String(d.getUTCDate()).padStart(2,'0')+'.'+String(d.getUTCMonth()+1).padStart(2,'0')+' '
    +String(d.getUTCHours()).padStart(2,'0')+':'+String(d.getUTCMinutes()).padStart(2,'0');
   var hold=r.hold>=3600?Math.floor(r.hold/3600)+'h'+Math.floor(r.hold%3600/60)+'m':Math.floor(r.hold/60)+'m';
-)OMEGAD11"
-R"OMEGAD12(  return '<tr><td class="l num d">'+dd+'</td><td class="l">'+esc((r.eng||'').replace(/Engine$/,''))+'</td><td class="l">'+esc(r.sym)+'</td>'
+  return '<tr><td class="l num d">'+dd+'</td><td class="l">'+esc((r.eng||'').replace(/Engine$/,''))+'</td><td class="l">'+esc(r.sym)+'</td>'
    +'<td class="'+(r.side==='LONG'?'g':'r')+'">'+(r.side==='LONG'?'L':'S')+'</td>'
    +'<td class="num d">'+lots(r.size)+'</td>'
    +'<td class="num">'+fmt2(r.epx,r.epx<10?4:2)+'</td><td class="num">'+fmt2(r.xpx,r.xpx<10?4:2)+'</td>'
@@ -2275,7 +2285,8 @@ function drawPR(){var cv=el("prc");
  ctx.strokeStyle=tc;ctx.globalAlpha=0.5;ctx.setLineDash([2,4]);
  ctx.beginPath();ctx.moveTo(padL,yl);ctx.lineTo(padL+pw,yl);ctx.stroke();ctx.setLineDash([]);ctx.globalAlpha=1;
  ctx.fillStyle=tc;ctx.fillRect(padL+pw+2,yl-8,padR-6,16);
- ctx.fillStyle='#0B0F14';ctx.fillText(lastC.toFixed(dp),padL+pw+6,yl+3.5);
+)OMEGAD12"
+R"OMEGAD13( ctx.fillStyle='#0B0F14';ctx.fillText(lastC.toFixed(dp),padL+pw+6,yl+3.5);
  el('prlast').textContent=lastC.toFixed(dp);
  var pt=el('prtrend');
  pt.textContent=trend>0?'▲ STEP UP':trend<0?'▼ STEP DOWN':'■ RANGING';
@@ -2291,8 +2302,7 @@ function drawPR(){var cv=el("prc");
     At m5 that's 660s > the bare 600s threshold → transient false "bar 11m STALE" for up
     to ~60s before each save. 2*tfsec+90 covers save cadence + poll slack. */
  var tfsec={'m5':300,'m15':900,'h1':3600}[PRTF]||900;
-)OMEGAD12"
-R"OMEGAD13( var barAge=(ds.bars&&ds.bars.length)?Math.max(0,Math.round(Date.now()/1000-ds.bars[ds.bars.length-1][0])):-1;
+ var barAge=(ds.bars&&ds.bars.length)?Math.max(0,Math.round(Date.now()/1000-ds.bars[ds.bars.length-1][0])):-1;
  var stale=barAge>=0&&barAge>2*tfsec+90;
  el('prinfo').innerHTML='ATR'+ds.len+' ×'+ds.factor+' · rng×'+ds.rmult+' · '+ds.source
    +(barAge>=0?' · bar '+(barAge<120?barAge+'s':Math.round(barAge/60)+'m')+(stale?' <span class="a">STALE</span>':''):'')

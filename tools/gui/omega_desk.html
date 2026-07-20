@@ -1122,7 +1122,17 @@ function pollTrades(){
        real trade-history log. Drop them from LAST-15 entirely; MIMIC-LIVE (real Binance cash) and
        EDGE (real forward $, isPaperClip()=false for both) still show. */
     var cryptoDisp=(res[1]||[]).filter(function(t){return !isPaperClip(t);});
-    var all=(res[0]||[]).concat(cryptoDisp).concat(sd).concat(live);
+    /* S-2026-07-20 (operator: "why do these nas trades not appear in last 5 trade list"): the
+       INDEX/FX mimic LADDER forward clips (idxladder/fxladder_companion pairs[].trades[]) were
+       fetched only by pollIxLad/pollFxLad for their own panels -- never folded into "all books".
+       They are REAL forward $ clips (like the stock book / EDGE), so list them. Money still totals
+       via the separate _ixladtot/_fxladtot (ladTot, realized-only) -> rows here are display+count
+       only, no double-count into ALL-TIME. */
+    var lad=[];[window._ixlad,window._fxlad].forEach(function(j){((j&&j.pairs)||[]).forEach(function(p){
+      (p.trades||[]).forEach(function(t){lad.push({book:'ladder',engine:(t.flavor||((p.pair||'')+'Lad')),
+        symbol:p.pair||p.live_sym||'',side:t.dir||'long',price:safe(t.entry),exitPrice:safe(t.exit),
+        net_pnl:safe(t.usd),exitReason:t.reason||'',entryTs:safe(t.entry_ts),exitTs:safe(t.exit_ts)});});});});
+    var all=(res[0]||[]).concat(cryptoDisp).concat(sd).concat(live).concat(lad);
     /* S-2026-07-12 operator: fold the CHIMERA EDGE realized (e.g. TIA-TSMOM +7.65) into the
        crypto PnL — it was showing in LAST-15 but never in the total. EDGE trades only
        (engine !~ CLIP) so it's additive to _cctot (the companion-clip book), no double-count.
@@ -1148,9 +1158,9 @@ function pollTrades(){
        we had, i.e. 2 or 4 or 1"): count ALL closed trades across every book, and how many are MIMIC
        engines (*Mimic tag). Shown next to the panel title. */
     var nAll=all.length, nMimic=all.filter(function(t){return /mimic/i.test(t.engine||'');}).length,
-        nStock=sd.length, nCrypto=cryptoDisp.length;
+        nStock=sd.length, nCrypto=cryptoDisp.length, nLad=lad.length;
     var cn=document.getElementById('alltradesn');
-    if(cn)cn.innerHTML='· '+nAll+' total ('+nMimic+' mimic'+(nStock?' · '+nStock+' stock':'')+(nCrypto?' · '+nCrypto+' crypto':'')+')';
+    if(cn)cn.innerHTML='· '+nAll+' total ('+nMimic+' mimic'+(nStock?' · '+nStock+' stock':'')+(nCrypto?' · '+nCrypto+' crypto':'')+(nLad?' · '+nLad+' ladder':'')+')';
     var top=all.slice(0,15);
     var el=document.getElementById('alltrades'); if(!el)return;
     if(!top.length){ el.innerHTML='<tr><td class="l d">no closed trades yet</td></tr>'; return; }
