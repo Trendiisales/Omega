@@ -1782,7 +1782,11 @@ static void init_engines(const std::string& cfg_path)
                 // real XAU H4): ALL6-PASS, net +46->+23, worst-clip 0.00, nNeg 0, mdd -0.8. The floor makes
                 // the live book incapable of ever booking a clip net<0 before BE covered.
                 c.arm_pct=0.25; c.lc_pct=2.0; c.cap_bars=30; c.rt_cost_bp=5.0; c.be_entry_pct=1.0; c.no_prebe_loss=true; c.pend_bars=6;
-                c.resting_exec=true; c.bull_only=true; c.live_book=true;
+                // PAUSED S-2026-07-20ae (operator: "pause both mgc books"). Honest re-cert
+                // GOLDMIMIC_HONEST_RECERT_2026-07-20.md: -42%/1x post-58a478e2 honest booking.
+                // live_book=false = shadow-log only, no real MGC order possible; honest forward
+                // evidence keeps accruing. Re-live only on operator order + fresh honest cert.
+                c.resting_exec=true; c.bull_only=true; c.live_book=false;
                 c.notional=40000.0;  // 1 MGC = 10oz x ~$4k -- desk USD honest at this size
                 c.lot=1.0;  // 1 MGC contract (10oz micro future, NOT a 100oz CFD lot) LOT-GATE-OK operator S-2026-07-14 sizing order, revalidation GREEN
                 gm.add(std::move(c)); }
@@ -1877,7 +1881,13 @@ static void init_engines(const std::string& cfg_path)
             {   omega::GoldTrendMimicBook::Config c; c.trigger_tag="GoldDon10m"; c.live_sym="XAUUSD.M";
                 c.legs={{"T",0.08},{"W",0.20}};
                 c.arm_pct=1.00; c.lc_pct=1.0; c.cap_bars=144; c.rt_cost_bp=5.0; c.be_entry_pct=0.10; c.no_prebe_loss=true; c.pend_bars=12;
-                c.resting_exec=true; c.live_book=true;   // S-2026-07-19p LIVE FLIP (operator: all profitable engines live). Real MGC via resting-exec, BE-floored (no_prebe_loss + be_entry 0.10 + lc 1.0). Standalone-certified in 6mo faithful BT (T PF1.37 / W PF1.33, both-halves+, worst -1.05%); forward/resting re-cert owed -- protection (BE-floor+lc+cost-gate) bounds the tail.
+                // PAUSED S-2026-07-20ae (operator: "pause both mgc books"; was LIVE S-2026-07-19p).
+                // Honest re-cert GOLDMIMIC_HONEST_RECERT_2026-07-20.md: -227%/1x, 1m-truth 6mo
+                // T -$10.9k / W -$11.2k post-58a478e2 honest booking (old +$14.0k/+$12.5k was the
+                // clamped-booking artifact; live-ledger audit GOLDDON10M_LIVE_LEDGER_AUDIT_2026-07-20.md
+                // confirms churn mechanism). live_book=false = shadow-log only, no real MGC order
+                // possible; honest forward evidence keeps accruing. Re-live only on operator order.
+                c.resting_exec=true; c.live_book=false;
                 c.notional=40000.0; c.lot=1.0; gm.add(std::move(c)); }  // LOT-GATE-OK: 1 MGC micro-future contract/leg (2 legs T+W = 2 MGC), NOT a 100oz CFD lot -- same sizing basis as the live XAU_4h_DonchN20 cell; LIVE via live_book gate
             // XAU-H1 SMA200 regime gate seed (bear-gate proviso): warm from boot, 1101-bar CSV.
             gm.seed_xau_regime_h1_csv(omega::resolve_seed_path("phase1/signal_discovery/warmup_XAUUSD_H1.csv"));
@@ -1898,7 +1908,7 @@ static void init_engines(const std::string& cfg_path)
                     // positive magnitudes in price units x size (S-2026-07-15 mfe/mae=0 fix)
                     tr.mfe=(mfe_pct/100.0)*entry_px*lots; tr.mae=(std::fabs(mae_pct)/100.0)*entry_px*lots;
                     handle_closed_trade(tr); });
-            printf("[OMEGA-INIT][SEED] GoldTrendMimicLadder wired: 13 trigger books (XauTf4h 4-leg, MgcTF4h 2-leg SHADOW venue-cost rt5 UNGATED [S-17q wire; per-instance mimic_tag ends the MGC->spot cross-feed; open-path fire gap fixed 4h+D1], XauTfD1 2-leg, NAS100/US500/DJ30 Turtle 2-leg SHADOW [XauTf2h + MgcFastDon RETIRED S-2026-07-17: 0/576 floored configs pass, grid ceiling net-negative]; survivor XAU_4h_DonchN20 1-leg LIVE resting-exec 1 MGC + H1-SMA200 bear-gate; USTEC_4h_ZMR disabled S-14 intrabar FAIL; S-14bc BE-mimics be0.10 2-leg x5: MgcTf1h/GoldKeltM30/GoldTfBw1040/GoldTfBw20100/GoldDonH1 SHADOW; S-14 sub-30m re-open x1: GoldDon10m arm1.0/lc1.0 SHADOW 1m-truth-validated [GoldDon15m CULLED S-16 operator: kept losing]), specific native feeds, deploy-forward\n");
+            printf("[OMEGA-INIT][SEED] GoldTrendMimicLadder wired: 13 trigger books (XauTf4h 4-leg, MgcTF4h 2-leg SHADOW venue-cost rt5 UNGATED [S-17q wire; per-instance mimic_tag ends the MGC->spot cross-feed; open-path fire gap fixed 4h+D1], XauTfD1 2-leg, NAS100/US500/DJ30 Turtle 2-leg SHADOW [XauTf2h + MgcFastDon RETIRED S-2026-07-17: 0/576 floored configs pass, grid ceiling net-negative]; survivor XAU_4h_DonchN20 1-leg PAUSED S-20ae (was LIVE resting-exec 1 MGC) + H1-SMA200 bear-gate; USTEC_4h_ZMR disabled S-14 intrabar FAIL; S-14bc BE-mimics be0.10 2-leg x5: MgcTf1h/GoldKeltM30/GoldTfBw1040/GoldTfBw20100/GoldDonH1 SHADOW; S-14 sub-30m re-open x1: GoldDon10m arm1.0/lc1.0 LIVE S-19p -> PAUSED S-20ae honest-recert FAIL [GoldDon15m CULLED S-16 operator: kept losing]), specific native feeds, deploy-forward\n");
             fflush(stdout);
         }
 
