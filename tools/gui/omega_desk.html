@@ -451,8 +451,20 @@ function killAll(b){
     setTimeout(function(){b.disabled=false;b.textContent='KILL ALL';b.style.background='#3a0d0d';b.style.color='#ff5a5a';},3000);
   }).catch(function(){b.textContent='ERR';setTimeout(function(){b.disabled=false;b.textContent='KILL ALL';b.style.background='#3a0d0d';b.style.color='#ff5a5a';},3000);});
 }
+/* S-2026-07-20o (operator: "not hearing anything"): Chrome autoplay-blocks WebAudio until a
+   user gesture OR the site is allowlisted (lock icon -> Site settings -> Sound -> Allow). The
+   old chime() dropped blocked bells SILENTLY (resume() stays pending, catch never fires) --
+   the operator had no way to tell "no events" from "events fired but muted by the browser".
+   Now a dropped bell turns the SND button red 'SND BLOCKED' + one-shot toast with the fix;
+   the first successfully-played bell restores the button. */
+var __sndBlockedShown=false;
+function __sndBlocked(){var b=el('snd');if(b){b.textContent='SND BLOCKED';b.style.color='var(--redB)';}
+ if(__sndBlockedShown)return;__sndBlockedShown=true;
+ __almToast('bell DROPPED — Chrome is blocking sound. Click the page once, or lock icon → Site settings → Sound → Allow, then reload.','fail');}
 function chime(notes,_r){if(!SND)return;ensureCtx();if(!ACTX)return;
- if(ACTX.state==='suspended'&&!_r){ACTX.resume().then(function(){chime(notes,1);}).catch(function(){});return;}
+ if(ACTX.state==='suspended'&&!_r){ACTX.resume().then(function(){chime(notes,1);}).catch(function(){});
+  setTimeout(function(){if(ACTX&&ACTX.state==='suspended')__sndBlocked();},600);return;}
+ if(__sndBlockedShown){__sndBlockedShown=false;var _b=el('snd');if(_b)_b.style.color='';sndBtn();}
  var t=ACTX.currentTime;
  notes.forEach(function(n){var o=ACTX.createOscillator(),g=ACTX.createGain();
   o.connect(g);g.connect(ACTX.destination);o.type='sine';o.frequency.value=n[1];
@@ -462,6 +474,9 @@ function winBell(){chime([[0,880,0.6],[0.15,1100,0.5],[0.3,1320,0.5]]);}
 function lossBell(){chime([[0,440,0.6],[0.18,330,0.5],[0.36,262,0.5]]);}
 function sigTick(){chime([[0,660,0.25]]);}
 function entryBell(){chime([[0,740,0.5],[0.12,988,0.45]]);}
+/* S-2026-07-20o: restart was toast-only (bellFn=null) -- operator wants it AUDIBLE. Distinct
+   low-high-low-high pattern so it can't be confused with entry/win/loss. */
+function restartBell(){chime([[0,523,0.5],[0.15,392,0.45],[0.3,523,0.5],[0.45,784,0.5]]);}
 /* ── ALARM LOG (S-2026-07-18c, operator: "if it alarms i would like to see the notification
    pertaining to that alarm"). EVERY audible ring must pass a reason through __almLog so the
    cause is visible: toast bottom-right (6s) + persisted history (last 50, localStorage
@@ -873,7 +888,7 @@ function render(J){lastJ=J;
  (function(){var boot=Math.round((Date.now()/1000-up)/60)*60,
   seen=parseInt(localStorage.getItem('omega_boot_seen')||'0',10);
   if(Math.abs(boot-seen)>120){localStorage.setItem('omega_boot_seen',String(boot));
-   almRing('Omega service restarted (boot epoch moved) — sound re-armed','info',null);
+   almRing('Omega service restarted (boot epoch moved) — sound re-armed','info',restartBell);/* S-20o: audible (was toast-only) */
    if(!SND){SND=true;localStorage.setItem('omega_snd','1');sndBtn();}}})();
  var st=el('sesstrade');st.textContent=(J.session_name||'?')+(safe(J.session_tradeable)?' · tradeable':' · blocked');
  st.style.color=safe(J.session_tradeable)?'var(--grnB)':'var(--redB)';
