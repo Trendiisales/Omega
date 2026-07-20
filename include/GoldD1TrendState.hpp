@@ -244,7 +244,13 @@ struct GoldD1TrendState {
     //   truncates to empty: writes only when the merge produced rows.
     size_t regen_live_dump_from_csv(const std::string& warmup_path) const noexcept {
         if (dump_path_.empty()) return 0;
-        std::map<int64_t, std::string> rows;   // close_ts_ms -> "o,h,l,c"
+        // Key = close-ts rounded to the nearest MINUTE: live appends stamp the actual
+        // tick time at the close boundary (sub-second jitter, e.g. ...400639) while
+        // warmup-derived close-ts is the exact boundary (...400000) — raw-ts keying left
+        // the same bar in twice with diverging closes (seen live S-2026-07-20r deploy).
+        std::map<int64_t, std::string> rows;   // minute-quantised close_ts_ms -> "ts,o,h,l,c"
+        auto qmin = [](long long ts) -> int64_t { return ((ts + 30000LL) / 60000LL) * 60000LL; };
+        const long long now_ms = (long long)std::time(nullptr) * 1000LL;
         auto parse = [](const std::string& line, long long& ts, double& o, double& h,
                         double& l, double& c) -> bool {
             if (std::sscanf(line.c_str(), "%lld,%lf,%lf,%lf,%lf", &ts, &o, &h, &l, &c) != 5)
@@ -260,9 +266,14 @@ struct GoldD1TrendState {
             while (f.is_open() && std::getline(f, line)) {
                 long long ts; double o, h, l, c;
                 if (!parse(line, ts, o, h, l, c)) continue;   // skips header
-                char buf[128];
-                std::snprintf(buf, sizeof(buf), "%.5f,%.5f,%.5f,%.5f", o, h, l, c);
-                rows[ts + 14400000LL] = buf;                  // bar_start -> close ts
+                const long long close_ts = ts + 14400000LL;   // bar_start -> close ts
+                // Skip the in-progress bar: seed_refresh can run mid-bar, so the warmup's
+                // last row may be PARTIAL with a close-ts in the future (seen live:
+                // "last bar age=-62min"). Only completed bars belong in the dump.
+                if (close_ts > now_ms) continue;
+                char buf[160];
+                std::snprintf(buf, sizeof(buf), "%lld,%.5f,%.5f,%.5f,%.5f", close_ts, o, h, l, c);
+                rows[qmin(close_ts)] = buf;
                 ++n_warm;
             }
         }
@@ -272,9 +283,10 @@ struct GoldD1TrendState {
             while (f.is_open() && std::getline(f, line)) {
                 long long ts; double o, h, l, c;
                 if (!parse(line, ts, o, h, l, c)) continue;
-                char buf[128];
-                std::snprintf(buf, sizeof(buf), "%.5f,%.5f,%.5f,%.5f", o, h, l, c);
-                rows[ts] = buf;                               // live row wins on collision
+                if (ts > now_ms) continue;                    // drop future rows (prior-regen partials)
+                char buf[160];
+                std::snprintf(buf, sizeof(buf), "%lld,%.5f,%.5f,%.5f,%.5f", ts, o, h, l, c);
+                rows[qmin(ts)] = buf;                         // live row wins on collision
                 ++n_live;
             }
         }
@@ -289,7 +301,7 @@ struct GoldD1TrendState {
             fflush(stdout);
             return 0;
         }
-        for (const auto& kv : rows) out << kv.first << ',' << kv.second << "\n";
+        for (const auto& kv : rows) out << kv.second << "\n";   // value carries its own real ts
         const int64_t last_ts_s = rows.rbegin()->first / 1000;
         const int64_t age_min = ((int64_t)std::time(nullptr) - last_ts_s) / 60;
         printf("[GoldD1Trend][DUMP-REGEN] warmup=%zu live=%zu -> %zu merged rows, last bar age=%lldmin (dump boot-fresh)\n",
