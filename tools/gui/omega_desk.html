@@ -627,7 +627,7 @@ var SEED_LAST={gold:4187.30,sp:7483.24,nq:29329.21,nas:29329.21,dj:52900.07,ger3
     ticks + localStorage override it in render(). */
  var _sl=SEED_LAST[t[0]];
  var _si=(_sl>0)?_sl.toLocaleString(undefined,{maximumFractionDigits:_sl>100?1:4}):'—';
- h+='<div style="padding:6px 12px;border-right:1px solid var(--bd);min-width:104px">'
+ h+='<div id="tkbox_'+t[0]+'" style="padding:6px 12px;border-right:1px solid var(--bd);min-width:104px">'
   +'<div class="lbl" id="tkl_'+t[0]+'">'+t[1]+'</div><div class="num" id="tk_'+t[0]+'" style="font-size:13px;color:'+(_sl>0?'var(--t2)':'var(--w)')+'">'+_si+'</div>'
   +'<div class="lbl num" id="tks_'+t[0]+'"></div>'
   +(t[2]?'<div class="bar" style="height:4px;margin-top:3px"><i id="tkr_'+t[0]+'" style="background:var(--blu);width:0"></i></div>':'')
@@ -762,12 +762,26 @@ setInterval(pollReg,30000);pollReg();
 /* S-2026-07-13 operator: tile symbol goes GREEN when TRIGGERED — classic tiles when any
    engine holds an OPEN position on the symbol (live feed or weekend registry); crypto tiles
    when any companion cell for the coin is ARMED / has open sublegs. Reverts when flat. */
-var TK_SYM2KEY={XAUUSD:'gold',US500:'sp','US500.F':'sp',USTEC:'nq','USTEC.F':'nq',NAS100:'nq','DJ30':'dj','DJ30.F':'dj',GER40:'ger30',UK100:'uk100',USOIL:'cl','USOIL.F':'cl',XAGUSD:'xag',EURUSD:'eurusd',GBPUSD:'gbpusd',USDJPY:'usdjpy',AUDUSD:'audusd',NZDUSD:'nzdusd',USDCAD:'usdcad'};
+/* S-2026-07-20: + IBKR micro-contract keys. Live ca_engines (NqMomoIbkr, MgcVolBreakoutM30)
+   emit their OWN symbol ("MNQ"/"MGC") into open_positions/REGPOS, NOT the display sym -- so a
+   live NQ/gold futures trade never lit its tile. MNQ/NQ->nq, MGC/NQ->gold, MES->sp, MYM->dj. */
+var TK_SYM2KEY={XAUUSD:'gold','XAUUSD.M':'gold',MGC:'gold',US500:'sp','US500.F':'sp',MES:'sp',USTEC:'nq','USTEC.F':'nq',NAS100:'nq',MNQ:'nq',NQ:'nq','DJ30':'dj','DJ30.F':'dj',MYM:'dj',GER40:'ger30',UK100:'uk100',USOIL:'cl','USOIL.F':'cl',XAGUSD:'xag',EURUSD:'eurusd',GBPUSD:'gbpusd',USDJPY:'usdjpy',AUDUSD:'audusd',NZDUSD:'nzdusd',USDCAD:'usdcad'};
 function markTiles(){
  var act={};
  (window._lastLts||[]).forEach(function(t){var k=TK_SYM2KEY[String(t.symbol||'').toUpperCase()];if(k)act[k]=1;});
  (REGPOS||[]).forEach(function(t){var k=TK_SYM2KEY[String(t.symbol||'').toUpperCase()];if(k)act[k]=1;});
- TKS.forEach(function(t){var e=el('tkl_'+t[0]);if(e){e.style.color=act[t[0]]?'var(--grn)':'';e.style.fontWeight=act[t[0]]?'700':'';}});
+ /* S-2026-07-20 (operator: killed a WINNING NAS100 ladder because the USTEC tile stayed dark).
+    markTiles previously read only live_trades+REGPOS -- the index/FX LADDER books feed a SEPARATE
+    endpoint (_ixlad/_fxlad), so a ladder with an OPEN leg never lit its tile. A pair with an open
+    leg IS a live position -> light the tile NEON so it can't be killed blind. */
+ [window._ixlad,window._fxlad].forEach(function(j){((j&&j.pairs)||[]).forEach(function(p){
+   if((p.open||[]).length){var k=TK_SYM2KEY[String(p.pair||p.live_sym||'').toUpperCase()];if(k)act[k]=1;}});});
+ TKS.forEach(function(t){var e=el('tkl_'+t[0]),bx=el('tkbox_'+t[0]);var on=!!act[t[0]];
+  if(e){e.style.color=on?'#39ff14':'';e.style.fontWeight=on?'700':'';e.style.textShadow=on?'0 0 8px #39ff14':'';}
+  /* S-18ak TRUE NEON box glow, same as the crypto tiles (drawProx) + the header beacon. */
+  if(bx){if(on){bx.style.outline='2px solid #39ff14';bx.style.outlineOffset='-2px';bx.style.background='rgba(57,255,20,.14)';
+    bx.style.boxShadow='inset 0 0 14px rgba(57,255,20,.5), 0 0 12px #39ff14, 0 0 26px rgba(57,255,20,.55)';bx.style.animation='neonPulse 1.2s ease-in-out infinite';}
+   else{bx.style.outline='';bx.style.outlineOffset='';bx.style.background='';bx.style.boxShadow='';bx.style.animation='';}}});
  var ca={},live=window._cc||{};
  /* S-18ak: ARMED only (idle books can emit subleg rows — subleg existence lit idle coins);
     armed = open BE-floored book = TRADING. Label goes NEON to match the drawProx box glow. */
