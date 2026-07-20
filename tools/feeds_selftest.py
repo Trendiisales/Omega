@@ -254,9 +254,14 @@ def mtime_date(path: Path) -> dt.date | None:
 # each age is checked against its manifest max_age_min. A stale LIVE dump => exit 1.
 # mtime is safe here: these dumps are append-only and only their writer touches them.
 
-def load_live_dump_manifest() -> list[tuple[str, int, str]]:
-    """Parse live_dump_manifest.tsv -> [(path_under_logs, max_age_min, description)]."""
-    out: list[tuple[str, int, str]] = []
+def load_live_dump_manifest() -> list[tuple[str, int, str, str]]:
+    """Parse live_dump_manifest.tsv -> [(path_under_logs, max_age_min, description, flags)].
+    flags (optional 4th tab column): 'wkday-daily' = the producer only runs on weekdays
+    (e.g. OmegaStockMoverFeed 22:35 UTC Mon-Fri), so on Monday — enforcement resumes at
+    00:00 UTC but the last write was FRIDAY — the age cap gets +48h weekend grace.
+    Without it the row false-REDs every Monday 00:00->22:35 UTC. Tuesday reverts to the
+    base cap, so a producer that failed on Monday is still caught within a day."""
+    out: list[tuple[str, int, str, str]] = []
     try:
         for line in LIVE_DUMP_MANIFEST.read_text().splitlines():
             line = line.strip()
@@ -267,8 +272,9 @@ def load_live_dump_manifest() -> list[tuple[str, int, str]]:
                 continue
             path, max_age = parts[0].strip(), parts[1].strip()
             desc = parts[2].strip() if len(parts) > 2 else ""
+            flags = parts[3].strip() if len(parts) > 3 else ""
             try:
-                out.append((path, int(max_age), desc))
+                out.append((path, int(max_age), desc, flags))
             except ValueError:
                 continue
     except OSError:
@@ -303,14 +309,14 @@ def market_closed_weekend(now_utc: dt.datetime) -> bool:
     return False
 
 
-def vps_live_dump_ages(manifest: list[tuple[str, int, str]]) -> dict[str, float] | None:
+def vps_live_dump_ages(manifest: list[tuple[str, int, str, str]]) -> dict[str, float] | None:
     """ONE batched `ssh omega-new` call. Returns {path_under_logs: age_min} computed
     ON the VPS (skew-free). None if the ssh call fails entirely (=> RED). A file that
     is missing on the VPS is reported as a very large age so it REDs against its cap.
     The ssh command MUST start literally `ssh omega-new` (classifier rule; omega-vps alias DISABLED 2026-07-14)."""
     # PowerShell one-liner: for each relative path, print "<path>\t<age_min>" (or a
     # huge age if absent). LastWriteTime age keeps us clock-skew-free vs the Mac.
-    files = ";".join(f"'{p}'" for p, _, _ in manifest)
+    files = ";".join(f"'{p}'" for p, *_ in manifest)
     ps = (
         f"$r='{VPS_LOG_ROOT}';"
         f"foreach($f in @({files})){{"
@@ -731,7 +737,7 @@ def main() -> int:
     now_utc = dt.datetime.now(dt.timezone.utc)
     if manifest:
         if market_closed_weekend(now_utc):
-            for path, max_age_min, desc in manifest:
+            for path, max_age_min, desc, _flags in manifest:
                 vps_rows.append((path, "SKIP", f"weekend (market closed) -- age not enforced (max {max_age_min}min)"))
         else:
             ages = vps_live_dump_ages(manifest)
@@ -739,19 +745,26 @@ def main() -> int:
                 # ssh unreachable / failed entirely -> cannot verify a load-bearing
                 # live feed -> treat as RED (each manifested LIVE dump is unverifiable).
                 live_red += len(manifest)
-                for path, max_age_min, desc in manifest:
+                for path, max_age_min, desc, _flags in manifest:
                     vps_rows.append((path, "RED", f"VPS UNREACHABLE (ssh {VPS_HOST} failed) -- feed unverifiable (max {max_age_min}min)"))
             else:
-                for path, max_age_min, desc in manifest:
+                for path, max_age_min, desc, flags in manifest:
+                    # wkday-daily producers last wrote FRIDAY; Monday needs +48h weekend
+                    # grace or the row false-REDs all Monday until the evening run.
+                    eff_max = max_age_min
+                    grace = ""
+                    if "wkday-daily" in flags and now_utc.weekday() == 0:
+                        eff_max = max_age_min + 48 * 60
+                        grace = " +48h Mon grace (wkday-daily)"
                     age_min = ages.get(path)
                     if age_min is None:
                         live_red += 1
                         vps_rows.append((path, "RED", f"no age returned for {path} -- writer/path missing (max {max_age_min}min)"))
-                    elif age_min > max_age_min:
+                    elif age_min > eff_max:
                         live_red += 1
-                        vps_rows.append((path, "RED", f"age={age_min:.0f}min > max {max_age_min}min -- VPS writer stalled ({desc})"))
+                        vps_rows.append((path, "RED", f"age={age_min:.0f}min > max {eff_max}min{grace} -- VPS writer stalled ({desc})"))
                     else:
-                        vps_rows.append((path, "PASS", f"age={age_min:.0f}min (max {max_age_min}min) {desc}"))
+                        vps_rows.append((path, "PASS", f"age={age_min:.0f}min (max {eff_max}min{grace}) {desc}"))
 
     # ── VPS IBKR execution-path status (gold routes to IBKR GC; cost gate rebased) ──
     # Skip on weekend (market closed -> gold not trading, exec path irrelevant).

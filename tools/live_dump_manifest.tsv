@@ -13,7 +13,12 @@
 # (omega_trade_closes.csv / tod / fill / day_results) have NO fixed cadence and
 # are therefore NOT cadence-monitorable — excluded BY DESIGN.
 #
-# Columns (tab-separated):  path_under_logs  max_age_min  description
+# Columns (tab-separated):  path_under_logs  max_age_min  description  [flags]
+# flags (optional): wkday-daily = producer runs Mon-Fri only, so Monday enforcement
+# (which resumes 00:00 UTC while the last write was Friday) gets +48h grace in
+# feeds_selftest.py. Tuesday reverts to the base cap -> a Monday failure is still
+# caught within a day. Added S-2026-07-20 after the first post-add Monday
+# false-REDed sp500_long_close (Fri 22:35 write vs 26h cap at Mon 00:11).
 gold_regime_h1.csv	120	hourly gold long-only regime gate
 gold_d1_trend_h4.csv	300	4h gold direction gate + fire-on-boot seed
 index_mkt_regime_h1.csv	120	hourly index risk-off gate
@@ -22,7 +27,7 @@ index_mkt_regime_h1.csv	120	hourly index risk-off gate
 # macro gate FAILS SAFE stale (MacroGoldGate 36h -> price core) — alert at 26h so a dead
 # producer is known a day before the engine silently reverts.
 macro/macro_gold_gate.tsv	1560	daily macro hostile-regime gate producer (OmegaMacroGoldGate 23:00 UTC; engine fails safe at 36h)
-../data/rdagent/sp500_long_close.csv	1560	bigcap stockmover daily close feed (OmegaStockMoverFeed; mimic ladder goes blind-quiet if dead)
+../data/rdagent/sp500_long_close.csv	1560	bigcap stockmover daily close feed (OmegaStockMoverFeed; mimic ladder goes blind-quiet if dead)	wkday-daily
 # S-2026-07-14 latent-class sweep P1-1: these two producers existed UNSCHEDULED since
 # birth — gates ran permanently inert on stale files (engines degrade to ungated/risk-on
 # past 4d, so nothing halted). Alert at 26h = producer death known ~3d before gate dies.
