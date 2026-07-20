@@ -1,0 +1,95 @@
+
+===== EURUSD LONG  ENTRY GRID (current exits arm1.0/be0.08/gb0.1, rt2.0bp) =====
+  W24  thr0.50  n=  918 net=  -17.2 PF=0.89 H1= -33.0 H2= +15.8 bull=  -1.0 bear= -16.7 [fail]
+  W24  thr0.75  n=  419 net=  -26.9 PF=0.70 H1= -19.1 H2=  -7.8 bull= -13.6 bear=  -8.9 [fail]
+  W24  thr1.00  n=  253 net=  -12.4 PF=0.76 H1=  +5.0 H2= -17.4 bull=  -4.8 bear= -12.9 [fail]
+  W24  thr1.50  n=   71 net=   +7.1 PF=1.49 H1=  +2.3 H2=  +4.8 bull=  +7.3 bear=  -0.2 [fail]
+  W48  thr0.50  n=  787 net=  -32.3 PF=0.82 H1= -24.9 H2=  -7.4 bull= -16.6 bear= -15.8 [fail] <LIVE
+  W48  thr0.75  n=  450 net=   +0.3 PF=1.00 H1= -13.7 H2= +14.0 bull=  +5.3 bear=  -5.1 [fail]
+  W48  thr1.00  n=  313 net=  -16.2 PF=0.82 H1= -11.2 H2=  -5.0 bull=  +1.4 bear= -12.3 [fail]
+  W48  thr1.50  n=   86 net=   +1.7 PF=1.07 H1=  -7.6 H2=  +9.4 bull= +10.0 bear=  -8.3 [fail]
+  W72  thr0.50  n=  615 net=  -61.8 PF=0.67 H1= -53.4 H2=  -8.4 bull= -25.9 bear= -30.6 [fail]
+  W72  thr0.75  n=  402 net=  -11.7 PF=0.89 H1= -18.1 H2=  +6.4 bull=  -4.8 bear=  -5.0 [fail]
+  W72  thr1.00  n=  289 net=  -24.6 PF=0.74 H1= -25.3 H2=  +0.7 bull=  +3.3 bear= -17.7 [fail]
+  W72  thr1.50  n=  102 net=  +13.6 PF=1.62 H1=  +6.9 H2=  +6.7 bull= +18.1 bear=  -4.5 [fail]
+  W96  thr0.50  n=  527 net=   -7.0 PF=0.95 H1= -19.5 H2= +12.4 bull=  -5.1 bear=  -1.9 [fail]
+  W96  thr0.75  n=  366 net=  -19.0 PF=0.83 H1= -10.8 H2=  -8.2 bull= -21.4 bear=  +2.1 [fail]
+  W96  thr1.00  n=  278 net=  -23.2 PF=0.77 H1= -22.2 H2=  -0.9 bull=  -0.6 bear= -14.4 [fail]
+  W96  thr1.50  n=  132 net=  +12.6 PF=1.27 H1= +20.6 H2=  -8.0 bull= +13.3 bear=  -0.7 [fail]
+  >> NO all-6 PASS in entry grid
+
+===== GBPUSD LONG  ENTRY GRID (current exits arm1.0/be0.08/gb0.1, rt2.0bp) =====
+  W24  thr0.50  n= 1056 net=  -43.3 PF=0.76 H1= -45.0 H2=  +1.7 bull= -24.4 bear= -26.1 [fail]
+  W24  thr0.75  n=  497 net=   +0.9 PF=1.01 H1= -21.9 H2= +22.8 bull= +13.9 bear= -12.1 [fail]
+  W24  thr1.00  n=  205 net=   -9.4 PF=0.77 H1=  -2.7 H2=  -6.7 bull=  -4.9 bear=  -7.1 [fail]
+  W24  thr1.50  n=   35 net=   -1.3 PF=0.82 H1=  -2.7 H2=  +1.3 bull=  -1.3 bear=  +0.0 [fail]
+  W48  thr0.50  n=  833 net=  -81.6 PF=0.62 H1= -57.8 H2= -23.9 bull= -40.6 bear= -41.7 [fail]
+  W48  thr0.75  n=  526 net=  +30.1 PF=1.31 H1= +14.7 H2= +15.4 bull= +11.0 bear= +19.0 [PASS]
+  W48  thr1.00  n=  285 net=   +3.2 PF=1.06 H1=  -1.1 H2=  +4.3 bull=  +9.1 bear=  -6.5 [fail] <LIVE
+  W48  thr1.50  n=   75 net=   +3.3 PF=1.15 H1=  -6.2 H2=  +9.6 bull=  +4.4 bear=  +0.0 [fail]
+  W72  thr0.50  n=  740 net=  -61.7 PF=0.71 H1= -43.8 H2= -17.9 bull= -19.8 bear= -36.2 [fail]
+  W72  thr0.75  n=  419 net=   -5.5 PF=0.95 H1= -17.5 H2= +12.0 bull=  -8.0 bear=  +2.4 [fail]
+  W72  thr1.00  n=  312 net=  -16.8 PF=0.81 H1= -12.9 H2=  -3.9 bull=  -3.6 bear=  -8.6 [fail]
+  W72  thr1.50  n=   81 net=   +4.2 PF=1.15 H1=  -4.6 H2=  +8.8 bull=  +5.2 bear=  -1.0 [fail]
+  W96  thr0.50  n=  565 net=  -42.1 PF=0.75 H1= -21.1 H2= -21.0 bull= -26.8 bear=  -9.1 [fail]
+  W96  thr0.75  n=  393 net=   +3.4 PF=1.03 H1=  +2.6 H2=  +0.8 bull=  +4.8 bear=  -1.4 [fail]
+  W96  thr1.00  n=  282 net=   -5.5 PF=0.94 H1=  -7.3 H2=  +1.8 bull=  +4.8 bear=  -3.7 [fail]
+  W96  thr1.50  n=  126 net=   -1.4 PF=0.97 H1= -13.5 H2= +12.1 bull=  +1.8 bear=  -3.2 [fail]
+  >> best PASS: W48 thr0.75 net=+30.1 PF1.31
+
+===== NZDUSD LONG  ENTRY GRID (current exits arm1.0/be0.08/gb0.1, rt2.0bp) =====
+  W24  thr0.50  n= 1674 net= -111.3 PF=0.73 H1= -53.4 H2= -57.9 bull= -13.2 bear= -96.5 [fail]
+  W24  thr0.75  n=  965 net=  -33.1 PF=0.86 H1= -67.2 H2= +34.2 bull=  -3.4 bear= -24.6 [fail]
+  W24  thr1.00  n=  542 net=  -16.9 PF=0.88 H1= -29.1 H2= +12.2 bull= +17.5 bear= -18.4 [fail]
+  W24  thr1.50  n=  205 net=  +14.3 PF=1.30 H1=  -2.8 H2= +17.2 bull=  +8.0 bear=  -1.1 [fail] <LIVE
+  W48  thr0.50  n= 1070 net=  -40.8 PF=0.85 H1= -26.1 H2= -14.7 bull=  -7.7 bear= -30.6 [fail]
+  W48  thr0.75  n=  786 net=  -13.3 PF=0.94 H1= -33.2 H2= +19.9 bull= +23.2 bear= -25.7 [fail]
+  W48  thr1.00  n=  596 net=  -52.1 PF=0.75 H1= -62.2 H2= +10.2 bull=  -7.4 bear= -17.0 [fail]
+  W48  thr1.50  n=  286 net=   -9.7 PF=0.90 H1=  -7.0 H2=  -2.8 bull= +11.4 bear= -17.5 [fail]
+  W72  thr0.50  n=  779 net=  -61.9 PF=0.76 H1= -49.6 H2= -12.3 bull= -38.4 bear= -15.9 [fail]
+  W72  thr0.75  n=  592 net=  -25.6 PF=0.87 H1=  -9.5 H2= -16.2 bull=  -7.7 bear= -16.2 [fail]
+  W72  thr1.00  n=  534 net=  -58.3 PF=0.74 H1= -63.3 H2=  +5.0 bull=  +2.4 bear= -45.8 [fail]
+  W72  thr1.50  n=  286 net=  -36.8 PF=0.72 H1= -40.2 H2=  +3.4 bull= -10.7 bear= -20.7 [fail]
+  W96  thr0.50  n=  669 net=  -20.8 PF=0.90 H1= -48.6 H2= +27.8 bull=  +4.3 bear= -14.0 [fail]
+  W96  thr0.75  n=  583 net=  -23.3 PF=0.89 H1=  +5.3 H2= -28.6 bull= -15.1 bear=  +2.7 [fail]
+  W96  thr1.00  n=  490 net=  -48.9 PF=0.79 H1= -50.7 H2=  +1.8 bull=  +7.7 bear= -38.6 [fail]
+  W96  thr1.50  n=  272 net=  -50.3 PF=0.68 H1= -61.1 H2= +10.8 bull=  +3.3 bear= -31.3 [fail]
+  >> NO all-6 PASS in entry grid
+
+===== AUDUSD LONG  ENTRY GRID (current exits arm1.0/be0.08/gb0.1, rt2.0bp) =====
+  W24  thr0.50  n= 1767 net=  -75.6 PF=0.81 H1= -27.0 H2= -48.6 bull= -61.1 bear= -18.6 [fail]
+  W24  thr0.75  n=  973 net=  -60.7 PF=0.77 H1= -62.0 H2=  +1.3 bull= -32.1 bear= -23.1 [fail]
+  W24  thr1.00  n=  546 net=  -11.9 PF=0.92 H1= -30.1 H2= +18.2 bull=  -6.5 bear=  +5.1 [fail]
+  W24  thr1.50  n=  206 net=   -5.9 PF=0.90 H1=  +5.2 H2= -11.1 bull= -12.0 bear=  +1.7 [fail]
+  W48  thr0.50  n= 1111 net=  -55.7 PF=0.82 H1= -39.4 H2= -16.3 bull= -61.5 bear=  -0.7 [fail]
+  W48  thr0.75  n=  873 net=  -12.1 PF=0.95 H1= -28.3 H2= +16.2 bull=  -9.3 bear= +11.4 [fail]
+  W48  thr1.00  n=  609 net=  -88.5 PF=0.64 H1= -74.5 H2= -14.1 bull= -66.6 bear=  -7.7 [fail]
+  W48  thr1.50  n=  231 net=   +6.3 PF=1.08 H1=  +5.6 H2=  +0.7 bull=  -6.1 bear=  +8.1 [fail]
+  W72  thr0.50  n=  878 net=  -54.2 PF=0.81 H1= -24.6 H2= -29.6 bull= -39.7 bear= -10.4 [fail]
+  W72  thr0.75  n=  680 net=  -41.7 PF=0.82 H1= -44.0 H2=  +2.3 bull= -20.9 bear=  -1.9 [fail] <LIVE
+  W72  thr1.00  n=  555 net=  -34.0 PF=0.83 H1= -66.7 H2= +32.6 bull= -23.6 bear= +12.8 [fail]
+  W72  thr1.50  n=  277 net=  -28.6 PF=0.77 H1= -15.3 H2= -13.3 bull= -34.3 bear=  +5.7 [fail]
+  W96  thr0.50  n=  684 net=  -17.6 PF=0.92 H1= -23.8 H2=  +6.2 bull= +29.6 bear= -42.2 [fail]
+  W96  thr0.75  n=  557 net=  -44.4 PF=0.80 H1= -31.0 H2= -13.4 bull= -19.0 bear= -14.8 [fail]
+  W96  thr1.00  n=  490 net=  -22.9 PF=0.87 H1= -38.4 H2= +15.5 bull=  -5.4 bear= -11.6 [fail]
+  W96  thr1.50  n=  277 net=   -0.6 PF=0.99 H1=  -3.3 H2=  +2.7 bull=  -9.1 bear=  +8.4 [fail]
+  >> NO all-6 PASS in entry grid
+
+===== USDCAD SHORT  ENTRY GRID (current exits arm1.0/be0.08/gb0.1, rt2.0bp) =====
+  W24  thr0.50  n=  541 net=  -14.2 PF=0.83 H1= -22.4 H2=  +8.1 bull= +12.4 bear= -20.2 [fail]
+  W24  thr0.75  n=  198 net=   +2.2 PF=1.07 H1=  -0.2 H2=  +2.5 bull=  +7.4 bear=  -6.2 [fail]
+  W24  thr1.00  n=   60 net=   -8.4 PF=0.52 H1=  -4.6 H2=  -3.8 bull=  +6.6 bear= -15.1 [fail]
+  W24  thr1.50  n=   20 net=  +10.7 PF=21.22 H1=  +7.4 H2=  +3.3 bull=  +6.5 bear=  +4.3 [PASS]
+  W48  thr0.50  n=  436 net=  -21.6 PF=0.75 H1= -22.8 H2=  +1.3 bull= +10.1 bear= -23.2 [fail]
+  W48  thr0.75  n=  242 net=   -6.1 PF=0.87 H1=  -1.4 H2=  -4.8 bull=  +3.8 bear=  -9.9 [fail]
+  W48  thr1.00  n=  100 net=  -12.1 PF=0.53 H1=  -9.8 H2=  -2.3 bull=  +3.1 bear= -15.2 [fail]
+  W48  thr1.50  n=   35 net=   -0.8 PF=0.94 H1=  +3.1 H2=  -3.9 bull=  +7.3 bear=  -8.1 [fail]
+  W72  thr0.50  n=  415 net=  -24.4 PF=0.72 H1= -39.6 H2= +15.2 bull=  -3.4 bear= -12.7 [fail]
+  W72  thr0.75  n=  223 net=   -1.5 PF=0.97 H1=  -5.7 H2=  +4.2 bull=  -2.4 bear=  +0.8 [fail]
+  W72  thr1.00  n=  141 net=  -16.5 PF=0.56 H1= -11.6 H2=  -4.9 bull=  -4.7 bear= -11.8 [fail]
+  W72  thr1.50  n=   40 net=   +3.2 PF=1.38 H1=  +4.0 H2=  -0.8 bull=  +6.6 bear=  -3.4 [fail]
+  W96  thr0.50  n=  337 net=  -31.2 PF=0.65 H1= -33.6 H2=  +2.4 bull=  -5.2 bear= -20.4 [fail] <LIVE
+  W96  thr0.75  n=  211 net=   -4.4 PF=0.90 H1=  -8.2 H2=  +3.9 bull=  -3.7 bear=  -0.7 [fail]
+  W96  thr1.00  n=  137 net=  -12.4 PF=0.65 H1=  -4.5 H2=  -7.9 bull=  -5.2 bear=  -7.2 [fail]
+  W96  thr1.50  n=   60 net=  -11.6 PF=0.58 H1=  +2.2 H2= -13.8 bull=  +7.0 bear= -18.6 [fail]
+  >> best PASS: W24 thr1.5 net=+10.7 PF21.22

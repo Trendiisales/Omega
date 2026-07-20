@@ -1,0 +1,65 @@
+=== GOLDMIMIC HONEST RE-CERT (real header 58a478e2+, per-cell pend parity, 1x/2x cost) ===
+XauTf4h            ent= 354 n=1260 | 1x net=  -455.1% PF=0.28  worstG= -2.69 worstN= -2.84 nNeg(g/n)=907/932 mdd= -459.1 usd10oz=$ -148520 | 2x net=  -644.1% PF=0.17  | WF  -222.3/ -232.8 bull -368.7(n1040) bear  -86.5(n220) | CORE-FAIL 2x-FAIL [H4, real XauTf4h entries]
+    leg T1  gb0.08  n= 315 net1x=  -111.5% net2x=  -158.7% PF=0.29  worstN= -2.84 nNegN=232 usd=$  -36050
+    leg T2  gb0.10  n= 315 net1x=  -111.5% net2x=  -158.7% PF=0.29  worstN= -2.84 nNegN=232 usd=$  -36050
+    leg W1  gb0.20  n= 315 net1x=  -113.9% net2x=  -161.1% PF=0.28  worstN= -2.84 nNegN=233 usd=$  -37166
+    leg W2  gb0.25  n= 315 net1x=  -118.3% net2x=  -165.6% PF=0.25  worstN= -2.84 nNegN=235 usd=$  -39255
+    reasons:  BE_FLOOR n=900 net=-628.3  TRAIL_STOP n=360 net=+173.2
+XauTfD1            ent= 116 n= 206 | 1x net=  -154.0% PF=0.33  worstG=-10.70 worstN=-10.85 nNeg(g/n)=137/137 mdd= -158.1 usd10oz=$  -58617 | 2x net=  -184.9% PF=0.26  | WF   -42.0/ -112.0 bull -154.0(n206) bear   +0.0(n0) | CORE-FAIL 2x-FAIL [D1 derived from certified H1; pend=4 parity]
+    leg T   gb0.08  n= 103 net1x=   -74.6% net2x=   -90.1% PF=0.35  worstN=-10.85 nNegN= 68 usd=$  -28672
+    leg W   gb0.20  n= 103 net1x=   -79.4% net2x=   -94.8% PF=0.31  worstN=-10.85 nNegN= 69 usd=$  -29946
+    reasons:  BE_FLOOR n=132 net=-221.6  TRAIL_STOP n=74 net=+67.6
+MgcTF4h            ent= 303 n= 470 | 1x net=   -22.6% PF=0.86  worstG= -3.73 worstN= -3.78 nNeg(g/n)=276/283 mdd=  -37.1 usd10oz=$   -7162 | 2x net=   -46.1% PF=0.73  | WF   -15.5/   -7.1 bull  -29.5(n380) bear   +6.9(n90) | CORE-FAIL 2x-FAIL [MGC H4, REGIME=1 live parent entries, venue rt5]
+    leg T   gb0.08  n= 235 net1x=    -5.5% net2x=   -17.3% PF=0.93  worstN= -3.78 nNegN=140 usd=$   -1113
+    leg W   gb0.20  n= 235 net1x=   -17.1% net2x=   -28.8% PF=0.78  worstN= -3.78 nNegN=143 usd=$   -6049
+    reasons:  BE_FLOOR n=268 net=-151.9  TRAIL_STOP n=202 net=+129.3
+NAS100Turtle       ent=  87 n= 158 | 1x net=   -16.0% PF=0.83  worstG= -3.98 worstN= -4.02 nNeg(g/n)= 88/ 89 mdd=  -31.6 usd10oz=$   -3666 | 2x net=   -22.3% PF=0.77  | WF   -23.7/   +7.7 bull  -10.9(n146) bear   -5.2(n12) | CORE-FAIL 2x-FAIL [D1, real NasTurtleD1 entries; pend=5 parity]
+    leg T   gb0.08  n=  79 net1x=    -8.4% net2x=   -11.6% PF=0.82  worstN= -4.02 nNegN= 44 usd=$   -4043
+    leg W   gb0.20  n=  79 net1x=    -7.6% net2x=   -10.8% PF=0.84  worstN= -4.02 nNegN= 45 usd=$    +376
+    reasons:  BE_FLOOR n=86 net=-93.8  TRAIL_STOP n=72 net=+77.8
+US500Turtle        ent=  88 n= 164 | 1x net=   -23.9% PF=0.66  worstG= -2.01 worstN= -2.05 nNeg(g/n)=110/110 mdd=  -30.9 usd10oz=$  -11458 | 2x net=   -30.5% PF=0.60  | WF    -9.6/  -14.3 bull  -20.2(n152) bear   -3.8(n12) | CORE-FAIL 2x-FAIL [D1; pend=5 parity]
+    leg T   gb0.08  n=  82 net1x=   -11.4% net2x=   -14.7% PF=0.68  worstN= -2.05 nNegN= 55 usd=$   -5711
+    leg W   gb0.20  n=  82 net1x=   -12.5% net2x=   -15.8% PF=0.65  worstN= -2.05 nNegN= 55 usd=$   -5747
+    reasons:  BE_FLOOR n=110 net=-71.3  TRAIL_STOP n=54 net=+47.4
+DJ30Turtle         ent=  79 n= 144 | 1x net=   +15.6% PF=1.34  worstG= -2.06 worstN= -2.10 nNeg(g/n)= 76/ 76 mdd=  -11.9 usd10oz=$  +40365 | 2x net=    +9.8% PF=1.20  | WF    +9.3/   +6.3 bull  +20.9(n130) bear   -5.4(n14) | CORE-FAIL [D1; pend=5 parity]
+    leg T   gb0.08  n=  72 net1x=    +8.7% net2x=    +5.8% PF=1.38  worstN= -2.10 nNegN= 38 usd=$  +23078
+    leg W   gb0.20  n=  72 net1x=    +6.9% net2x=    +4.0% PF=1.30  worstN= -2.10 nNegN= 38 usd=$  +17287
+    reasons:  BE_FLOOR n=74 net=-45.3  TRAIL_STOP n=70 net=+60.9
+XAU_4h_DonchN20    ent= 332 n= 123 | 1x net=   -42.1% PF=0.31  worstG= -3.72 worstN= -3.77 nNeg(g/n)= 98/ 98 mdd=  -45.8 usd10oz=$  -14120 | 2x net=   -48.2% PF=0.27  | WF   -24.3/  -17.8 bull  -42.1(n123) bear   +0.0(n0) | CORE-FAIL 2x-FAIL [LIVE 1MGC; Donch-20 recon, bull_only, H4 grain]
+    leg T   gb0.10  n= 123 net1x=   -42.1% net2x=   -48.2% PF=0.31  worstN= -3.77 nNegN= 98 usd=$  -14120
+    reasons:  BE_FLOOR n=96 net=-60.1  TRAIL_STOP n=27 net=+18.0
+MgcTf1h            ent= 399 n= 664 | 1x net=  -159.6% PF=0.19  worstG= -1.74 worstN= -1.79 nNeg(g/n)=583/583 mdd= -159.6 usd10oz=$  -62792 | 2x net=  -192.8% PF=0.14  | WF   -72.0/  -87.7 bull -110.2(n549) bear  -49.5(n115) | CORE-FAIL 2x-FAIL [MGC H1, real MgcTf1h port entries; pend=12 parity]
+    leg T   gb0.08  n= 332 net1x=   -77.4% net2x=   -94.0% PF=0.21  worstN= -1.79 nNegN=291 usd=$  -30449
+    leg W   gb0.20  n= 332 net1x=   -82.2% net2x=   -98.8% PF=0.16  worstN= -1.79 nNegN=292 usd=$  -32343
+    reasons:  BE_FLOOR n=578 net=-194.4  TRAIL_STOP n=86 net=+34.8
+GoldKeltM30        ent=1111 n=1862 | 1x net=  -320.8% PF=0.26  worstG= -2.41 worstN= -2.46 nNeg(g/n)=1515/1522 mdd= -322.7 usd10oz=$ -123928 | 2x net=  -413.9% PF=0.19  | WF  -135.2/ -185.6 bull -172.8(n1033) bear -148.0(n829) | CORE-FAIL 2x-FAIL [M30, real KELT k1.25 entries; pend=12 parity]
+    leg T   gb0.08  n= 931 net1x=  -159.6% net2x=  -206.2% PF=0.27  worstN= -2.46 nNegN=759 usd=$  -61799
+    leg W   gb0.20  n= 931 net1x=  -161.1% net2x=  -207.7% PF=0.26  worstN= -2.46 nNegN=763 usd=$  -62129
+    reasons:  BE_FLOOR n=1508 net=-435.0  TRAIL_STOP n=354 net=+114.3
+GoldTfBw1040       ent= 889 n=1564 | 1x net=  -274.9% PF=0.33  worstG= -2.18 worstN= -2.23 nNeg(g/n)=1224/1233 mdd= -276.8 usd10oz=$ -105625 | 2x net=  -353.1% PF=0.25  | WF  -115.5/ -159.4 bull -152.2(n934) bear -122.7(n630) | CORE-FAIL 2x-FAIL [H1 from certified M30, real ema10/40 entries]
+    leg T   gb0.08  n= 782 net1x=  -133.3% net2x=  -172.4% PF=0.35  worstN= -2.23 nNegN=613 usd=$  -51286
+    leg W   gb0.20  n= 782 net1x=  -141.6% net2x=  -180.7% PF=0.31  worstN= -2.23 nNegN=620 usd=$  -54340
+    reasons:  BE_FLOOR n=1214 net=-405.9  TRAIL_STOP n=350 net=+131.0
+GoldTfBw20100      ent= 742 n=1322 | 1x net=  -285.1% PF=0.25  worstG= -7.50 worstN= -7.55 nNeg(g/n)=1066/1070 mdd= -287.0 usd10oz=$ -115405 | 2x net=  -351.2% PF=0.19  | WF  -109.5/ -175.6 bull -163.7(n789) bear -121.4(n533) | CORE-FAIL 2x-FAIL [H1 from certified M30, real ema20/100 entries]
+    leg T   gb0.08  n= 661 net1x=  -140.5% net2x=  -173.6% PF=0.26  worstN= -7.55 nNegN=534 usd=$  -56999
+    leg W   gb0.20  n= 661 net1x=  -144.6% net2x=  -177.7% PF=0.24  worstN= -7.55 nNegN=536 usd=$  -58407
+    reasons:  BE_FLOOR n=1058 net=-378.0  TRAIL_STOP n=264 net=+92.9
+GoldDonH1          ent= 360 n= 614 | 1x net=  -131.5% PF=0.30  worstG= -3.78 worstN= -3.83 nNeg(g/n)=508/508 mdd= -131.5 usd10oz=$  -52012 | 2x net=  -162.2% PF=0.24  | WF   -51.6/  -80.0 bull  -93.6(n386) bear  -37.9(n228) | CORE-FAIL 2x-FAIL [H1 from certified M30, real DON 20/10 entries]
+    leg T   gb0.08  n= 307 net1x=   -64.5% net2x=   -79.8% PF=0.32  worstN= -3.83 nNegN=254 usd=$  -25504
+    leg W   gb0.20  n= 307 net1x=   -67.1% net2x=   -82.4% PF=0.29  worstN= -3.83 nNegN=254 usd=$  -26509
+    reasons:  BE_FLOOR n=506 net=-188.5  TRAIL_STOP n=107 net=+56.4  WINDOW_CAP n=1 net=+0.6
+XAU_4h_DonchN20@H1 ent= 332 n= 121 | 1x net=   -26.0% PF=0.31  worstG= -2.05 worstN= -2.10 nNeg(g/n)= 97/ 97 mdd=  -26.0 usd10oz=$   -8719 | 2x net=   -32.0% PF=0.25  | WF   -17.3/   -8.6 bull  -26.0(n121) bear   +0.0(n0) | CORE-FAIL 2x-FAIL [H1 grain x4-scaled windows, H1-SMA200 gate]
+    leg T   gb0.10  n= 121 net1x=   -26.0% net2x=   -32.0% PF=0.31  worstN= -2.10 nNegN= 97 usd=$   -8719
+    reasons:  BE_FLOOR n=97 net=-37.8  TRAIL_STOP n=24 net=+11.8
+GoldDon10m         ent=1359 n=1860 | 1x net=  -226.6% PF=0.26  worstG= -1.93 worstN= -1.98 nNeg(g/n)=1778/1778 mdd= -227.8 usd10oz=$  -77345 | 2x net=  -319.6% PF=0.19  | WF  -107.6/ -118.9 bull -127.5(n1030) bear  -99.1(n830) | CORE-FAIL 2x-FAIL [LIVE 2MGC; native 10m grain, real DONf 30/35 entries]
+    leg T   gb0.08  n= 930 net1x=  -112.2% net2x=  -158.7% PF=0.27  worstN= -1.98 nNegN=889 usd=$  -38198
+    leg W   gb0.20  n= 930 net1x=  -114.4% net2x=  -160.9% PF=0.26  worstN= -1.98 nNegN=889 usd=$  -39147
+    reasons:  BE_FLOOR n=1778 net=-308.0  TRAIL_STOP n=76 net=+78.7  WINDOW_CAP n=6 net=+2.8
+    6mo leg T   n= 205 usd1x=$  -11362 usd2x=$  -16162 PF=0.43  net1x=  -24.7% worstN= -1.98
+    6mo leg W   n= 205 usd1x=$  -12139 usd2x=$  -16939 PF=0.40  net1x=  -26.2% worstN= -1.98
+GoldDon10m@1m      ent=1359 n=1882 | 1x net=  -170.1% PF=0.11  worstG= -0.85 worstN= -0.90 nNeg(g/n)=1860/1860 mdd= -170.1 usd10oz=$  -59788 | 2x net=  -264.2% PF=0.07  | WF   -76.0/  -94.0 bull  -81.9(n944) bear  -88.2(n938) | CORE-FAIL 2x-FAIL [1m TRUTH grain, pend/cap x10 scaled]
+    leg T   gb0.08  n= 941 net1x=   -84.8% net2x=  -131.9% PF=0.11  worstN= -0.90 nNegN=930 usd=$  -29769
+    leg W   gb0.20  n= 941 net1x=   -85.2% net2x=  -132.3% PF=0.11  worstN= -0.90 nNegN=930 usd=$  -30019
+    reasons:  BE_FLOOR n=1860 net=-190.5  TRAIL_STOP n=22 net=+20.4
+    6mo leg T   n= 212 usd1x=$  -10862 usd2x=$  -15839 PF=0.13  net1x=  -22.9% worstN= -0.90
+    6mo leg W   n= 212 usd1x=$  -11170 usd2x=$  -16146 PF=0.10  net1x=  -23.5% worstN= -0.90
