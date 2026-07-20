@@ -35,7 +35,11 @@
 STATE=/tmp/ibkr_login_watch.state
 LOG=/tmp/ibkr_login_watch.log
 LOCK=/tmp/ibkr_login_watch.lock
-RENOTIFY_S=$((6*3600))
+# S-2026-07-20o: 6h -> 15min. The 2026-07-19 23:48Z LOGIN-REQUIRED banner fired once and
+# was missed; the gateway sat 2FA-blocked 14 min (exec + IBKR L1 feed dead) until the
+# operator noticed the STALE chart himself. A dead exec path is live-money exposure —
+# one missable banner per 6h is not "operator knows". 15min = nagging-but-not-spam.
+RENOTIFY_S=$((15*60))
 STRIKES=3
 now_e=$(date +%s)
 ts() { date -u '+%Y-%m-%d %H:%MZ'; }
