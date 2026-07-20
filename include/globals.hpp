@@ -918,23 +918,9 @@ static omega::NasBbRevLongH1Engine g_nas_bbrev_long_h1;
 //     - fire hook (microscalper): GoldMicroScalperEngine::on_fire_hook,
 //                                 bound from engine_init.hpp
 #include "RiskMonitor.hpp"
-// 2026-05-02: EurusdLondonOpenEngine -- first FX engine since the 2026-04-06
-//   global FX disable. London-open compression bracket on EURUSD, 06:00-09:00
-//   UTC session window, news-blackout-gated for NFP/CPI/FOMC/ECB. Shadow-only
-//   by default; promote to live only after a 2-week paper validation.  Wired
-//   in tick_fx.hpp::on_tick_eurusd() dispatch block. See
-//   docs/SESSION_2026-05-02_EURUSD_LONDON_OPEN_HANDOFF.md for full design.
-#include "EurusdLondonOpenEngine.hpp"
-// 2026-05-02: UsdjpyAsianOpenEngine -- Asian-session sister engine to
-//   EurusdLondonOpenEngine. 00:00-04:00 UTC compression-breakout on USDJPY
-//   (Tokyo open + first 4 hours, pre-Frankfurt-handoff). Same architectural
-//   pattern as the EURUSD engine with JPY pip math (1 pip = 0.01 price,
-//   USD_PER_PRICE_UNIT=100 at 0.10 lot). News-blackout-gated for NFP/CPI/
-//   FOMC/BoJ. Shadow-only by default; promote to live only after a 2-week
-//   paper validation showing >=30 trades with WR >= 60% net positive after
-//   costs. Wired in tick_fx.hpp::on_tick_usdjpy() dispatch block. See
-//   docs/SESSION_2026-05-02_USDJPY_ASIAN_OPEN_HANDOFF.md for full design.
-#include "UsdjpyAsianOpenEngine.hpp"
+// S-2026-07-21c Phase 3 purge: EurusdLondonOpenEngine + UsdjpyAsianOpenEngine
+//   REMOVED -- dead FX-open engines, never dispatched (zero refs in tick_fx.hpp).
+//   GbpusdLondonOpen sibling KEPT (still wired below).
 // 2026-05-04 (audit-fixes-36 + S57): GbpusdLondonOpenEngine -- cable
 //   sister to EurusdLondonOpenEngine. London-open compression-breakout on
 //   GBPUSD with the live target window 07:00-10:00 UTC (one hour later
@@ -950,35 +936,8 @@ static omega::NasBbRevLongH1Engine g_nas_bbrev_long_h1;
 //   produced session-mismatch ✓BE → SL artefacts.
 //   Wired in tick_fx.hpp::on_tick_gbpusd() dispatch block.
 #include "GbpusdLondonOpenEngine.hpp"
-// 2026-05-04 (audit-fixes-36 + S57): AudusdSydneyOpenEngine -- aussie
-//   sister to UsdjpyAsianOpenEngine. Sydney-open + Tokyo-handoff
-//   compression-breakout on AUDUSD with the live target window 22:00-02:00
-//   UTC (Sydney 22:00 + Tokyo overlap, pre-Frankfurt cutoff). AUD pip
-//   math (1 pip = 0.0001 price, USD_PER_PRICE_UNIT=10000 at 0.10 lot --
-//   identical to EUR/GBP because AUD is also a USD-quote major). All
-//   USDJPY S55-S59 tuned constants rescaled from JPY 0.01-pip units to
-//   AUD 0.0001-pip units. News-blackout-gated for RBA/AU CPI/AU jobs via
-//   the AUD currency set, plus NFP/CPI/FOMC via the USD set. Shadow-only
-//   by default; session window RESTORED to 22-02 UTC (2026-05-04, post-S57)
-//   with wraparound-aware in-window check now active in the engine -- the
-//   audit-fixes-36 0-24 visibility-only widening was reverted. Wired in
-//   tick_fx.hpp::on_tick_audusd() dispatch block.
-#include "AudusdSydneyOpenEngine.hpp"
-// 2026-05-04 (audit-fixes-36 + S57): NzdusdAsianOpenEngine -- kiwi sister
-//   to AudusdSydneyOpenEngine. Wellington-open + Tokyo-handoff
-//   compression-breakout on NZDUSD with the live target window 22:00-04:00
-//   UTC (one hour wider than AUD's 22-02 to capture post-Tokyo-open
-//   AUDNZD-cross flow settlement). NZD pip math identical to AUD/EUR/GBP
-//   (1 pip = 0.0001 price, USD_PER_PRICE_UNIT=10000 at 0.10 lot -- NZD is
-//   also a USD-quote major). All AUDUSD S55-S59 tuned constants reused
-//   as PRE-SWEEP defaults. News-blackout-gated for RBNZ/NZ CPI/NZ jobs
-//   via the NZD currency set, plus NFP/CPI/FOMC via the USD set.
-//   Shadow-only by default; session window RESTORED to 22-04 UTC
-//   (2026-05-04, post-S57) with wraparound-aware in-window check now
-//   active in the engine -- the audit-fixes-36 0-24 visibility-only
-//   widening was reverted. Retires the last [FX-NO-ENGINE] diag stub from
-//   on_tick_audusd. Wired in tick_fx.hpp::on_tick_audusd() NZDUSD branch.
-#include "NzdusdAsianOpenEngine.hpp"
+// S-2026-07-21c Phase 3 purge: AudusdSydneyOpenEngine + NzdusdAsianOpenEngine
+//   REMOVED -- dead FX-open engines, never dispatched (zero refs in tick_fx.hpp).
 // 2026-05-02: XauusdFvgEngine -- 15m FVG engine on XAUUSD. C++ port of
 //   scripts/fvg_pnl_backtest_v3.py (v3 #5 ACCEPTED config). Cleared the
 //   four-gate walk-forward bar at two independent train/test cutoffs
@@ -1007,11 +966,9 @@ static omega::GoldMidScalperEngine            g_gold_midscalper;
 static omega::GoldMicroScalperEngine          g_gold_microscalper;
 // 2026-05-08 S20+: per-engine risk surveillance. Logging-only in v1.
 static omega::RiskMonitor                     g_risk_monitor;
-static omega::EurusdLondonOpenEngine          g_eurusd_london_open;
-static omega::UsdjpyAsianOpenEngine           g_usdjpy_asian_open;
+// S-2026-07-21c Phase 3 purge: g_eurusd_london_open / g_usdjpy_asian_open /
+//   g_audusd_sydney_open / g_nzdusd_asian_open REMOVED (dead FX-open engines).
 static omega::GbpusdLondonOpenEngine          g_gbpusd_london_open;
-static omega::AudusdSydneyOpenEngine          g_audusd_sydney_open;
-static omega::NzdusdAsianOpenEngine           g_nzdusd_asian_open;
 // 2026-05-25 AtrMeanRevGrid -- forex mean-reversion grid (CRTP, see AtrMeanRevGridEngine.hpp).
 // Ported from the AtrMeanRevGrid.mq5 MT5 EA. shadow_mode=true until backtest validates.
 // Each instance: own indicator buffers + grid state. Seed via H1 CSV in engine_init.hpp.
