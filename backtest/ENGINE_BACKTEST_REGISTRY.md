@@ -252,6 +252,11 @@ Traps:
 - Most of the NAS100 grid is BULL-BETA (random control +40..+100 on full data): only
   the W24 thr1.5-3.0 pocket meaningfully beats random. Do not promote other NAS cells
   off net% alone; always quote net-over-random.
+  **NB (S-2026-07-22): this "BULL-BETA" warning is about the WEAK grid cells ONLY — it
+  does NOT condemn the live NAS100 ladder. The wired cell is W24/1.5, which IS the
+  surviving pocket: +245.7% PF1.20 n2442, WF both halves +, 2×-cost +172.4, ~+186% over
+  random on full data. NAS100Lad is a REAL edge and LIVE (engine_init.hpp W24/thr1.5).
+  Read this trap line together with the surviving-cell line above it, not in isolation.**
 - The old merged `NSXUSD_2022_2026.csv` tick file predates the newer monthly
   downloads AND /Tick has duplicate months across two roots (incl. a "(2)" dir with a
   space) — rebuild H1 via the python month-dedupe in this session's log, never a bare
