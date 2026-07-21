@@ -16,12 +16,25 @@ param(
   # skip the header->main.cpp recompile: correct stamped hash, MISSING code —
   # memory project-header-wire-incremental-stale-build). omega_deploy.sh --clean
   # forwards this switch.
-  [switch]$Clean
+  [switch]$Clean,
+  # S-2026-07-22: forward OMEGA.ps1's -AllowStaleSeed override. Use ONLY when the
+  # blocking stale seed is a KNOWN separate issue orthogonal to the change being
+  # shipped (e.g. a GUI-only deploy while an enabled-engine seed can't refresh
+  # because IBKR gateway is down) AND the restart does not regress that seed vs the
+  # currently-running binary. omega_deploy.sh --allow-stale-seed forwards this switch.
+  [switch]$AllowStaleSeed
 )
 Set-Content -Path 'C:\Omega\logs\deploy_latest_logname.txt' -Value $LogPath
 Set-Location C:\Omega
-if ($Clean) {
+# Explicit literal calls (not array-splat): the splat form silently produced an
+# empty log / no-op deploy on omega-new PS5.1 (S-2026-07-22). Literal is the proven
+# form the -Clean path always used.
+if ($Clean -and $AllowStaleSeed) {
+  & .\OMEGA.ps1 deploy -Clean -AllowStaleSeed *> $LogPath
+} elseif ($Clean) {
   & .\OMEGA.ps1 deploy -Clean *> $LogPath
+} elseif ($AllowStaleSeed) {
+  & .\OMEGA.ps1 deploy -AllowStaleSeed *> $LogPath
 } else {
   & .\OMEGA.ps1 deploy *> $LogPath
 }
