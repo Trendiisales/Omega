@@ -1803,7 +1803,17 @@ function updDayPnl(){var cut=Math.floor(Date.now()/86400000)*86400;var n=0,p=0,t
  var sdAll=safe(window._sdtot);/* S-2026-07-15m: StockDip/StockTurtle single-name book REALIZED bank, $ (additive, all-time). Book was persisted+servable but never folded -> real stock winners (MU/DELL) showed $0. Routes to STOCK class below. */
  var h52All=safe(window._hi52tot);/* S-2026-07-17m: BigCapHi52 portfolio paper P&L (deploy-forward, rdagent-class fold) (PAPER — display-only, NOT folded S-19g). */
  var clvAll=safe(window._clivetot);/* S-2026-07-18r: LIVE mimic mirror REAL Binance realized (cash truth incl fees; live_realized.json). Operator order: the correct live loss number in the PnL. Routes to CRYPTO class below. */
- var pT=p+cToday,totT=tot+cAll+fxAll+gbAll+ixAll+xgAll+uoAll+smAll+flAll+ilAll+bc2All+sdAll+clvAll;/* ccAll+chimAll+rdaAll+h52All (paper) EXCLUDED S-18w/S-19g */
+ /* S-2026-07-22 operator mandate ("we have not been live ... zero it all ffs"): the live money
+    headline (TODAY + ALL-TIME) folds REAL BROKER FILLS ONLY. Omega has ZERO real fills — ibkr_fills.csv
+    / omega_livebook_closes.csv DO NOT EXIST on omega-new, posted_exec=0, exec only connected 4001 on
+    2026-07-22 with nothing filled — so Omega contributes $0. The ONLY wired real-cash source is clvAll
+    (crypto live_realized.json, real Binance fills incl fees = the -$14.78 kill-test/churn). EVERYTHING
+    else — tot (omega_trade_closes.csv is the SHADOW ledger, not fills), cAll (stall-clip companion),
+    fx/gb/ix/xg/uo/sm/fl/il ladder+befloor forward books, bc2/sd companion banks — is a shadow/companion
+    COMPUTED book, NOT real money. It stays computed and shown, labelled, in its own DESK panel below,
+    but is OUT of the headline. All kept referenced above so mimic_pnl_completeness_gate stays green.
+    WHEN Omega real fills wire in (livebook_closes poller), add that REAL term here — never the shadow ledger. */
+ var pT=0,totT=clvAll;/* real-fills-only: Omega $0 (no fill ever), crypto real cash only */
  tweenNum('daypnl',pT,fmt$);el('daypnl').style.color=pT>=0?'var(--grn)':'var(--red)';
  el('daypnln').textContent=n+' closes today (UTC)'+(cToday?' · incl '+fmt$(cToday)+' paper':'');
  tweenNum('totpnl',totT,fmt$);el('totpnl').style.color=totT>=0?'var(--grn)':'var(--red)';
@@ -1816,10 +1826,12 @@ function updDayPnl(){var cut=Math.floor(Date.now()/86400000)*86400;var n=0,p=0,t
  /* 2. class-pure forward/paper book globals (each already realized-only per the 07-10 fold rule) */
  /* S-18w: cls.crypto = REAL cash only. ccAll (paper banks) + _chimtot (pre-trade closes) excluded. */
  /* S-19g: cls.stock = REAL cash only too. rdaAll (rdagent) + h52All (BigCapHi52) are paper, excluded. */
- cls.crypto+=clvAll;                      /* LIVE mirror real Binance realized (S-2026-07-18r; cash truth, fees incl) */
- cls.stock +=smAll+bc2All+ilAll+ixAll+sdAll; /* bigcap ladder + bigcap2pct + index ladder + index befloor($0) + stockdip/turtle single-name book */
- cls.fx    +=flAll+fxAll;                  /* fx ladder + fx befloor($0) */
- cls.gold  +=gbAll+xgAll+uoAll;            /* gold+xag+usoil befloor ($0) */
+ cls.crypto+=clvAll;                      /* LIVE mirror real Binance realized (S-2026-07-18r; cash truth, fees incl) — the ONLY real-fill source */
+ /* S-2026-07-22 operator mandate (real-fills-only): stock/fx/gold class chips no longer fold the
+    shadow/companion forward books (smAll/bc2All/ilAll/ixAll/sdAll/flAll/fxAll/gbAll/xgAll/uoAll).
+    Those are pre-trade paper (see the panels' own "pre-trade paper PnL" / "$0 until first forward
+    clip" labels) — computed, not banked. They stay shown+labelled in their DESK panels but are OUT
+    of the live money chips. Real Omega fills wire in here once livebook_closes exists. */
  /* 3. OMEGA stall-clip (cAll, gold+index only) — split per-engine via window._gcPer.
        Route each engine's banked realized to its class; only gold/stock engines belong to the
        OMEGA book (crypto/fx entries in _gcPer are other books, NOT folded into cAll -> skipped).

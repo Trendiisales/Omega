@@ -1819,7 +1819,17 @@ function updDayPnl(){var cut=Math.floor(Date.now()/86400000)*86400;var n=0,p=0,t
  var sdAll=safe(window._sdtot);/* S-2026-07-15m: StockDip/StockTurtle single-name book REALIZED bank, $ (additive, all-time). Book was persisted+servable but never folded -> real stock winners (MU/DELL) showed $0. Routes to STOCK class below. */
  var h52All=safe(window._hi52tot);/* S-2026-07-17m: BigCapHi52 portfolio paper P&L (deploy-forward, rdagent-class fold) (PAPER — display-only, NOT folded S-19g). */
  var clvAll=safe(window._clivetot);/* S-2026-07-18r: LIVE mimic mirror REAL Binance realized (cash truth incl fees; live_realized.json). Operator order: the correct live loss number in the PnL. Routes to CRYPTO class below. */
- var pT=p+cToday,totT=tot+cAll+fxAll+gbAll+ixAll+xgAll+uoAll+smAll+flAll+ilAll+bc2All+sdAll+clvAll;/* ccAll+chimAll+rdaAll+h52All (paper) EXCLUDED S-18w/S-19g */
+ /* S-2026-07-22 operator mandate ("we have not been live ... zero it all ffs"): the live money
+    headline (TODAY + ALL-TIME) folds REAL BROKER FILLS ONLY. Omega has ZERO real fills — ibkr_fills.csv
+    / omega_livebook_closes.csv DO NOT EXIST on omega-new, posted_exec=0, exec only connected 4001 on
+    2026-07-22 with nothing filled — so Omega contributes $0. The ONLY wired real-cash source is clvAll
+    (crypto live_realized.json, real Binance fills incl fees = the -$14.78 kill-test/churn). EVERYTHING
+    else — tot (omega_trade_closes.csv is the SHADOW ledger, not fills), cAll (stall-clip companion),
+    fx/gb/ix/xg/uo/sm/fl/il ladder+befloor forward books, bc2/sd companion banks — is a shadow/companion
+    COMPUTED book, NOT real money. It stays computed and shown, labelled, in its own DESK panel below,
+    but is OUT of the headline. All kept referenced above so mimic_pnl_completeness_gate stays green.
+    WHEN Omega real fills wire in (livebook_closes poller), add that REAL term here — never the shadow ledger. */
+ var pT=0,totT=clvAll;/* real-fills-only: Omega $0 (no fill ever), crypto real cash only */
  tweenNum('daypnl',pT,fmt$);el('daypnl').style.color=pT>=0?'var(--grn)':'var(--red)';
  el('daypnln').textContent=n+' closes today (UTC)'+(cToday?' · incl '+fmt$(cToday)+' paper':'');
  tweenNum('totpnl',totT,fmt$);el('totpnl').style.color=totT>=0?'var(--grn)':'var(--red)';
@@ -1832,10 +1842,12 @@ function updDayPnl(){var cut=Math.floor(Date.now()/86400000)*86400;var n=0,p=0,t
  /* 2. class-pure forward/paper book globals (each already realized-only per the 07-10 fold rule) */
  /* S-18w: cls.crypto = REAL cash only. ccAll (paper banks) + _chimtot (pre-trade closes) excluded. */
  /* S-19g: cls.stock = REAL cash only too. rdaAll (rdagent) + h52All (BigCapHi52) are paper, excluded. */
- cls.crypto+=clvAll;                      /* LIVE mirror real Binance realized (S-2026-07-18r; cash truth, fees incl) */
- cls.stock +=smAll+bc2All+ilAll+ixAll+sdAll; /* bigcap ladder + bigcap2pct + index ladder + index befloor($0) + stockdip/turtle single-name book */
- cls.fx    +=flAll+fxAll;                  /* fx ladder + fx befloor($0) */
- cls.gold  +=gbAll+xgAll+uoAll;            /* gold+xag+usoil befloor ($0) */
+ cls.crypto+=clvAll;                      /* LIVE mirror real Binance realized (S-2026-07-18r; cash truth, fees incl) — the ONLY real-fill source */
+ /* S-2026-07-22 operator mandate (real-fills-only): stock/fx/gold class chips no longer fold the
+    shadow/companion forward books (smAll/bc2All/ilAll/ixAll/sdAll/flAll/fxAll/gbAll/xgAll/uoAll).
+    Those are pre-trade paper (see the panels' own "pre-trade paper PnL" / "$0 until first forward
+    clip" labels) — computed, not banked. They stay shown+labelled in their DESK panels but are OUT
+    of the live money chips. Real Omega fills wire in here once livebook_closes exists. */
  /* 3. OMEGA stall-clip (cAll, gold+index only) — split per-engine via window._gcPer.
        Route each engine's banked realized to its class; only gold/stock engines belong to the
        OMEGA book (crypto/fx entries in _gcPer are other books, NOT folded into cAll -> skipped).
@@ -1907,7 +1919,8 @@ function compClipRows(){var cl=window._compClosed||[];if(!cl.length)return '';
 function drawLedger(){var t=el('ledger');/* S-19b/19c: crypto companion PAPER bank never renders
     anywhere in this function -- its bp detail lives ONLY in #cctab (CRYPTO MIMIC BOOKS, drawCC) */
  var omc=safe((window._comptot||{}).all);/* OMEGA (XAU stall-clip) companion all-time bank, $ (additive) -- same bucket the header ALL-TIME folds */
- var fxc=safe(window._fxtot),gbc=safe(window._goldtot),ixc=safe(window._idxtot),xgc=safe(window._xagtot),uoc=safe(window._usoiltot),smc=safe(window._smtot),flc=safe(window._fxladtot),ilc=safe(window._ixladtot);/* FX + gold + xag + usoil + stockmover/fx/index-ladder forward books, $ (additive, all-time) */
+)OMEGAD10"
+R"OMEGAD11( var fxc=safe(window._fxtot),gbc=safe(window._goldtot),ixc=safe(window._idxtot),xgc=safe(window._xagtot),uoc=safe(window._usoiltot),smc=safe(window._smtot),flc=safe(window._fxladtot),ilc=safe(window._ixladtot);/* FX + gold + xag + usoil + stockmover/fx/index-ladder forward books, $ (additive, all-time) */
  if(!ROWS.length){var z=omc+fxc+gbc+ixc+xgc+uoc+smc+flc+ilc;/* crypto PAPER NOT in Σ, S-18w */t.innerHTML='<tr><td class="l d" colspan="7">no closes in ledger</td></tr>'+compClipRows();el('ledgern').textContent=z?((omc?'companion '+fmt$(omc):'')+(fxc?' · fx '+fmt$(fxc):'')+(gbc?' · gold '+fmt$(gbc):'')+(ixc?' · idx '+fmt$(ixc):'')+(xgc?' · xag '+fmt$(xgc):'')+(uoc?' · usoil '+fmt$(uoc):'')+(smc?' · stk '+fmt$(smc):'')+(flc?' · fxlad '+fmt$(flc):'')+(ilc?' · ixlad '+fmt$(ilc):'')+' · Σ '+fmt$(z)):'';return;}
  var by={};
  ROWS.forEach(function(r){var k=r.eng||'?';if(!by[k])by[k]={n:0,pnl:0,w:0,sym:r.sym,last:0};
@@ -1918,8 +1931,7 @@ function drawLedger(){var t=el('ledger');/* S-19b/19c: crypto companion PAPER ba
  var rows=ks.map(function(k){var e=by[k],c=e.pnl>=0?'g':'r';
   var w=Math.max(2,Math.abs(e.pnl)/mx*100);
   return '<tr><td class="l" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:170px" title="'+esc(k)+'">'+esc(k.replace(/Engine$/,''))+'</td>'
-)OMEGAD10"
-R"OMEGAD11(   +'<td class="l d">'+esc(e.sym)+'</td><td class="num d">'+e.n+'</td>'
+   +'<td class="l d">'+esc(e.sym)+'</td><td class="num d">'+e.n+'</td>'
    +'<td class="num d">'+Math.round(100*e.w/e.n)+'%</td>'
    +'<td class="num '+c+'">'+fmt$(e.pnl)+'</td>'
    +'<td style="width:90px"><span class="bar" style="display:block"><i style="width:'+w+'%;background:'+(e.pnl>=0?'var(--grn)':'var(--red)')+'"></i></span></td>'
@@ -2073,7 +2085,8 @@ function drawBlot(){fetch('/api/shadow_trades').then(function(r){return r.json()
 }).catch(function(){});}
 function drawHist(){var h=el('hist');if(!h)return;/* TRADE HISTORY panel removed 2026-07-06 (operator: useless) */if(!ROWS.length){h.innerHTML='<tr><td class="l d">no closes in ledger</td></tr>';el('histn').textContent='';return;}
  var rows=ROWS.slice().reverse().map(function(r){
-  var d=new Date(r.ts*1000);
+)OMEGAD11"
+R"OMEGAD12(  var d=new Date(r.ts*1000);
   var dd=String(d.getUTCDate()).padStart(2,'0')+'.'+String(d.getUTCMonth()+1).padStart(2,'0')+' '
    +String(d.getUTCHours()).padStart(2,'0')+':'+String(d.getUTCMinutes()).padStart(2,'0');
   var hold=r.hold>=3600?Math.floor(r.hold/3600)+'h'+Math.floor(r.hold%3600/60)+'m':Math.floor(r.hold/60)+'m';
@@ -2090,8 +2103,7 @@ function drawHist(){var h=el('hist');if(!h)return;/* TRADE HISTORY panel removed
 var PRD=null,PRSYM=localStorage.getItem('omega_prsym')||'XAUUSD',PRTF=localStorage.getItem('omega_prtf')||'m15';
 var PRSYMS=['XAUUSD','US500','USTEC','EURUSD','GBPUSD','USDJPY','AUDUSD','NZDUSD','USDCAD'],PRTFS=[['m5','5m'],['m15','15m'],['h1','1H']];
 function prBtns(){
-)OMEGAD11"
-R"OMEGAD12( el('prsyms').innerHTML=PRSYMS.map(function(x){return '<button class="'+(x===PRSYM?'on':'')+'" data-s="'+x+'">'+x.replace('USD','')+'</button>';}).join('');
+ el('prsyms').innerHTML=PRSYMS.map(function(x){return '<button class="'+(x===PRSYM?'on':'')+'" data-s="'+x+'">'+x.replace('USD','')+'</button>';}).join('');
  el('prtfs').innerHTML=PRTFS.map(function(t){return '<button class="'+(t[0]===PRTF?'on':'')+'" data-t="'+t[0]+'">'+t[1]+'</button>';}).join('');
  Array.prototype.forEach.call(el('prsyms').children,function(b){b.onclick=function(){PRSYM=b.getAttribute('data-s');localStorage.setItem('omega_prsym',PRSYM);prBtns();drawPR();};});
  Array.prototype.forEach.call(el('prtfs').children,function(b){b.onclick=function(){PRTF=b.getAttribute('data-t');localStorage.setItem('omega_prtf',PRTF);prBtns();drawPR();};});}
@@ -2277,7 +2289,8 @@ function drawPR(){var cv=el("prc");
     when the last bar is older than 2x the timeframe.
     S-2026-07-17p: +90s slack — bars carry OPEN ts and the array holds CLOSED bars only,
     and the server [BAR-SAVE] writes predictive_ranges.json on a 60s cadence, so the legit
-    worst-case age of the last closed bar's open ts = 2×tf + 60s save lag (+poll slack).
+)OMEGAD12"
+R"OMEGAD13(    worst-case age of the last closed bar's open ts = 2×tf + 60s save lag (+poll slack).
     At m5 that's 660s > the bare 600s threshold → transient false "bar 11m STALE" for up
     to ~60s before each save. 2*tfsec+90 covers save cadence + poll slack. */
  var tfsec={'m5':300,'m15':900,'h1':3600}[PRTF]||900;
@@ -2296,8 +2309,7 @@ function prTip(m,cx,cy){var tip=el('prtip');
  var hold=r.hold>=3600?Math.floor(r.hold/3600)+'h'+Math.floor(r.hold%3600/60)+'m':Math.floor(r.hold/60)+'m';
  var dpp=r.epx<10?4:2;
  var isPart=/^PARTIAL/.test(r.reason||'');
-)OMEGAD12"
-R"OMEGAD13( tip.innerHTML='<span class="w">'+esc((r.eng||'').replace(/Engine$/,''))+'</span> · <span class="'+(r.side==='LONG'?'g':'r')+'">'+esc(r.side)+'</span> '+esc(r.sym)
+ tip.innerHTML='<span class="w">'+esc((r.eng||'').replace(/Engine$/,''))+'</span> · <span class="'+(r.side==='LONG'?'g':'r')+'">'+esc(r.side)+'</span> '+esc(r.sym)
   +(isPart?' <span class="chip" style="background:var(--ambD);color:var(--ambB)">PARTIAL</span>':'')
   +'<br>in <span class="num w">'+fmt2(r.epx,dpp)+'</span> → out <span class="num w">'+fmt2(r.xpx,dpp)+'</span> · <span class="num w">'+lots(r.size)+'</span> lots'
   +'<br><span class="num" style="color:'+c+';font-weight:600">'+fmt$(r.pnl)+'</span> · '+hold+' · <span class="d">'+esc(r.reason||'')+'</span>'
