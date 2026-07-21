@@ -1826,8 +1826,14 @@ function updDayPnl(){var cut=Math.floor(Date.now()/86400000)*86400;var n=0,p=0,t
     Same sources totT folds, routed to exactly one class. Reconciliation invariant:
     stock+crypto+fx+gold (+ visible remainder) == totT. */
  var cls={stock:0,crypto:0,fx:0,gold:0};
- /* 1. central engine ledger rows — MIXED classes; classify each by engine tag (+ symbol) */
- ROWS.forEach(function(r){var c=classOf(r.eng,r.sym);if(cls[c]!==undefined)cls[c]+=r.pnl;});
+ /* 1. central engine ledger rows (ROWS = omega_trade_closes.csv) — S-2026-07-22 operator mandate
+       (real-fills-only): this IS the SHADOW ledger, NOT real broker fills (same source the headline
+       excludes: totT=clvAll ignores `tot`). Folding it here was the last leak — it put the +$301
+       shadow stock closes (StockDip_NVDA/TPR + NAS100Lad) into cls.stock while the headline stayed
+       real-only, producing the phantom STOCK chip + the ±-$301 "unclassified" balancer. Excluded now:
+       the class chips fold REAL cash only (cls.crypto=clvAll below), consistent with TODAY/ALL-TIME.
+       ROWS still drives the ENGINE LEDGER + LAST 15 TRADES panels (labelled), just not the money chips.
+       WHEN Omega books REAL fills, classify THOSE rows here — never the shadow closes. */
  /* 2. class-pure forward/paper book globals (each already realized-only per the 07-10 fold rule) */
  /* S-18w: cls.crypto = REAL cash only. ccAll (paper banks) + _chimtot (pre-trade closes) excluded. */
  /* S-19g: cls.stock = REAL cash only too. rdaAll (rdagent) + h52All (BigCapHi52) are paper, excluded. */

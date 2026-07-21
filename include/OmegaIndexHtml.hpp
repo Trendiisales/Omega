@@ -1842,8 +1842,14 @@ function updDayPnl(){var cut=Math.floor(Date.now()/86400000)*86400;var n=0,p=0,t
     Same sources totT folds, routed to exactly one class. Reconciliation invariant:
     stock+crypto+fx+gold (+ visible remainder) == totT. */
  var cls={stock:0,crypto:0,fx:0,gold:0};
- /* 1. central engine ledger rows — MIXED classes; classify each by engine tag (+ symbol) */
- ROWS.forEach(function(r){var c=classOf(r.eng,r.sym);if(cls[c]!==undefined)cls[c]+=r.pnl;});
+ /* 1. central engine ledger rows (ROWS = omega_trade_closes.csv) — S-2026-07-22 operator mandate
+       (real-fills-only): this IS the SHADOW ledger, NOT real broker fills (same source the headline
+       excludes: totT=clvAll ignores `tot`). Folding it here was the last leak — it put the +$301
+       shadow stock closes (StockDip_NVDA/TPR + NAS100Lad) into cls.stock while the headline stayed
+       real-only, producing the phantom STOCK chip + the ±-$301 "unclassified" balancer. Excluded now:
+       the class chips fold REAL cash only (cls.crypto=clvAll below), consistent with TODAY/ALL-TIME.
+       ROWS still drives the ENGINE LEDGER + LAST 15 TRADES panels (labelled), just not the money chips.
+       WHEN Omega books REAL fills, classify THOSE rows here — never the shadow closes. */
  /* 2. class-pure forward/paper book globals (each already realized-only per the 07-10 fold rule) */
  /* S-18w: cls.crypto = REAL cash only. ccAll (paper banks) + _chimtot (pre-trade closes) excluded. */
  /* S-19g: cls.stock = REAL cash only too. rdaAll (rdagent) + h52All (BigCapHi52) are paper, excluded. */
@@ -1911,14 +1917,14 @@ function compClipRows(){var cl=window._compClosed||[];if(!cl.length)return '';
   return '<tr><td class="l d" style="font-size:10px;border-left:2px solid var(--grn)">&#8627; '+esc(t)+'</td>'
    +'<td class="l d" style="font-size:10px">'+esc((d.sym||''))+'</td>'
    +'<td class="l d" colspan="2" style="font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:170px" title="'+esc((d.eng||'')+' '+(d.side||'')+' @ '+(d.entry||''))+'">'+esc((d.eng||'').replace(/Engine$/,''))+' · '+esc(d.reason||'')+'</td>'
-   +'<td class="num '+c+'" style="font-size:10px">'+fmt$(p)+'</td><td colspan="2" class="l d" style="font-size:10px">'+esc(d.book||'')+'</td></tr>';}).join('');
+)OMEGAD10"
+R"OMEGAD11(   +'<td class="num '+c+'" style="font-size:10px">'+fmt$(p)+'</td><td colspan="2" class="l d" style="font-size:10px">'+esc(d.book||'')+'</td></tr>';}).join('');
  return '<tr><td class="l d" colspan="7" style="padding-top:6px">companion clips — recent closes (paper, additive; why COMP-BANK moved)</td></tr>'+rows;}
 /* S-19c (operator "WHY IS THE COMP LEDGER STILL THERE" -- S-19b only fixed the Σ line's units,
    not location): the per-symbol/per-book crypto companion breakdown formerly rendered here
    (cryptoLedgerRows()) was a pure DUPLICATE of what drawCC() already renders into #cctab under
    CRYPTO MIMIC BOOKS -- same per-coin rows, same per-book bp figures, same PAPER caption. Removed
-)OMEGAD10"
-R"OMEGAD11(   the duplicate injection into ENGINE LEDGER entirely rather than relocating it; the real thing
+   the duplicate injection into ENGINE LEDGER entirely rather than relocating it; the real thing
    already lives in the right panel. */
 function drawLedger(){var t=el('ledger');/* S-19b/19c: crypto companion PAPER bank never renders
     anywhere in this function -- its bp detail lives ONLY in #cctab (CRYPTO MIMIC BOOKS, drawCC) */
@@ -2071,7 +2077,8 @@ function drawPromo(){if(!el('promo'))return;/* PROMOTION TRACKER panel removed 2
    +'<span class="bar"><i style="width:'+Math.min(100,e.n/GATE*100)+'%;background:'+col+'"></i></span>'
    +'<span class="num d">'+e.n+'/'+GATE+'</span><span class="num" style="color:'+col+'">'+fmt$(avg)+'/t</span>'
    +'<span class="lbl" style="color:'+col+'">'+tag+'</span></div>';});
- el('promo').innerHTML=h;}
+)OMEGAD11"
+R"OMEGAD12( el('promo').innerHTML=h;}
 
 function drawBlot(){fetch('/api/shadow_trades').then(function(r){return r.json();}).then(function(a){
  if(!a||!a.length){return;}
@@ -2083,8 +2090,7 @@ function drawBlot(){fetch('/api/shadow_trades').then(function(r){return r.json()
   var fresh=a.filter(function(t){return safe(t.exitTs)>window._lastClose;});
   var net=fresh.reduce(function(s,t){return s+safe(t.pnl);},0);
   window._lastClose=newest;
-)OMEGAD11"
-R"OMEGAD12(  var why=fresh.slice(0,4).map(function(t){return (t.engine||'?').replace(/Engine$/,'')+' '+(t.symbol||'')+' '+fmt$(safe(t.pnl));}).join(', ')+(fresh.length>4?' +'+(fresh.length-4):'');
+  var why=fresh.slice(0,4).map(function(t){return (t.engine||'?').replace(/Engine$/,'')+' '+(t.symbol||'')+' '+fmt$(safe(t.pnl));}).join(', ')+(fresh.length>4?' +'+(fresh.length-4):'');
   if(net>=0)almRing('trade closed: '+why,'win',winBell);else almRing('trade closed: '+why,'loss',lossBell);}
 }).catch(function(){});}
 function drawHist(){var h=el('hist');if(!h)return;/* TRADE HISTORY panel removed 2026-07-06 (operator: useless) */if(!ROWS.length){h.innerHTML='<tr><td class="l d">no closes in ledger</td></tr>';el('histn').textContent='';return;}
@@ -2275,7 +2281,8 @@ function drawPR(){var cv=el("prc");
   ctx.fillStyle='rgba(11,15,20,0.8)';ctx.fillRect(padL+4,padT+2,ctx.measureText(ohlc).width+10,14);
   ctx.fillStyle=mb[4]>=mb[1]?'#9FE1CB':'#F7C1C1';ctx.fillText(ohlc,padL+9,padT+12);}
  var lastC=bars[n-1][4],yl=Y(lastC),trend=0;
- for(var i=n-1;i>=0;i--){if(bars[i][10]){trend=bars[i][10];break;}}
+)OMEGAD12"
+R"OMEGAD13( for(var i=n-1;i>=0;i--){if(bars[i][10]){trend=bars[i][10];break;}}
  var tc=trend>0?'#2EBD85':trend<0?'#E2484D':'#85B7EB';
  ctx.strokeStyle=tc;ctx.globalAlpha=0.5;ctx.setLineDash([2,4]);
  ctx.beginPath();ctx.moveTo(padL,yl);ctx.lineTo(padL+pw,yl);ctx.stroke();ctx.setLineDash([]);ctx.globalAlpha=1;
@@ -2284,8 +2291,7 @@ function drawPR(){var cv=el("prc");
  el('prlast').textContent=lastC.toFixed(dp);
  var pt=el('prtrend');
  pt.textContent=trend>0?'▲ STEP UP':trend<0?'▼ STEP DOWN':'■ RANGING';
-)OMEGAD12"
-R"OMEGAD13( pt.style.color=trend>0?'var(--grnB)':trend<0?'var(--redB)':'var(--t2)';
+ pt.style.color=trend>0?'var(--grnB)':trend<0?'var(--redB)':'var(--t2)';
  pt.style.background=trend>0?'var(--grnD)':trend<0?'var(--redD)':'var(--pan2)';
  var age=PRD.updated?Math.max(0,Math.round(Date.now()/1000-PRD.updated)):-1;
  /* S-2026-07-08c: show BAR age of the ACTIVE timeframe, not just poll age — a restart
