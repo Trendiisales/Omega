@@ -38,6 +38,7 @@ tools/feeds_selftest.py|2|intentional history: L38 cutover explanation + L268 al
 scripts/mac_canary_engines.sh|5|this gate own wiring: comment block + echo lines NAME the dead box to explain what the gate blocks
 tools/engine_watermark_audit.py|1|guard comment on VPS="omega-new" naming the dead box ("never omega-vps/185") to warn future editors -- intentional, mirrors the refresh_crypto_companion.sh entry
 tools/engine_perf_watch.py|1|guard comment on HOST="omega-new" naming the dead box ("omega-vps = retired dead box, never use") -- intentional, mirrors the engine_watermark_audit.py entry (S-2026-07-17t; the S-17s commit landed before this gate saw it)
+tools/omega_ps.sh|1|hard-fail case-guard refusing HOST=omega-vps/185.167.119.59 (FATAL exit; live desk is omega-new) -- intentional, mirrors the omega_deploy.sh entry (S-2026-07-21g helper shipped the guard before this gate saw it)
 '
 
 allowed_count() {  # $1 = path -> echoes expected count, or empty if not allowlisted
