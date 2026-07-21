@@ -91,8 +91,8 @@ a{color:var(--blu);text-decoration:none}
   <span id="mode" class="chip" style="background:var(--ambD);color:var(--ambB)">MODE …</span>
   <span class="lbl"><span class="dot" id="fixq" style="background:var(--t3)"></span>FIX-Q</span>
   <span class="lbl"><span class="dot" id="fixt" style="background:var(--t3)"></span>FIX-T</span>
-  <span class="lbl"><span class="dot" id="l2d" style="background:var(--t3)"></span>L2</span>
-  <span class="lbl"><span class="dot" id="domd" style="background:var(--t3)"></span>GOLD-DOM</span>
+  <!-- L2 + GOLD-DOM status dots removed S-2026-07-21 (operator): gold moved off L2 depth
+       onto L1 top-of-book; no live engine consumes gold depth (MicroScalperGold culled). -->
   <span class="lbl" id="uptime">up …</span>
   <span class="lbl" id="build"></span>
   <span style="margin-left:auto;display:inline-flex;align-items:baseline;gap:6px"><span class="lbl">TODAY</span><span id="daypnl" class="num" style="font-size:18px;font-weight:600;color:var(--w)">…</span><span id="daypnln" class="lbl"></span></span>
@@ -215,16 +215,10 @@ R"OMEGAD1(      <span id="prtrend" class="chip" style="background:var(--pan2)"><
   <div id="heat"></div>
 </div>
 
-<!-- ═══ DOM — XAUUSD L2 (S-2026-07-10 operator: moved OUT of .compcols masonry into the fixed
-     right column below ENGINE HEAT, with a FIXED height so it never resizes/reflows). ═══ -->
-<div class="pan" style="margin-top:8px;height:250px;overflow:hidden;display:flex;flex-direction:column">
-  <div class="lbl" style="margin-bottom:4px">DOM — XAUUSD L2</div>
-  <div id="dom" class="num" style="font-size:10px;flex:1;overflow:hidden"></div>
-  <div style="margin-top:5px">
-    <div class="lbl">OBI top-5 <span id="obiv" class="num w"></span></div>
-    <div class="bar" style="margin-top:3px"><i id="obib" style="background:var(--grn);left:50%;width:0"></i></div>
-  </div>
-</div>
+<!-- ═══ DOM — XAUUSD L2 panel REMOVED S-2026-07-21 (operator: "if we dont need L2 data then take
+     it off the gui"). Gold moved off L2 depth onto L1 top-of-book (COMEX metal depth not entitled;
+     the only gold-depth consumer, MicroScalperGold, was culled this session). The DOM ladder + OBI
+     top-5 were sourced from gold L2 which is now gone -- panel deleted rather than left "L2 quiet". ═══ -->
 </div><!-- /tcol right -->
 </div><!-- /topgrid -->
 
@@ -900,7 +894,7 @@ function render(J){lastJ=J;
  function dot(id,ok){el(id).style.background=ok?'var(--grn)':'var(--red)';}
  dot('fixq',(J.fix_quote_status||'').indexOf('CONNECT')>=0||(J.fix_quote_status||'').indexOf('UP')>=0||J.quote_msg_rate>0);
  dot('fixt',(J.fix_trade_status||'').indexOf('CONNECT')>=0||(J.fix_trade_status||'').indexOf('UP')>=0);
- dot('l2d',safe(J.ctrader_l2_live)>0);dot('domd',safe(J.gold_l2_real)>0);
+ /* l2d/domd dots removed S-2026-07-21 (gold off L2; DOM panel deleted) */
  var up=safe(J.uptime_sec);el('uptime').textContent='up '+Math.floor(up/86400)+'d'+Math.floor(up%86400/3600)+'h'+Math.floor(up%3600/60)+'m';
 )OMEGAD4"
 R"OMEGAD5( el('build').textContent=(J.build_version||'').slice(0,12);
@@ -961,21 +955,8 @@ R"OMEGAD5( el('build').textContent=(J.build_version||'').slice(0,12);
   var fg=v===3?'var(--grnB)':v===2?'var(--ambB)':v===1?'var(--blu)':'var(--t2)';
   return '<span class="chip" style="background:'+bg+';color:'+fg+'">'+p[0]+' '+t+'</span>';}).join('');
 
- var bids=J.gold_bids||[],asks=J.gold_asks||[];
- var mx=1;bids.concat(asks).forEach(function(l){if(l.s>mx)mx=l.s;});
- var dh='<div style="display:grid;grid-template-columns:1fr 70px 1fr;gap:1px;font-size:11px">';
- for(var i=Math.min(4,asks.length-1);i>=0;i--){var l=asks[i];
-  dh+='<span></span><span style="text-align:right;color:var(--redB);padding:0 4px">'+fmt2(l.p)+'</span>'
-   +'<span style="position:relative"><i style="position:absolute;left:0;top:2px;bottom:2px;width:'+(l.s/mx*100)+'%;background:rgba(226,72,77,.25);border-radius:1px"></i><i style="position:relative;color:var(--redB);padding-left:4px;font-style:normal">'+fmt2(l.s,1)+'</i></span>';}
- var spd=(asks[0]&&bids[0])?(asks[0].p-bids[0].p):0;
- dh+='<span></span><span style="text-align:right;color:var(--t2);border-top:1px solid var(--bd2);border-bottom:1px solid var(--bd2);padding:1px 4px">'+fmt2(spd)+'</span><span style="border-top:1px solid var(--bd2);border-bottom:1px solid var(--bd2)"></span>';
- for(var i=0;i<Math.min(5,bids.length);i++){var l=bids[i];
-  dh+='<span style="position:relative"><i style="position:absolute;right:0;top:2px;bottom:2px;width:'+(l.s/mx*100)+'%;background:rgba(46,189,133,.22);border-radius:1px"></i></span>'
-   +'<span style="text-align:right;color:var(--grnB);padding:0 4px">'+fmt2(l.p)+'</span><span style="color:var(--grnB);padding-left:4px">'+fmt2(l.s,1)+'</span>';}
- dh+='</div>';el('dom').innerHTML=(bids.length||asks.length)?dh:'<span class="d">no depth (L2 quiet)</span>';
- var imb=safe(J.l2_gold,0.5);el('obiv').textContent=fmt2(imb,3);
- var ob=el('obib'),dev=imb-0.5;ob.style.left=dev>=0?'50%':(50+dev*100)+'%';ob.style.width=Math.abs(dev)*100+'%';
- ob.style.background=dev>=0?'var(--grn)':'var(--red)';
+ /* DOM ladder + OBI render REMOVED S-2026-07-21 (operator: gold off L2 -> DOM panel deleted).
+    Elements el('dom')/el('obiv')/el('obib') no longer exist; rendering here would throw. */
 
  /* MICROSTRUCTURE + BROKER + SIGNAL TAPE populators removed 2026-07-04 (panels deleted, operator: irrelevant). */
 

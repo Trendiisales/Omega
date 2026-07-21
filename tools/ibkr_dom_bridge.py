@@ -77,7 +77,13 @@ INDEX_FUTURES = {
 # USOIL/XAGUSD/VIX/DX/NGAS/UKBRENT off BlackBull FIX onto IBKR without freeing a
 # depth slot. MGC is kept here so a future re-add lands on the depth path (the
 # Aurora footprint feed needs its book), not on L1.
-DEPTH_SYMBOLS = {"XAUUSD", "DJ30", "NAS100", "MGC"}
+# S-2026-07-21: XAUUSD REMOVED from the depth set. COMEX metal L2 depth is not
+# entitled on this account (reqMktDepth returns nothing -> the whole XAUUSD feed
+# starved: no ibkr_l1/l2_XAUUSD, GUI PR panel stuck "waiting for m5 bars"), while
+# plain L1 (reqMktData top-of-book) returns live gold bid/ask fine (probed
+# 4067.13/4067.49). Gold depth was only consumed by MicroScalperGold, culled this
+# session, so XAUUSD now rides L1 like XAGUSD/the indices -- no depth-slot cost.
+DEPTH_SYMBOLS = {"DJ30", "NAS100", "MGC"}
 
 
 # S-2026-07-10 BIGCAP STOCK L1: the mimic ladder companion's LIVE-CONFIRMATION gate
