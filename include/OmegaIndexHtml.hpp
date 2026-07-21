@@ -91,8 +91,8 @@ a{color:var(--blu);text-decoration:none}
   <span id="mode" class="chip" style="background:var(--ambD);color:var(--ambB)">MODE …</span>
   <span class="lbl"><span class="dot" id="fixq" style="background:var(--t3)"></span>FIX-Q</span>
   <span class="lbl"><span class="dot" id="fixt" style="background:var(--t3)"></span>FIX-T</span>
-  <!-- L2 + GOLD-DOM status dots removed S-2026-07-21 (operator): gold moved off L2 depth
-       onto L1 top-of-book; no live engine consumes gold depth (MicroScalperGold culled). -->
+  <span class="lbl"><span class="dot" id="l2d" style="background:var(--t3)"></span>L2</span>
+  <span class="lbl"><span class="dot" id="domd" style="background:var(--t3)"></span>GOLD-DOM</span>
   <span class="lbl" id="uptime">up …</span>
   <span class="lbl" id="build"></span>
   <span style="margin-left:auto;display:inline-flex;align-items:baseline;gap:6px"><span class="lbl">TODAY</span><span id="daypnl" class="num" style="font-size:18px;font-weight:600;color:var(--w)">…</span><span id="daypnln" class="lbl"></span></span>
@@ -215,10 +215,9 @@ R"OMEGAD1(      <span id="prtrend" class="chip" style="background:var(--pan2)"><
   <div id="heat"></div>
 </div>
 
-<!-- ═══ DOM — XAUUSD L2 panel REMOVED S-2026-07-21 (operator: "if we dont need L2 data then take
-     it off the gui"). Gold moved off L2 depth onto L1 top-of-book (COMEX metal depth not entitled;
-     the only gold-depth consumer, MicroScalperGold, was culled this session). The DOM ladder + OBI
-     top-5 were sourced from gold L2 which is now gone -- panel deleted rather than left "L2 quiet". ═══ -->
+<!-- ═══ DOM — XAUUSD L2 panel REMOVED S-2026-07-22 (operator: it left a large empty gap under
+     ENGINE HEAT). Gold L2 depth feed retired S-2026-07-10, so the fixed-250px panel rendered a
+     permanent "no depth (L2 quiet)" void. Panel + JS populator both deleted. ═══ -->
 </div><!-- /tcol right -->
 </div><!-- /topgrid -->
 
@@ -373,15 +372,15 @@ function el(id){return document.getElementById(id);}
 function esc(s){return String(s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
 /* DPR-aware canvas setup: crisp on retina/4K (old code hardcoded 2x). Returns
    a ctx pre-scaled so all drawing happens in CSS pixels. */
-)OMEGAD1"
-R"OMEGAD2(function prep(cv,h){var dpr=window.devicePixelRatio||1,w=cv.clientWidth||300;
+function prep(cv,h){var dpr=window.devicePixelRatio||1,w=cv.clientWidth||300;
  cv.width=Math.round(w*dpr);cv.height=Math.round(h*dpr);cv.style.height=h+'px';
  var ctx=cv.getContext('2d');ctx.setTransform(dpr,0,0,dpr,0,0);return ctx;}
 /* GSAP-backed number tween (falls back to instant set when CDN unavailable) */
 var _tw={};
 function tweenNum(id,val,fmtFn){var e=el(id);if(!e)return;
  var prev=_tw[id];
- if(prev===undefined||!window.gsap||Math.abs(val-prev)<0.5){_tw[id]=val;e.textContent=fmtFn(val);return;}
+)OMEGAD1"
+R"OMEGAD2( if(prev===undefined||!window.gsap||Math.abs(val-prev)<0.5){_tw[id]=val;e.textContent=fmtFn(val);return;}
  if(prev===val)return;
  _tw[id]=val;var st={v:prev};
  gsap.to(st,{v:val,duration:0.6,ease:'power2.out',overwrite:true,
@@ -547,13 +546,13 @@ function pollFires(){var now=Date.now();
     else loadArmed[p.sym||'?']=(loadArmed[p.sym||'?']||0)+1;}
    window._seenComp[k]=now;});
   var cn=safe(p.clips),cp=window._compClosedN['crypto|'+ct];
-)OMEGAD2"
-R"OMEGAD3(  if(cp!==undefined&&cn>cp&&!window._compBase)bankWhy.push('crypto '+(p.sym||'')+' +'+(cn-cp)+' clip(s)');
+  if(cp!==undefined&&cn>cp&&!window._compBase)bankWhy.push('crypto '+(p.sym||'')+' +'+(cn-cp)+' clip(s)');
   window._compClosedN['crypto|'+ct]=cn;}
  for(var k in window._seenComp){if(now-window._seenComp[k]>600000)delete window._seenComp[k];}
  if(!window._compBase){
   if(openWhy.length)almRing('companion open: '+openWhy.slice(0,4).join(', ')+(openWhy.length>4?' +'+(openWhy.length-4):''),'open',entryBell);
-  else if(bankWhy.length)almRing('companion clip banked: '+bankWhy.join(', '),'win',winBell);}
+)OMEGAD2"
+R"OMEGAD3(  else if(bankWhy.length)almRing('companion clip banked: '+bankWhy.join(', '),'win',winBell);}
  /* S-18ak (operator: "there was no sound"): a fire that happens BEFORE page load was baselined
     SILENTLY — reload after a fire never rang. One-shot announce at load when books are already
     TRADING, so opening the desk mid-trade is audible + logged. */
@@ -722,14 +721,14 @@ function drawProx(){var best=ccProx();var has={};
     ?'<span style="font-weight:700;color:'+(mp>=0?'#39ff14':'var(--redB)')+'">$'+(mp>=0?'+':'&minus;')+fmt2(Math.abs(mp),2)+'</span>'
     :'<span style="color:var(--t2)">$0<span style="opacity:.55"> no live capital</span></span>';
    var nlab=(b&&b.n)?(' '+b.n):'';
-)OMEGAD3"
-R"OMEGAD4(   var pklab=(holding&&b&&b.pk)?' <span style="color:var(--t2)">pk +'+fmt2(b.pk,2)+'%</span>':'';
+   var pklab=(holding&&b&&b.pk)?' <span style="color:var(--t2)">pk +'+fmt2(b.pk,2)+'%</span>':'';
    pe.innerHTML='<span style="color:#39ff14;font-weight:700;text-shadow:0 0 8px #39ff14">&#9679; TRADING'+nlab+'</span> '+dollarT+pklab;
    r.style.width='100%';r.style.background='#39ff14';return;}
   /* not trading (no live hold, no armed cell) */
   if(mp===null){
    pe.innerHTML='<span style="color:var(--t2)">$0<span style="opacity:.55"> no live capital</span></span>';
-   r.style.width='0%';r.style.background='var(--t2)';return;}
+)OMEGAD3"
+R"OMEGAD4(   r.style.width='0%';r.style.background='var(--t2)';return;}
   var dollar='<span style="font-weight:700;color:'+(mp>=0?'#39ff14':'var(--redB)')+'">$'+(mp>=0?'+':'&minus;')+fmt2(Math.abs(mp),2)+'</span>';
   if(b&&b.open){
    if(bx){bx.style.outline='1px solid var(--amb)';bx.style.outlineOffset='-1px';
@@ -894,16 +893,16 @@ function render(J){lastJ=J;
  function dot(id,ok){el(id).style.background=ok?'var(--grn)':'var(--red)';}
  dot('fixq',(J.fix_quote_status||'').indexOf('CONNECT')>=0||(J.fix_quote_status||'').indexOf('UP')>=0||J.quote_msg_rate>0);
  dot('fixt',(J.fix_trade_status||'').indexOf('CONNECT')>=0||(J.fix_trade_status||'').indexOf('UP')>=0);
- /* l2d/domd dots removed S-2026-07-21 (gold off L2; DOM panel deleted) */
+ dot('l2d',safe(J.ctrader_l2_live)>0);dot('domd',safe(J.gold_l2_real)>0);
  var up=safe(J.uptime_sec);el('uptime').textContent='up '+Math.floor(up/86400)+'d'+Math.floor(up%86400/3600)+'h'+Math.floor(up%3600/60)+'m';
-)OMEGAD4"
-R"OMEGAD5( el('build').textContent=(J.build_version||'').slice(0,12);
+ el('build').textContent=(J.build_version||'').slice(0,12);
  /* S-2026-07-08c sound-on-restart (operator: "ensure we have sound on when Omega restarts"):
     a persisted mute must NOT silently survive an Omega service restart. Boot marker =
     server boot epoch (now - uptime), 60s-rounded vs poll jitter, kept in localStorage.
     Marker moved >120s => a fresh Omega boot since this browser last saw one -> force SND
     back ON (clear the '0' mute). The existing first-gesture boot chime then gives audible
-    proof. A mid-session mute stays respected until the NEXT restart. */
+)OMEGAD4"
+R"OMEGAD5(    proof. A mid-session mute stays respected until the NEXT restart. */
  (function(){var boot=Math.round((Date.now()/1000-up)/60)*60,
   seen=parseInt(localStorage.getItem('omega_boot_seen')||'0',10);
   if(Math.abs(boot-seen)>120){localStorage.setItem('omega_boot_seen',String(boot));
@@ -955,8 +954,8 @@ R"OMEGAD5( el('build').textContent=(J.build_version||'').slice(0,12);
   var fg=v===3?'var(--grnB)':v===2?'var(--ambB)':v===1?'var(--blu)':'var(--t2)';
   return '<span class="chip" style="background:'+bg+';color:'+fg+'">'+p[0]+' '+t+'</span>';}).join('');
 
- /* DOM ladder + OBI render REMOVED S-2026-07-21 (operator: gold off L2 -> DOM panel deleted).
-    Elements el('dom')/el('obiv')/el('obib') no longer exist; rendering here would throw. */
+ /* DOM — XAUUSD L2 populator removed S-2026-07-22 (panel deleted above; gold L2 depth feed
+    retired S-2026-07-10). gold_bids/gold_asks/l2_gold no longer consumed by the desk. */
 
  /* MICROSTRUCTURE + BROKER + SIGNAL TAPE populators removed 2026-07-04 (panels deleted, operator: irrelevant). */
 
@@ -1054,8 +1053,7 @@ function pollComp(){fetch('/api/companion').then(function(r){return r.json();}).
   tip+='\nopen: '+(j.open_companions||0);var w=document.getElementById('compbankwrap');if(w)w.title=tip;}
  /* fold ONLY the OMEGA companion bucket into the Omega headline totals -- crypto paper must NOT
     muddy the Omega real-broker number (operator rule: relevant Omega data only on the Omega GUI). */
-)OMEGAD5"
-R"OMEGAD6( window._comptot={today:safe(ob.realized_today),d7:safe(ob.realized_7d),d30:safe(ob.realized_30d),all:om};
+ window._comptot={today:safe(ob.realized_today),d7:safe(ob.realized_7d),d30:safe(ob.realized_30d),all:om};
  /* call unconditionally -- the companion (paper) bank must fold in even when there are
     zero pre-trade closes in the window, otherwise a no-trade day silently drops the paper bucket */
  if(typeof updDayPnl==='function')updDayPnl();
@@ -1083,7 +1081,8 @@ setInterval(pollComp,5000);pollComp();
 function fmtTs(t){ if(!t)return '—'; var d=new Date(t*1000); return d.toISOString().slice(0,16).replace('T',' ')+'Z'; }
 function pollTrades(){
   Promise.all([
-    fetch('/api/history?all=1').then(function(r){return r.json();}).catch(function(){return [];}),
+)OMEGAD5"
+R"OMEGAD6(    fetch('/api/history?all=1').then(function(r){return r.json();}).catch(function(){return [];}),
     fetch('/api/crypto_trades').then(function(r){return r.json();}).catch(function(){return [];}),
     fetch('/api/stockdipturtle').then(function(r){return r.json();}).catch(function(){return {};}),
     fetch('/api/crypto_live_pnl').then(function(r){return r.json();}).catch(function(){return {};})
@@ -1222,8 +1221,7 @@ function pollRdagent(){
                +' <span class="d" style="font-size:9px">'+esc(p.shares)+'sh@'+fmt2(safe(p.avg_cost),2)+'</span>';
       }
       var sty=buy?' style="background:rgba(40,160,90,0.12)"':(dim?' style="opacity:0.45"':'');
-)OMEGAD6"
-R"OMEGAD7(      return '<tr'+sty+'><td class="num">'+esc(b.rank)+'</td><td class="l">'+esc(b.instrument||'')+
+      return '<tr'+sty+'><td class="num">'+esc(b.rank)+'</td><td class="l">'+esc(b.instrument||'')+
         '</td><td>'+act+'</td><td class="num">'+fmt2(safe(b.price),2)+'</td><td class="num">'+esc(b.percentile)+
         '</td><td class="num" style="color:'+col5+'">'+(c5>=0?'+':'')+fmt2(c5,1)+'%</td><td class="num" style="color:'+col20+'">'+(c20>=0?'+':'')+fmt2(c20,1)+'%</td><td class="num">'+pnlCell+'</td></tr>';
     };
@@ -1250,7 +1248,8 @@ setInterval(pollRdagent,5000);pollRdagent();
    /api/crypto_companion (josgp1 emit_companion_state -> launchd relay), keyed by tag —
    the panel CANNOT drift from the box again. Edge-engine (TSMOM/ICHI/KELT slot) closes
    are NOT mimic books; they arrive as chimera rows in LAST-15.
-   STANDALONE additive books — never vs-WIDE. */
+)OMEGAD6"
+R"OMEGAD7(   STANDALONE additive books — never vs-WIDE. */
 /* bp→$ (operator 2026-07-04, pool-confirmed): bank_bp = basis points of the crypto strategy
    pool (POOL_USD, live=$10,000 per shadow_refresh_intraday.cpp). $ = bp × POOL/10000. At $10k
    pool this is 1:1 (1 bp = $1). Change CRYPTO_POOL_USD if the live pool ever moves. */
@@ -1412,8 +1411,7 @@ function renderCompanionOpenTrades(pfx, open, trades, pxPrec){
   trades.forEach(function(t){var u=safe(t.usd);
    var dt=t.exit_ts?new Date(t.exit_ts*1000).toISOString().slice(5,16).replace('T',' '):'';
    th+='<tr><td class="l">'+esc(t.flavor)+'</td><td class="l">'+esc(t.dir)+'</td><td class="l">'+esc(t.tier)+'</td>'
-)OMEGAD7"
-R"OMEGAD8(     +'<td class="num">'+fmt2(safe(t.entry),pxPrec)+'</td><td class="num">'+fmt2(safe(t.exit),pxPrec)+'</td>'
+     +'<td class="num">'+fmt2(safe(t.entry),pxPrec)+'</td><td class="num">'+fmt2(safe(t.exit),pxPrec)+'</td>'
      +'<td class="num" style="color:'+(u>0?'var(--grn)':(u<0?'var(--red)':'var(--t2)'))+'">'+fmtc$(u)+'</td>'
      +'<td class="l d">'+esc(t.reason||'')+'</td><td class="l d">'+dt+'</td></tr>';});
   tt.innerHTML=th; tw.style.display='';
@@ -1436,7 +1434,8 @@ function drawGold(){var j=window._gold||null;
  if(1){/* S-2026-07-07u: RETIRED panel force-collapsed to banner (operator: GUI untidy); history archived .pre_reset_20260707c */el('gctab').innerHTML=h+'<tr><td class="l d" colspan="8">RETIRED S-2026-07-07 — real-fill re-validation negative (registry §5); history rows stand, no new arms</td></tr>';
   el('gcinfo').textContent='native C++ · pre-trade · real forward trades only';renderCompanionOpenTrades('gc',[],[],2);return;}
  (j.flavors||[]).forEach(function(fl){
-  var runs=fl.runners||[];var rs=runs.length||1;var first=true;
+)OMEGAD7"
+R"OMEGAD8(  var runs=fl.runners||[];var rs=runs.length||1;var first=true;
   runs.forEach(function(r){var u=safe(r.usd_real!==undefined?r.usd_real:r.usd);/* REAL column (S-2026-07-07e): model usd is a max(0,.) clamp */
    h+='<tr>';
    if(first){h+='<td class="l" rowspan="'+rs+'" style="font-weight:600">'+esc(fl.name)+'</td>'
@@ -1581,8 +1580,7 @@ function drawIndex(){var j=window._idx||null;
    var bcol=(bu>0?'var(--grn)':(bu<0?'var(--red)':'var(--t2)'));
    runs.forEach(function(c){
     h+='<tr>';
-)OMEGAD8"
-R"OMEGAD9(    if(firstSym){h+='<td class="l" rowspan="'+prows+'" style="font-weight:700">'+esc(p.sym)+'</td>';firstSym=false;}
+    if(firstSym){h+='<td class="l" rowspan="'+prows+'" style="font-weight:700">'+esc(p.sym)+'</td>';firstSym=false;}
     if(first){h+='<td class="l" rowspan="'+rs+'" style="font-weight:600">'+esc(fl.name)+'</td>'
                 +'<td class="l" rowspan="'+rs+'">'+esc(fl.dir)+'</td>';}
     h+='<td class="l">'+esc(c.tier)+'</td><td class="num">'+safe(c.gb_bp)+'</td>'
@@ -1610,7 +1608,8 @@ setInterval(pollIndex,15000);pollIndex();
 
 /* ── STOCK MOVERS (per-name BIGCAP mimic LADDER · long-only · no-floor · native C++ · additive, STANDALONE) ──
    S-2026-07-07w: panel repointed from the RETIRED BE-floor (/api/stockmover_companion, real-fill -$110.7k,
-   registry §5) to the LADDER successor /api/stockladder_companion (stockladder_companion_state.json) — the
+)OMEGAD8"
+R"OMEGAD9(   registry §5) to the LADDER successor /api/stockladder_companion (stockladder_companion_state.json) — the
    validated no-floor giveback ladder (bigcap_mimic_ladder_bt.py: +7,044% of clip notional PF1.58 all-6).
    REAL FORWARD TRADES ONLY — $0 until a live clip closes (deploy-forward). +3% day -> legs enter NEXT close;
    TIGHT a0.5/s2 stall banker + WIDE a8/g50 giveback runner + self-funding ladder cap5; LOSS_CUT 15; RT 8bp.
@@ -1749,8 +1748,7 @@ setInterval(pollBc2pct,15000);pollBc2pct();
 var ROWS=[],WIN=1;
 function parseShadow(txt){
  /* HEADER-DRIVEN parse of omega_shadow.csv. The 06-12 rewrite hardcoded a
-)OMEGAD9"
-R"OMEGAD10(    12-column layout that never matched the real 41-column file (col 0 is
+    12-column layout that never matched the real 41-column file (col 0 is
     trade_id, not ts) -> parseInt('0') falsy -> EVERY row skipped -> all
     analytics showed "$0 / no pre-trade closes". Map columns by header name. */
  var out=[];var ls=txt.split('\n');if(ls.length<2)return out;
@@ -1784,7 +1782,8 @@ function winRows(){if(WIN>=9999)return ROWS;
 /* ── per-asset-class PnL split (operator 2026-07-11) ──
    Assigns EVERY money source updDayPnl folds into ALL-TIME to exactly one of 4 classes
    (STOCK/CRYPTO/FX/GOLD) so the 4 chips reconcile to ALL-TIME. classOf() classifies a ledger
-   row by its engine tag (+ symbol for single-name equities). The forward/paper book globals are
+)OMEGAD9"
+R"OMEGAD10(   row by its engine tag (+ symbol for single-name equities). The forward/paper book globals are
    routed by fixed class (see updDayPnl). STOCK = equities incl. equity indices (operator's 4
    buckets have no separate index); GOLD includes usoil/xag per the operator's class map. */
 var BIGCAP_STK=/^(NVDA|AMD|AVGO|MU|MRVL|SMCI|ARM|PLTR|TSLA|META|NFLX|CRWD|SHOP|COIN|MSTR|SNOW|NOW|PANW|UBER|ABNB|DELL|ORCL|QCOM|INTC|AMZN|GOOGL|MSFT|AAPL|CRM|ADBE|IONQ|RGTI|QBTS|ASTS|RKLB|NBIS|CRWV|ALAB|CRDO|WDC|STX|DD|TPR|BMY|SWKS)$/i;
@@ -1900,8 +1899,7 @@ function compClipRows(){var cl=window._compClosed||[];if(!cl.length)return '';
    +'<td class="num '+c+'" style="font-size:10px">'+fmt$(p)+'</td><td colspan="2" class="l d" style="font-size:10px">'+esc(d.book||'')+'</td></tr>';}).join('');
  return '<tr><td class="l d" colspan="7" style="padding-top:6px">companion clips — recent closes (paper, additive; why COMP-BANK moved)</td></tr>'+rows;}
 /* S-19c (operator "WHY IS THE COMP LEDGER STILL THERE" -- S-19b only fixed the Σ line's units,
-)OMEGAD10"
-R"OMEGAD11(   not location): the per-symbol/per-book crypto companion breakdown formerly rendered here
+   not location): the per-symbol/per-book crypto companion breakdown formerly rendered here
    (cryptoLedgerRows()) was a pure DUPLICATE of what drawCC() already renders into #cctab under
    CRYPTO MIMIC BOOKS -- same per-coin rows, same per-book bp figures, same PAPER caption. Removed
    the duplicate injection into ENGINE LEDGER entirely rather than relocating it; the real thing
@@ -1920,7 +1918,8 @@ function drawLedger(){var t=el('ledger');/* S-19b/19c: crypto companion PAPER ba
  var rows=ks.map(function(k){var e=by[k],c=e.pnl>=0?'g':'r';
   var w=Math.max(2,Math.abs(e.pnl)/mx*100);
   return '<tr><td class="l" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:170px" title="'+esc(k)+'">'+esc(k.replace(/Engine$/,''))+'</td>'
-   +'<td class="l d">'+esc(e.sym)+'</td><td class="num d">'+e.n+'</td>'
+)OMEGAD10"
+R"OMEGAD11(   +'<td class="l d">'+esc(e.sym)+'</td><td class="num d">'+e.n+'</td>'
    +'<td class="num d">'+Math.round(100*e.w/e.n)+'%</td>'
    +'<td class="num '+c+'">'+fmt$(e.pnl)+'</td>'
    +'<td style="width:90px"><span class="bar" style="display:block"><i style="width:'+w+'%;background:'+(e.pnl>=0?'var(--grn)':'var(--red)')+'"></i></span></td>'
@@ -2066,8 +2065,7 @@ function drawBlot(){fetch('/api/shadow_trades').then(function(r){return r.json()
  var newest=safe(a[a.length-1].exitTs);
  if(window._lastClose===undefined)window._lastClose=newest;
  else if(newest>window._lastClose){
-)OMEGAD11"
-R"OMEGAD12(  var fresh=a.filter(function(t){return safe(t.exitTs)>window._lastClose;});
+  var fresh=a.filter(function(t){return safe(t.exitTs)>window._lastClose;});
   var net=fresh.reduce(function(s,t){return s+safe(t.pnl);},0);
   window._lastClose=newest;
   var why=fresh.slice(0,4).map(function(t){return (t.engine||'?').replace(/Engine$/,'')+' '+(t.symbol||'')+' '+fmt$(safe(t.pnl));}).join(', ')+(fresh.length>4?' +'+(fresh.length-4):'');
@@ -2092,16 +2090,17 @@ function drawHist(){var h=el('hist');if(!h)return;/* TRADE HISTORY panel removed
 var PRD=null,PRSYM=localStorage.getItem('omega_prsym')||'XAUUSD',PRTF=localStorage.getItem('omega_prtf')||'m15';
 var PRSYMS=['XAUUSD','US500','USTEC','EURUSD','GBPUSD','USDJPY','AUDUSD','NZDUSD','USDCAD'],PRTFS=[['m5','5m'],['m15','15m'],['h1','1H']];
 function prBtns(){
- el('prsyms').innerHTML=PRSYMS.map(function(x){return '<button class="'+(x===PRSYM?'on':'')+'" data-s="'+x+'">'+x.replace('USD','')+'</button>';}).join('');
+)OMEGAD11"
+R"OMEGAD12( el('prsyms').innerHTML=PRSYMS.map(function(x){return '<button class="'+(x===PRSYM?'on':'')+'" data-s="'+x+'">'+x.replace('USD','')+'</button>';}).join('');
  el('prtfs').innerHTML=PRTFS.map(function(t){return '<button class="'+(t[0]===PRTF?'on':'')+'" data-t="'+t[0]+'">'+t[1]+'</button>';}).join('');
  Array.prototype.forEach.call(el('prsyms').children,function(b){b.onclick=function(){PRSYM=b.getAttribute('data-s');localStorage.setItem('omega_prsym',PRSYM);prBtns();drawPR();};});
  Array.prototype.forEach.call(el('prtfs').children,function(b){b.onclick=function(){PRTF=b.getAttribute('data-t');localStorage.setItem('omega_prtf',PRTF);prBtns();drawPR();};});}
 prBtns();
 var PRMK=[],PRMOUSE=null,PRHOVER=null;
 function drawPR(){var cv=el("prc");
- /* S-2026-07-10: DYNAMIC chart height — measure the RIGHT topgrid column (ENGINE LEDGER+HEAT+DOM+OBI,
-    whose height varies with DOM depth) and size the chart to fill the LEFT column so there is no gap
-    below it, regardless of DOM row count. Recomputed every draw. Fallback 300 if measurement fails. */
+ /* S-2026-07-10: DYNAMIC chart height — measure the RIGHT topgrid column (ENGINE LEDGER+HEAT;
+    DOM/OBI panel removed S-2026-07-22) and size the chart to fill the LEFT column so there is no
+    gap below it. Recomputed every draw. Fallback 300 if measurement fails. */
  var H=300;
  try{var tg=document.querySelector('.topgrid');
    if(tg&&tg.children.length>1){
@@ -2266,8 +2265,7 @@ function drawPR(){var cv=el("prc");
  ctx.strokeStyle=tc;ctx.globalAlpha=0.5;ctx.setLineDash([2,4]);
  ctx.beginPath();ctx.moveTo(padL,yl);ctx.lineTo(padL+pw,yl);ctx.stroke();ctx.setLineDash([]);ctx.globalAlpha=1;
  ctx.fillStyle=tc;ctx.fillRect(padL+pw+2,yl-8,padR-6,16);
-)OMEGAD12"
-R"OMEGAD13( ctx.fillStyle='#0B0F14';ctx.fillText(lastC.toFixed(dp),padL+pw+6,yl+3.5);
+ ctx.fillStyle='#0B0F14';ctx.fillText(lastC.toFixed(dp),padL+pw+6,yl+3.5);
  el('prlast').textContent=lastC.toFixed(dp);
  var pt=el('prtrend');
  pt.textContent=trend>0?'▲ STEP UP':trend<0?'▼ STEP DOWN':'■ RANGING';
@@ -2298,7 +2296,8 @@ function prTip(m,cx,cy){var tip=el('prtip');
  var hold=r.hold>=3600?Math.floor(r.hold/3600)+'h'+Math.floor(r.hold%3600/60)+'m':Math.floor(r.hold/60)+'m';
  var dpp=r.epx<10?4:2;
  var isPart=/^PARTIAL/.test(r.reason||'');
- tip.innerHTML='<span class="w">'+esc((r.eng||'').replace(/Engine$/,''))+'</span> · <span class="'+(r.side==='LONG'?'g':'r')+'">'+esc(r.side)+'</span> '+esc(r.sym)
+)OMEGAD12"
+R"OMEGAD13( tip.innerHTML='<span class="w">'+esc((r.eng||'').replace(/Engine$/,''))+'</span> · <span class="'+(r.side==='LONG'?'g':'r')+'">'+esc(r.side)+'</span> '+esc(r.sym)
   +(isPart?' <span class="chip" style="background:var(--ambD);color:var(--ambB)">PARTIAL</span>':'')
   +'<br>in <span class="num w">'+fmt2(r.epx,dpp)+'</span> → out <span class="num w">'+fmt2(r.xpx,dpp)+'</span> · <span class="num w">'+lots(r.size)+'</span> lots'
   +'<br><span class="num" style="color:'+c+';font-weight:600">'+fmt$(r.pnl)+'</span> · '+hold+' · <span class="d">'+esc(r.reason||'')+'</span>'

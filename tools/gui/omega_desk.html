@@ -208,16 +208,9 @@ a{color:var(--blu);text-decoration:none}
   <div id="heat"></div>
 </div>
 
-<!-- ═══ DOM — XAUUSD L2 (S-2026-07-10 operator: moved OUT of .compcols masonry into the fixed
-     right column below ENGINE HEAT, with a FIXED height so it never resizes/reflows). ═══ -->
-<div class="pan" style="margin-top:8px;height:250px;overflow:hidden;display:flex;flex-direction:column">
-  <div class="lbl" style="margin-bottom:4px">DOM — XAUUSD L2</div>
-  <div id="dom" class="num" style="font-size:10px;flex:1;overflow:hidden"></div>
-  <div style="margin-top:5px">
-    <div class="lbl">OBI top-5 <span id="obiv" class="num w"></span></div>
-    <div class="bar" style="margin-top:3px"><i id="obib" style="background:var(--grn);left:50%;width:0"></i></div>
-  </div>
-</div>
+<!-- ═══ DOM — XAUUSD L2 panel REMOVED S-2026-07-22 (operator: it left a large empty gap under
+     ENGINE HEAT). Gold L2 depth feed retired S-2026-07-10, so the fixed-250px panel rendered a
+     permanent "no depth (L2 quiet)" void. Panel + JS populator both deleted. ═══ -->
 </div><!-- /tcol right -->
 </div><!-- /topgrid -->
 
@@ -950,21 +943,8 @@ function render(J){lastJ=J;
   var fg=v===3?'var(--grnB)':v===2?'var(--ambB)':v===1?'var(--blu)':'var(--t2)';
   return '<span class="chip" style="background:'+bg+';color:'+fg+'">'+p[0]+' '+t+'</span>';}).join('');
 
- var bids=J.gold_bids||[],asks=J.gold_asks||[];
- var mx=1;bids.concat(asks).forEach(function(l){if(l.s>mx)mx=l.s;});
- var dh='<div style="display:grid;grid-template-columns:1fr 70px 1fr;gap:1px;font-size:11px">';
- for(var i=Math.min(4,asks.length-1);i>=0;i--){var l=asks[i];
-  dh+='<span></span><span style="text-align:right;color:var(--redB);padding:0 4px">'+fmt2(l.p)+'</span>'
-   +'<span style="position:relative"><i style="position:absolute;left:0;top:2px;bottom:2px;width:'+(l.s/mx*100)+'%;background:rgba(226,72,77,.25);border-radius:1px"></i><i style="position:relative;color:var(--redB);padding-left:4px;font-style:normal">'+fmt2(l.s,1)+'</i></span>';}
- var spd=(asks[0]&&bids[0])?(asks[0].p-bids[0].p):0;
- dh+='<span></span><span style="text-align:right;color:var(--t2);border-top:1px solid var(--bd2);border-bottom:1px solid var(--bd2);padding:1px 4px">'+fmt2(spd)+'</span><span style="border-top:1px solid var(--bd2);border-bottom:1px solid var(--bd2)"></span>';
- for(var i=0;i<Math.min(5,bids.length);i++){var l=bids[i];
-  dh+='<span style="position:relative"><i style="position:absolute;right:0;top:2px;bottom:2px;width:'+(l.s/mx*100)+'%;background:rgba(46,189,133,.22);border-radius:1px"></i></span>'
-   +'<span style="text-align:right;color:var(--grnB);padding:0 4px">'+fmt2(l.p)+'</span><span style="color:var(--grnB);padding-left:4px">'+fmt2(l.s,1)+'</span>';}
- dh+='</div>';el('dom').innerHTML=(bids.length||asks.length)?dh:'<span class="d">no depth (L2 quiet)</span>';
- var imb=safe(J.l2_gold,0.5);el('obiv').textContent=fmt2(imb,3);
- var ob=el('obib'),dev=imb-0.5;ob.style.left=dev>=0?'50%':(50+dev*100)+'%';ob.style.width=Math.abs(dev)*100+'%';
- ob.style.background=dev>=0?'var(--grn)':'var(--red)';
+ /* DOM — XAUUSD L2 populator removed S-2026-07-22 (panel deleted above; gold L2 depth feed
+    retired S-2026-07-10). gold_bids/gold_asks/l2_gold no longer consumed by the desk. */
 
  /* MICROSTRUCTURE + BROKER + SIGNAL TAPE populators removed 2026-07-04 (panels deleted, operator: irrelevant). */
 
@@ -2100,9 +2080,9 @@ function prBtns(){
 prBtns();
 var PRMK=[],PRMOUSE=null,PRHOVER=null;
 function drawPR(){var cv=el("prc");
- /* S-2026-07-10: DYNAMIC chart height — measure the RIGHT topgrid column (ENGINE LEDGER+HEAT+DOM+OBI,
-    whose height varies with DOM depth) and size the chart to fill the LEFT column so there is no gap
-    below it, regardless of DOM row count. Recomputed every draw. Fallback 300 if measurement fails. */
+ /* S-2026-07-10: DYNAMIC chart height — measure the RIGHT topgrid column (ENGINE LEDGER+HEAT;
+    DOM/OBI panel removed S-2026-07-22) and size the chart to fill the LEFT column so there is no
+    gap below it. Recomputed every draw. Fallback 300 if measurement fails. */
  var H=300;
  try{var tg=document.querySelector('.topgrid');
    if(tg&&tg.children.length>1){
