@@ -208,9 +208,18 @@ a{color:var(--blu);text-decoration:none}
   <div id="heat"></div>
 </div>
 
-<!-- ═══ DOM — XAUUSD L2 panel REMOVED S-2026-07-22 (operator: it left a large empty gap under
-     ENGINE HEAT). Gold L2 depth feed retired S-2026-07-10, so the fixed-250px panel rendered a
-     permanent "no depth (L2 quiet)" void. Panel + JS populator both deleted. ═══ -->
+<!-- ═══ LAST 15 TRADES — relocated here S-2026-07-22 to FILL the right-column void under ENGINE HEAT.
+     History: the XAUUSD L2 panel used to fill this slot, but its depth feed retired S-2026-07-10 and
+     the dead panel was removed 0b2bbedf — which RE-OPENED a ~236px black gap (col1 was 201px vs the
+     437px left chart column under grid align-items:start). Nothing pre-trade fills it (book is flat),
+     so we move the ALWAYS-populated trade log (179 rows) here: fills the void, keeps the 2-col wide
+     packing, and forms a coherent ENGINE LEDGER → ENGINE HEAT → trade-log money rail. ═══ -->
+<div class="pan" style="margin-top:8px">
+  <div class="lbl">LAST 15 TRADES — all books (engine ledger + crypto + stock) · newest first · scroll for history<span id="alltradesn" class="lbl" style="margin-left:8px"></span></div>
+  <div style="max-height:230px;overflow-y:auto;margin-top:3px">
+    <table id="alltrades" style="width:100%"><tr><td class="l d">loading…</td></tr></table>
+  </div>
+</div>
 </div><!-- /tcol right -->
 </div><!-- /topgrid -->
 
@@ -259,13 +268,9 @@ a{color:var(--blu);text-decoration:none}
   <div id="ictradeswrap" style="display:none;margin-top:6px"><div class="lbl">TRADES LOG (completed forward clips — engine reset after each)</div><div style="overflow-x:auto"><table id="ictrades"></table></div></div>
 </div>
 
-<!-- ═══ LAST 15 TRADES — moved here (under INDEX COMPANIONS, left column) S-2026-07-10 operator ═══ -->
-<div class="pan">
-  <div class="lbl">LAST 15 TRADES — all books (engine ledger + crypto + stock) · newest first · scroll for history<span id="alltradesn" class="lbl" style="margin-left:8px"></span></div>
-  <div style="max-height:200px;overflow-y:auto;margin-top:3px">
-    <table id="alltrades" style="width:100%"><tr><td class="l d">loading…</td></tr></table>
-  </div>
-</div>
+<!-- LAST 15 TRADES relocated S-2026-07-22 to the topgrid right column (fills the void under ENGINE
+     HEAT). Was here (left cstack under INDEX COMPANIONS, S-2026-07-10) — single #alltrades table,
+     no duplicate. -->
 
 </div><!-- /left column cstack -->
 
@@ -1832,16 +1837,14 @@ function updDayPnl(){var cut=Math.floor(Date.now()/86400000)*86400;var n=0,p=0,t
     Those are pre-trade paper (see the panels' own "pre-trade paper PnL" / "$0 until first forward
     clip" labels) — computed, not banked. They stay shown+labelled in their DESK panels but are OUT
     of the live money chips. Real Omega fills wire in here once livebook_closes exists. */
- /* 3. OMEGA stall-clip (cAll, gold+index only) — split per-engine via window._gcPer.
-       Route each engine's banked realized to its class; only gold/stock engines belong to the
-       OMEGA book (crypto/fx entries in _gcPer are other books, NOT folded into cAll -> skipped).
-       Fallback: no per-engine rollup -> assign the whole stall-clip to GOLD and warn. */
- var per=window._gcPer||{},clipG=0,clipS=0,clipSeen=false;
- for(var ek in per){if(!Object.prototype.hasOwnProperty.call(per,ek))continue;
-  var pc=classOf(ek,''),pv=safe((per[ek]||{}).realized);
-  if(pc==='gold'){clipG+=pv;clipSeen=true;}else if(pc==='stock'){clipS+=pv;clipSeen=true;}}
- if(clipSeen){cls.gold+=clipG;cls.stock+=clipS;}
- else{cls.gold+=cAll;if(cAll)console.warn('classPnl: window._gcPer unavailable — stall-clip '+fmt$(cAll)+' assigned wholly to GOLD');}
+ /* 3. OMEGA stall-clip (cAll) — S-2026-07-22 operator mandate (real-fills-only): the stall-clip
+       companion bank is a SHADOW/companion COMPUTED book (ENGINE HEAT labels it "pre-trade paper
+       PnL"), NOT real broker fills. It stays shown in the ENGINE HEAT + OMEGA book panels below
+       (which read window._gcPer directly) but is OUT of the live-money class chips, exactly like
+       the TODAY/ALL-TIME headline. So cls.gold/cls.stock get NOTHING here — only cls.crypto (real
+       Binance fills, folded above) is nonzero. This zeroes the STOCK/GOLD chips and drops the
+       ±unclassified remainder to 0 (cls4 == totT == clvAll). When Omega books REAL fills, fold
+       that real bank here per-class — never the stall-clip paper. */
  /* 4. reconciliation — remainder is DEFINED as totT minus the 4 class sums, so it captures any
        unclassified ledger row ('other') or stall-clip reconciliation gap. Surface it, never hide it. */
  var cls4=cls.stock+cls.crypto+cls.fx+cls.gold,rem=totT-cls4;
