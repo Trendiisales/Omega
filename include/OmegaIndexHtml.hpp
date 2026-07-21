@@ -778,12 +778,13 @@ function markTiles(){
  var act={};
  (window._lastLts||[]).forEach(function(t){var k=TK_SYM2KEY[String(t.symbol||'').toUpperCase()];if(k)act[k]=1;});
  (REGPOS||[]).forEach(function(t){var k=TK_SYM2KEY[String(t.symbol||'').toUpperCase()];if(k)act[k]=1;});
- /* S-2026-07-20 (operator: killed a WINNING NAS100 ladder because the USTEC tile stayed dark).
-    markTiles previously read only live_trades+REGPOS -- the index/FX LADDER books feed a SEPARATE
-    endpoint (_ixlad/_fxlad), so a ladder with an OPEN leg never lit its tile. A pair with an open
-    leg IS a live position -> light the tile NEON so it can't be killed blind. */
- [window._ixlad,window._fxlad].forEach(function(j){((j&&j.pairs)||[]).forEach(function(p){
-   if((p.open||[]).length){var k=TK_SYM2KEY[String(p.pair||p.live_sym||'').toUpperCase()];if(k)act[k]=1;}});});
+ /* S-2026-07-22 operator mandate (real-fills-only): the index/FX LADDER books (_ixlad/_fxlad) are
+    SHADOW/paper — an open ladder LEG is NOT a real broker fill, so it must NOT light a tile neon
+    "TRADING". This was the false USTEC-neon: NAS100 ladder held 4 shadow legs -> lit USTEC as live
+    when Omega has ZERO real fills and LIVE OPEN TRADES is FLAT. The 07-20 "light so it's not killed
+    blind" reason is served instead by the ladder's OWN panels (STOCK MOVERS / INDEX-FX LADDER),
+    which show every open leg labelled. Neon TRADING = REAL open position only (_lastLts / REGPOS);
+    when Omega wires a real-fill position feed, THAT lights the tile — never a shadow ladder leg. */
  TKS.forEach(function(t){var e=el('tkl_'+t[0]),bx=el('tkbox_'+t[0]);var on=!!act[t[0]];
   if(e){e.style.color=on?'#39ff14':'';e.style.fontWeight=on?'700':'';e.style.textShadow=on?'0 0 8px #39ff14':'';}
   /* S-18ak TRUE NEON box glow, same as the crypto tiles (drawProx) + the header beacon. */
@@ -899,9 +900,9 @@ function render(J){lastJ=J;
  dot('fixq',(J.fix_quote_status||'').indexOf('CONNECT')>=0||(J.fix_quote_status||'').indexOf('UP')>=0||J.quote_msg_rate>0);
  dot('fixt',(J.fix_trade_status||'').indexOf('CONNECT')>=0||(J.fix_trade_status||'').indexOf('UP')>=0);
  dot('l2d',safe(J.ctrader_l2_live)>0);dot('domd',safe(J.gold_l2_real)>0);
- var up=safe(J.uptime_sec);el('uptime').textContent='up '+Math.floor(up/86400)+'d'+Math.floor(up%86400/3600)+'h'+Math.floor(up%3600/60)+'m';
 )OMEGAD4"
-R"OMEGAD5( el('build').textContent=(J.build_version||'').slice(0,12);
+R"OMEGAD5( var up=safe(J.uptime_sec);el('uptime').textContent='up '+Math.floor(up/86400)+'d'+Math.floor(up%86400/3600)+'h'+Math.floor(up%3600/60)+'m';
+ el('build').textContent=(J.build_version||'').slice(0,12);
  /* S-2026-07-08c sound-on-restart (operator: "ensure we have sound on when Omega restarts"):
     a persisted mute must NOT silently survive an Omega service restart. Boot marker =
     server boot epoch (now - uptime), 60s-rounded vs poll jitter, kept in localStorage.
@@ -1075,10 +1076,10 @@ function pollComp(){fetch('/api/companion').then(function(r){return r.json();}).
     not this /api/companion python rollup. Left the _gc* sets above for the per-engine sub-rows only. */
  /* refresh the ENGINE LEDGER too so the companion sub-row under each engine picks up
     fresh per_engine banked totals (operator: companion shown under the engine it mimics).
-    UNCONDITIONAL (2026-07-08): with an empty post-reset ledger the redraw was skipped, so a
-    companion clip raised the totals with NO visible row explaining why. */
 )OMEGAD5"
-R"OMEGAD6( if(typeof drawLedger==='function')drawLedger();
+R"OMEGAD6(    UNCONDITIONAL (2026-07-08): with an empty post-reset ledger the redraw was skipped, so a
+    companion clip raised the totals with NO visible row explaining why. */
+ if(typeof drawLedger==='function')drawLedger();
  }).catch(function(){});}
 setInterval(pollComp,5000);pollComp();
 
@@ -1245,10 +1246,10 @@ setInterval(pollRdagent,5000);pollRdagent();
 /* ── crypto mimic books — DYNAMIC render, no baked roster (S-2026-07-13 panel rewrite) ──
    Live truth 13-07: KILL_IMMEDIATE_CLIPS + KILL_IMMEDIATE_PARENTS culled the entire immediate-
    entry clip grid (68 cells + daily cascades) on josgp1. The box now runs ONLY
-   companion-at-BE MIMIC books (permitted class — never opens underwater, confirm=20bp,
-   BE-cascade managed): *-REGIME-BEMIMIC (mimics the 24h/+8% regime-switch parent) +
 )OMEGAD6"
-R"OMEGAD7(   *-SWEET (validated 2023+ sweet-spot self-detect cells, HANDOFF 2026-07-13i). The old
+R"OMEGAD7(   companion-at-BE MIMIC books (permitted class — never opens underwater, confirm=20bp,
+   BE-cascade managed): *-REGIME-BEMIMIC (mimics the 24h/+8% regime-switch parent) +
+   *-SWEET (validated 2023+ sweet-spot self-detect cells, HANDOFF 2026-07-13i). The old
    panel baked that killed roster and rendered it as idle rows = content-parity violation
    (feedback-content-parity-not-just-plumbing). Fix: every row now comes straight from
    /api/crypto_companion (josgp1 emit_companion_state -> launchd relay), keyed by tag —
@@ -1434,9 +1435,9 @@ function renderCompanionOpenTrades(pfx, open, trades, pxPrec){
    pts,usd}]}]}. RETIRED S-2026-07-07e (real-fill re-validation negative, registry §5) — panel folds the
    REAL columns (usd_real/pts_real) of the persisted forward history; no new arms. */
 function drawGold(){var j=window._gold||null;
- var h='<tr><td class="l lbl">book</td><td class="l lbl">dir</td><td class="lbl">tier</td><td class="lbl">gb bp</td>'
 )OMEGAD7"
-R"OMEGAD8(      +'<td class="lbl">clips</td><td class="lbl">wins</td><td class="lbl">pts real</td><td class="lbl">forward($ real)</td></tr>';
+R"OMEGAD8( var h='<tr><td class="l lbl">book</td><td class="l lbl">dir</td><td class="lbl">tier</td><td class="lbl">gb bp</td>'
+      +'<td class="lbl">clips</td><td class="lbl">wins</td><td class="lbl">pts real</td><td class="lbl">forward($ real)</td></tr>';
  if(1){/* S-2026-07-07u: RETIRED panel force-collapsed to banner (operator: GUI untidy); history archived .pre_reset_20260707c */el('gctab').innerHTML=h+'<tr><td class="l d" colspan="8">RETIRED S-2026-07-07 — real-fill re-validation negative (registry §5); history rows stand, no new arms</td></tr>';
   el('gcinfo').textContent='native C++ · pre-trade · real forward trades only';renderCompanionOpenTrades('gc',[],[],2);return;}
  (j.flavors||[]).forEach(function(fl){

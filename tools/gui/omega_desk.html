@@ -768,12 +768,13 @@ function markTiles(){
  var act={};
  (window._lastLts||[]).forEach(function(t){var k=TK_SYM2KEY[String(t.symbol||'').toUpperCase()];if(k)act[k]=1;});
  (REGPOS||[]).forEach(function(t){var k=TK_SYM2KEY[String(t.symbol||'').toUpperCase()];if(k)act[k]=1;});
- /* S-2026-07-20 (operator: killed a WINNING NAS100 ladder because the USTEC tile stayed dark).
-    markTiles previously read only live_trades+REGPOS -- the index/FX LADDER books feed a SEPARATE
-    endpoint (_ixlad/_fxlad), so a ladder with an OPEN leg never lit its tile. A pair with an open
-    leg IS a live position -> light the tile NEON so it can't be killed blind. */
- [window._ixlad,window._fxlad].forEach(function(j){((j&&j.pairs)||[]).forEach(function(p){
-   if((p.open||[]).length){var k=TK_SYM2KEY[String(p.pair||p.live_sym||'').toUpperCase()];if(k)act[k]=1;}});});
+ /* S-2026-07-22 operator mandate (real-fills-only): the index/FX LADDER books (_ixlad/_fxlad) are
+    SHADOW/paper — an open ladder LEG is NOT a real broker fill, so it must NOT light a tile neon
+    "TRADING". This was the false USTEC-neon: NAS100 ladder held 4 shadow legs -> lit USTEC as live
+    when Omega has ZERO real fills and LIVE OPEN TRADES is FLAT. The 07-20 "light so it's not killed
+    blind" reason is served instead by the ladder's OWN panels (STOCK MOVERS / INDEX-FX LADDER),
+    which show every open leg labelled. Neon TRADING = REAL open position only (_lastLts / REGPOS);
+    when Omega wires a real-fill position feed, THAT lights the tile — never a shadow ladder leg. */
  TKS.forEach(function(t){var e=el('tkl_'+t[0]),bx=el('tkbox_'+t[0]);var on=!!act[t[0]];
   if(e){e.style.color=on?'#39ff14':'';e.style.fontWeight=on?'700':'';e.style.textShadow=on?'0 0 8px #39ff14':'';}
   /* S-18ak TRUE NEON box glow, same as the crypto tiles (drawProx) + the header beacon. */
