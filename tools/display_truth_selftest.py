@@ -646,10 +646,11 @@ def main() -> int:
     # (never traded) but parse_name_array reads BIGCAP_LAD regardless of preprocessor state,
     # so once its leftover state file went empty (07-21) the check false-FAILed forever —
     # same dead-book-artifact class as the feeds_selftest [vps-stock] false RED fixed S-23h.
+    # fx-ladder + idx-ladder rows REMOVED S-2026-07-23j: both panels + endpoints stripped off the
+    # live desk (operator paper-purge — pre-trade $0 companion books, no real fills). Nothing served
+    # to reconcile; served_fx/served_ix now 404 by design, so the rows would false-FAIL forever.
     for label, wired, served, field, key in (
-            ("fx-ladder", parse_cfg_array(einit, r"static const FLCfg FL\[\]\s*=\s*\{"), served_fx, "pairs", "pair"),
-            ("idx-ladder", parse_cfg_array(einit, r"static const ILCfg IL\[\]\s*=\s*\{"), served_ix, "pairs", "pair"),
-            ("bigcap-2pct", parse_name_array(einit, "BC2_UNIV"), served_b2, "names", "sym")):
+            ("bigcap-2pct", parse_name_array(einit, "BC2_UNIV"), served_b2, "names", "sym"),):
         if not wired:
             rec("WARN", "SYMBOL-COV", "%s: could not parse wired roster from engine_init.hpp (source drifted?)" % label)
             continue

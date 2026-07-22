@@ -35,10 +35,10 @@
 omega_engine_ledger	omega-new	include/engine_init.hpp	VPS-local omega_shadow.csv+omega_trade_closes.csv	/api/shadow_csv	ENGINE LEDGER/HEAT/LAST-15	ALL-TIME base ROWS tot	WIRED	~16 enabled g_* engines via handle_closed_trade -> OmegaTradeLedger
 stockdip_turtle_books	omega-new	include/engine_init.hpp	stock_dipturtle_book ledger callback -> omega_shadow.csv	/api/shadow_csv	ENGINE LEDGER	folds with ROWS	WIRED	per-name StockDip/StockTurtle books ride the engine ledger
 omega_stall_clip_companion	omega-new	include/StallCompanion.hpp	companion_state.json (VPS)	/api/companion	COMP-BANK sub-rows	window._comptot	WIRED	25 gold/index giveback books, native port of stall_accountant
-bigcap_mimic_ladder	omega-new	include/StockDayMoverLadderCompanion.hpp	stockladder_companion_state.json (VPS)	/api/stockladder_companion	STOCK MOVERS pollSm	window._smtot	WIRED	45-name ladder, realized-only fold
+bigcap_mimic_ladder	omega-new	include/StockDayMoverLadderCompanion.hpp	stockladder_companion_state.json (VPS)	NONE	NONE	NONE	RETIRED-ok	panel+endpoint removed S-23j (operator paper-purge); dead $0 pre-trade book
 bigcap_2pct_impulse	omega-new	include/BigCap2pctImpulseCompanion.hpp	bigcap2pct_companion_state.json (VPS)	/api/bigcap2pct_companion	STOCK MOVERS pollBc2pct	window._bc2tot	WIRED	orphan fixed S-2026-07-11
-index_mimic_ladder	omega-new	include/engine_init.hpp	idxladder_companion_state.json (VPS)	/api/idxladder_companion	INDEX LADDER pollIxlad	window._ixladtot	WIRED
-fx_mimic_ladder	omega-new	include/engine_init.hpp	fxladder_companion_state.json (VPS)	/api/fxladder_companion	FX LADDER pollFxlad	window._fxladtot	WIRED	GBPUSD-only since S-2026-07-09c
+index_mimic_ladder	omega-new	include/engine_init.hpp	idxladder_companion_state.json (VPS)	NONE	NONE	NONE	RETIRED-ok	panel+endpoint removed S-23j (operator paper-purge); pre-trade $0 companion, no real fills
+fx_mimic_ladder	omega-new	include/engine_init.hpp	fxladder_companion_state.json (VPS)	NONE	NONE	NONE	RETIRED-ok	panel+endpoint removed S-23j (operator paper-purge); pre-trade $0 companion, no real fills
 fx_befloor_companion	omega-new	include/FxBeFloorCompanion.hpp	fx_companion_state.json (VPS)	/api/fx_companion	pollFx	window._fxtot	RETIRED-ok	BeFloor family retired S-2026-07-07e; still polled, $0
 index_befloor_companion	omega-new	include/IndexBeFloorCompanion.hpp	index_companion_state.json (VPS)	/api/index_companion	pollIndex	window._idxtot	RETIRED-ok	retired family; still polled, $0
 gold_befloor_companion	omega-new	include/GoldBeFloorCompanion.hpp	gold_companion_state.json (VPS)	/api/gold_companion	NONE (pollGold removed S-2026-07-08c)	NONE	RETIRED-ok	endpoint serves history only; excluded in pnl gate
@@ -61,4 +61,4 @@ chimera_32grid	josgp1	josgp1:include/core/GridEngine.hpp	NONE	NONE	NONE	NONE	OBS
 chimera_p6_p7	josgp1	josgp1:/home/jo/ChimeraCrypto/src/main.cpp install6/P7-DERIV	NONE	NONE	NONE	NONE	OBSERVATION	observation books, no orders
 chimera_python_sleeves	josgp1	josgp1:/home/jo/ChimeraCrypto/sleeves/chimera_sleeves.py	NONE (local shadow_sleeves_ledger.csv + local GUI)	NONE	NONE	NONE	RESEARCH-ONLY	paper sleeve book (currently CASH); revisit if it ever carries a live claim
 chimera_upmove_shadow	josgp1	josgp1:/home/jo/ChimeraCrypto/sleeves/upmove_shadow.py	NONE (local log/positions)	NONE	NONE	NONE	RESEARCH-ONLY	hourly shadow executor, NO ORDERS
-bigcap_hi52_portfolio	omega-new	include/BigCapHi52Engine.hpp	in-binary poller writes hi52_state.json on each daily row	/api/hi52	BIGCAP HI52 pollHi52	window._hi52tot	WIRED	SHADOW deploy-forward 52wk-high weekly-rebal paper $10k (S-2026-07-17m desk wire)
+bigcap_hi52_portfolio	omega-new	include/BigCapHi52Engine.hpp	hi52_state.json (VPS)	NONE	NONE	NONE	RETIRED-ok	panel+endpoint removed S-23j (operator paper-purge); shadow:true paper $10k
