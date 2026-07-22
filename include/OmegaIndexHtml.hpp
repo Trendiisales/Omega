@@ -575,7 +575,9 @@ setInterval(pollFires,5000);
 /* ── session strip ── */
 (function(){var z=[[0,5,'#1d2733'],[5,7,'#143042'],[7,13,'#155446'],[13,13.5,'#0F6E56'],[13.5,15,'#7a5a14'],[15,20,'#155446'],[20,22,'#143042'],[22,24,'#1d2733']];
  var h='';z.forEach(function(s){h+='<span style="flex:'+(s[1]-s[0])+';background:'+s[2]+'"></span>';});
- el('sessbar').innerHTML=h+'<div id="sessmk" style="position:absolute;top:0;bottom:0;width:2px;background:#E6EDF3"></div>';tickClk();})();
+ /* S-2026-07-22k operator: the time cursor was a dim 2px sliver — NEON bar now:
+    wider, glowing green, unmissable against every session segment. */
+ el('sessbar').innerHTML=h+'<div id="sessmk" style="position:absolute;top:-2px;bottom:-2px;width:4px;border-radius:2px;background:#39ff14;box-shadow:0 0 4px #39ff14,0 0 10px #39ff14,0 0 18px rgba(57,255,20,0.7)"></div>';tickClk();})();
 
 /* ── ticker defs ── */
 var TKS=[['gold','XAUUSD','xau'],['sp','US500','sp'],['nq','USTEC','nq'],/* NAS100 tile removed S-2026-07-14 (operator: USTEC+NAS100 = same index twice); NAS100 books highlight the USTEC tile via TK_SYM2KEY */['dj','DJ30','dj'],
@@ -721,12 +723,12 @@ function drawProx(){var best=ccProx();var has={};
   if(mp===null){
    pe.innerHTML='<span style="color:var(--t2)">$0<span style="opacity:.55"> no live capital</span></span>';
    r.style.width='0%';r.style.background='var(--t2)';return;}
-  var dollar='<span style="font-weight:700;color:'+(mp>=0?'#39ff14':'var(--redB)')+'">$'+(mp>=0?'+':'&minus;')+fmt2(Math.abs(mp),2)+'</span>';
+)OMEGAD3"
+R"OMEGAD4(  var dollar='<span style="font-weight:700;color:'+(mp>=0?'#39ff14':'var(--redB)')+'">$'+(mp>=0?'+':'&minus;')+fmt2(Math.abs(mp),2)+'</span>';
   if(b&&b.open){
    if(bx){bx.style.outline='1px solid var(--amb)';bx.style.outlineOffset='-1px';
     bx.style.background='rgba(240,180,41,.08)';}
-)OMEGAD3"
-R"OMEGAD4(   pe.innerHTML=dollar+' <span style="color:var(--t2)">WIN</span>';
+   pe.innerHTML=dollar+' <span style="color:var(--t2)">WIN</span>';
    r.style.width='100%';r.style.background='var(--grn)';return;}
   /* real hold, no self-detect open/trading state (legacy pre-narrowing mark-to-market) */
   pe.innerHTML=dollar;
@@ -903,11 +905,11 @@ function render(J){lastJ=J;
    var cr='';/* companion sub-row removed S-2026-07-22e (dead stall book) */
    return '<tr><td class="l">'+esc(t.symbol)+'</td><td class="l">'+esc((t.engine||'').replace(/Engine$/,''))+'</td><td class="'+(t.side==='LONG'?'g':'r')+'">'+esc(t.side)+'</td>'
     +'<td class="num d">'+lots(t.size)+'</td>'
-    +'<td class="num">'+fmt2(t.entry)+'</td><td class="num d">'+fmt2(t.current)+'</td>'
+)OMEGAD4"
+R"OMEGAD5(    +'<td class="num">'+fmt2(t.entry)+'</td><td class="num d">'+fmt2(t.current)+'</td>'
     +'<td class="num '+(safe(t.unrealized_pnl)>=0?'g':'r')+'">'+fmt$(safe(t.unrealized_pnl))+'</td></tr>'+cr;}).join('');
    el('lt').innerHTML='<tr><th class="l">sym</th><th class="l">engine</th><th>side</th><th>lots</th><th>entry</th><th>last</th><th>unreal</th></tr>'+rows2;
-)OMEGAD4"
-R"OMEGAD5(   el('ltcount').textContent=REGPOS.length+' open · from registry (feed quiet — prices stale)';
+   el('ltcount').textContent=REGPOS.length+' open · from registry (feed quiet — prices stale)';
    el('ltpnl').innerHTML='';/* companion paper suffix removed S-2026-07-22e (dead stall book) */}
   else{el('lt').innerHTML='<tr><td class="l d">FLAT — no open positions</td></tr>';el('ltpnl').textContent='';el('ltcount').textContent='';}}
  else{el('ltcount').textContent=lts.length+' open';
@@ -1065,14 +1067,14 @@ function pollRdagent(){
     var posBy={};(book.positions||[]).forEach(function(p){if(p&&p.sym)posBy[p.sym]=p;});
     var hdr='<tr><th>#</th><th class="l">name</th><th>action</th><th>price</th><th title="rank position in the 23-name universe, NOT a signal/confidence score -- BUY needs day-move>=3% AND new 20d-high, see panel subtitle">rank%</th><th>5d</th><th>20d</th><th>pos P&amp;L</th></tr>';
     /* S-2026-07-15e (operator): the flat 23-row ranking read as "we trade ALL of these,
-       including the red ones". Only action==='BUY' rows are ever bought (execute_basket
+)OMEGAD5"
+R"OMEGAD6(       including the red ones". Only action==='BUY' rows are ever bought (execute_basket
        filters on it); everything else is model-ranking CONTEXT. Partition: held/BUY rows
        on top, explicit NOT-TRADED divider, context rows dimmed below. */
     var mkRow=function(b,dim){
       var buy=b.action==='BUY';
       var act=buy?'<span class="g">BUY</span>':'<span class="d">—</span>';
-)OMEGAD5"
-R"OMEGAD6(      var c5=safe(b.ret_5d)*100, c20=safe(b.ret_20d)*100;
+      var c5=safe(b.ret_5d)*100, c20=safe(b.ret_20d)*100;
       var col5=c5>0?'var(--grn)':'var(--red)', col20=c20>0?'var(--grn)':'var(--red)';
       var p=posBy[b.instrument], pnlCell='<span class="d">—</span>';
       if(p&&p.shares){
@@ -1257,13 +1259,13 @@ function renderCompanionOpenTrades(pfx, open, trades, pxPrec){
  var ow=el(pfx+'openwrap'), ot=el(pfx+'open');
  if(open&&open.length){
   var h='<tr><td class="l lbl">leg</td><td class="l lbl">dir</td><td class="lbl">tier</td><td class="lbl">entry</td>'
-       +'<td class="lbl">now</td><td class="lbl">peak</td><td class="lbl">uPnL($)</td></tr>';
+)OMEGAD6"
+R"OMEGAD7(       +'<td class="lbl">now</td><td class="lbl">peak</td><td class="lbl">uPnL($)</td></tr>';
   open.forEach(function(o){var u=safe(o.upnl_usd);
    h+='<tr><td class="l">'+esc(o.flavor)+'</td><td class="l">'+esc(o.dir)+'</td><td class="l">'+esc(o.tier)+'</td>'
      +'<td class="num">'+fmt2(safe(o.entry),pxPrec)+'</td><td class="num">'+fmt2(safe(o.cur),pxPrec)+'</td>'
      +'<td class="num">'+fmt2(safe(o.wm),pxPrec)+'</td>'
-)OMEGAD6"
-R"OMEGAD7(     +'<td class="num" style="color:'+(u>0?'var(--grn)':(u<0?'var(--red)':'var(--t2)'))+'">'+fmtc$(u)+'</td></tr>';});
+     +'<td class="num" style="color:'+(u>0?'var(--grn)':(u<0?'var(--red)':'var(--t2)'))+'">'+fmtc$(u)+'</td></tr>';});
   ot.innerHTML=h; ow.style.display='';
  } else { ot.innerHTML=''; ow.style.display='none'; }
  var tw=el(pfx+'tradeswrap'), tt=el(pfx+'trades');
@@ -1425,7 +1427,8 @@ setInterval(pollIxLad,15000);pollIxLad();
    the mimic_pnl_completeness_gate.sh now blocks. Fold total_usd_real (realized-only, per the 07-10 rule). */
 function pollBc2pct(){fetch('/api/bigcap2pct_companion').then(function(r){return r.json();}).then(function(j){
  window._bc2tot=safe(j&&j.total_usd_real);
- if(typeof updDayPnl==='function')updDayPnl();
+)OMEGAD7"
+R"OMEGAD8( if(typeof updDayPnl==='function')updDayPnl();
  }).catch(function(){});}
 setInterval(pollBc2pct,15000);pollBc2pct();
 
@@ -1435,8 +1438,7 @@ function parseShadow(txt){
  /* HEADER-DRIVEN parse of omega_shadow.csv. The 06-12 rewrite hardcoded a
     12-column layout that never matched the real 41-column file (col 0 is
     trade_id, not ts) -> parseInt('0') falsy -> EVERY row skipped -> all
-)OMEGAD7"
-R"OMEGAD8(    analytics showed "$0 / no pre-trade closes". Map columns by header name. */
+    analytics showed "$0 / no pre-trade closes". Map columns by header name. */
  var out=[];var ls=txt.split('\n');if(ls.length<2)return out;
  var hdr=ls[0].split(','),ix={};
  for(var h=0;h<hdr.length;h++)ix[hdr[h].trim()]=h;
@@ -1578,12 +1580,12 @@ function drawLedger(){var t=el('ledger');/* S-19b/19c: crypto companion PAPER ba
  var mx=1;ks.forEach(function(k){mx=Math.max(mx,Math.abs(by[k].pnl));});
  var rows=ks.map(function(k){var e=by[k],c=e.pnl>=0?'g':'r';
   var w=Math.max(2,Math.abs(e.pnl)/mx*100);
-  return '<tr><td class="l" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:170px" title="'+esc(k)+'">'+esc(k.replace(/Engine$/,''))+'</td>'
+)OMEGAD8"
+R"OMEGAD9(  return '<tr><td class="l" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:170px" title="'+esc(k)+'">'+esc(k.replace(/Engine$/,''))+'</td>'
    +'<td class="l d">'+esc(e.sym)+'</td><td class="num d">'+e.n+'</td>'
    +'<td class="num d">'+Math.round(100*e.w/e.n)+'%</td>'
    +'<td class="num '+c+'">'+fmt$(e.pnl)+'</td>'
-)OMEGAD8"
-R"OMEGAD9(   +'<td style="width:90px"><span class="bar" style="display:block"><i style="width:'+w+'%;background:'+(e.pnl>=0?'var(--grn)':'var(--red)')+'"></i></span></td>'
+   +'<td style="width:90px"><span class="bar" style="display:block"><i style="width:'+w+'%;background:'+(e.pnl>=0?'var(--grn)':'var(--red)')+'"></i></span></td>'
    +'<td class="num '+(e.pnl>=0?'g':'r')+'">'+fmt$(e.pnl/e.n)+'/t</td></tr>';}).join('');/* companion sub-rows + clip rows removed S-22e (dead stall book) */
  t.innerHTML='<tr><th class="l">engine</th><th class="l">sym</th><th>n</th><th>WR</th><th>net</th><th></th><th>avg</th></tr>'+rows;
  var net=0;ks.forEach(function(k){net+=by[k].pnl;});
@@ -1747,13 +1749,13 @@ function prBtns(){
  el('prsyms').innerHTML=PRSYMS.map(function(x){return '<button class="'+(x===PRSYM?'on':'')+'" data-s="'+x+'">'+x.replace('USD','')+'</button>';}).join('');
  el('prtfs').innerHTML=PRTFS.map(function(t){return '<button class="'+(t[0]===PRTF?'on':'')+'" data-t="'+t[0]+'">'+t[1]+'</button>';}).join('');
  Array.prototype.forEach.call(el('prsyms').children,function(b){b.onclick=function(){PRSYM=b.getAttribute('data-s');localStorage.setItem('omega_prsym',PRSYM);prBtns();drawPR();};});
- Array.prototype.forEach.call(el('prtfs').children,function(b){b.onclick=function(){PRTF=b.getAttribute('data-t');localStorage.setItem('omega_prtf',PRTF);prBtns();drawPR();};});}
+)OMEGAD9"
+R"OMEGAD10( Array.prototype.forEach.call(el('prtfs').children,function(b){b.onclick=function(){PRTF=b.getAttribute('data-t');localStorage.setItem('omega_prtf',PRTF);prBtns();drawPR();};});}
 prBtns();
 var PRMK=[],PRMOUSE=null,PRHOVER=null;
 function drawPR(){var cv=el("prc");
  /* S-2026-07-22h: unified two-column layout — the topgrid the old dynamic-height code measured
-)OMEGAD9"
-R"OMEGAD10(    is gone; both columns flow continuously so there is nothing to "fill against". Fixed 300. */
+    is gone; both columns flow continuously so there is nothing to "fill against". Fixed 300. */
  var H=300;
  var ctx=prep(cv,H);
  window._prDrawT=performance.now();
@@ -1953,14 +1955,14 @@ function prTip(m,cx,cy){var tip=el('prtip');
 (function(){var cvp=el('prc');
  cvp.addEventListener('mousemove',function(e){var rc=cvp.getBoundingClientRect();
   PRMOUSE={x:e.clientX-rc.left,y:e.clientY-rc.top};
-  var hit=null,best=160;
+)OMEGAD10"
+R"OMEGAD11(  var hit=null,best=160;
   PRMK.forEach(function(m){var dx=m.x-PRMOUSE.x,dy=m.y-PRMOUSE.y,d2=dx*dx+dy*dy;
    if(d2<best){best=d2;hit=m;}});
   PRHOVER=hit;prTip(hit,e.clientX,e.clientY);});
  cvp.addEventListener('mouseleave',function(){PRMOUSE=null;PRHOVER=null;prTip(null);drawPR();});})();
 /* ~30fps redraw only while hovering, or while the newest exit (<10 min) pulses;
-)OMEGAD10"
-R"OMEGAD11(   paused when the tab is hidden. Static otherwise — zero idle cost. */
+   paused when the tab is hidden. Static otherwise — zero idle cost. */
 (function prAnim(){requestAnimationFrame(prAnim);
  if(document.hidden)return;
  if(performance.now()-(window._prDrawT||0)<33)return;
