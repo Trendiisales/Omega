@@ -1911,7 +1911,7 @@ static void init_engines(const std::string& cfg_path)
             auto& gd = g_gold_daily_cbe;
             gd.cfg.enabled   = true;
             gd.cfg.live_book = true;
-            gd.cfg.lot_oz    = 11.0;  // S-22j FINAL-2 operator: "happy with a real 0.01 size" = 1 oz = 11 GLD shares (~$4.2k, RT ~5.3bp, ~$165 risk/trade at the cert stop)
+            gd.cfg.lot_oz    = 5.0;   // S-23a operator: "make it less 0.005" = 0.5 oz cap -> 5 GLD shares (~$1.9k, ~0.46 oz, ~$82 risk/trade at the cert stop, RT ~11bp)
             gd.set_exec(
                 /* open   */ [](const std::string& sym, bool is_long, double lots, double px) -> std::string {
                     return send_live_order(sym, is_long, lots, px);
@@ -7364,10 +7364,11 @@ static void init_engines(const std::string& cfg_path)
                             const long ooid = omega::ibkr_exec::preflight("XAUUSD.O", true, 1.0);
                             std::this_thread::sleep_for(std::chrono::seconds(8));
                             if (ooid >= 0 && !omega::ibkr_exec::preflight_rejected(ooid)) {
-                                g_gold_daily_cbe.use_mgc.store(true);
-                                std::printf("[GOLD-VENUE] *** 1OZ future VERIFIED (1 oz = true minimum lot) -- "
-                                            "GoldDailyCbe SWITCHED GLD -> 1OZ (23h session). Open GLD "
-                                            "position, if any, finishes on GLD. ***\n");
+                                // S-23a operator 0.005-lot cap: 1OZ future minimum (1 oz) EXCEEDS
+                                // the cap -> futures flip DISABLED, report-only. GLD 5 shares
+                                // (~0.46 oz) is the venue. Size-up = explicit operator order.
+                                std::printf("[GOLD-VENUE] 1OZ future viable -- holding GLD per operator "
+                                            "0.005-lot cap (1OZ min = 1 oz = 2x the cap)\n");
                                 std::fflush(stdout);
                             }
                         }
