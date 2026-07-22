@@ -497,6 +497,8 @@ struct IbkrExecutionEngine : public DefaultEWrapper {
     // Authoritative fill event -> reconcile to ledger via on_fill.
     void execDetails(int /*reqId*/, const Contract& contract, const Execution& execution) override {
         IbkrFill f;
+        f.ts_unix = (long)std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count();   // S-23a: fills carried ts=0
         f.ibkr_symbol = contract.symbol;
         {
             std::lock_guard<std::mutex> lk(mtx_);

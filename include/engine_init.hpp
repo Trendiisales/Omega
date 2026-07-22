@@ -3211,10 +3211,35 @@ static void init_engines(const std::string& cfg_path)
                         // (midnight) -> "held 2326m" nonsense. Use the broker order rec's
                         // ts (fill time once acked) when a real token exists.
                         if (!p.token.empty()) {
-                            std::lock_guard<std::mutex> lk(g_live_orders_mtx);
-                            auto it = g_live_orders.find(p.token);
-                            if (it != g_live_orders.end() && it->second.ts > 0)
-                                p.entry_ts = it->second.ts;
+                            bool got = false;
+                            {
+                                std::lock_guard<std::mutex> lk(g_live_orders_mtx);
+                                auto it = g_live_orders.find(p.token);
+                                if (it != g_live_orders.end() && it->second.ts > 0) {
+                                    p.entry_ts = it->second.ts; got = true;
+                                }
+                            }
+                            // S-23a: fills from a PRIOR boot aren't in g_live_orders (in-memory)
+                            // -> fall back to the persistent fills file (clOrdId -> ts_unix).
+                            if (!got) {
+                                static std::map<std::string, long long> s_fill_ts;
+                                static bool s_loaded = false;
+                                if (!s_loaded) {
+                                    s_loaded = true;
+                                    std::ifstream ff("logs/trades/ibkr_fills.csv");
+                                    std::string ln; std::getline(ff, ln);
+                                    while (ff.is_open() && std::getline(ff, ln)) {
+                                        // ts_unix,exec_id,order_id,clOrdId,...
+                                        std::stringstream ss(ln); std::string ts, e, o, cid;
+                                        if (std::getline(ss, ts, ',') && std::getline(ss, e, ',') &&
+                                            std::getline(ss, o, ',') && std::getline(ss, cid, ','))
+                                            s_fill_ts[cid] = atoll(ts.c_str());
+                                    }
+                                }
+                                auto fit = s_fill_ts.find(p.token);
+                                if (fit != s_fill_ts.end() && fit->second > 0)
+                                    p.entry_ts = fit->second;
+                            }
                         }
                     }
                     return v;
