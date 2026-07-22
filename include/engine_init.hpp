@@ -7292,6 +7292,21 @@ static void init_engines(const std::string& cfg_path)
                         }
                         std::printf("[EXEC-PREFLIGHT] roster sweep sent -- VIABLE/err verdicts above are the per-symbol trade-capability truth\n");
                         std::fflush(stdout);
+                        // ── [GOLD-PROBE] S-22j (operator: "probe gold every 30 mins
+                        // until acknowledged"): re-preflight spot gold + MGC each 30
+                        // min forever — catches the metals-permission propagation AND
+                        // the +NZ$5k funding landing (MGC margin) the moment IBKR's
+                        // answer flips. VIABLE line in the log = acknowledged. Also a
+                        // standing capability watchdog (a future permission lapse
+                        // prints 460 within 30 min instead of at the next signal).
+                        for (;;) {
+                            std::this_thread::sleep_for(std::chrono::minutes(30));
+                            std::printf("[GOLD-PROBE] 30-min recheck: spot permission + MGC funding\n");
+                            std::fflush(stdout);
+                            omega::ibkr_exec::preflight("XAUUSD.S", true, 1.0);
+                            std::this_thread::sleep_for(std::chrono::seconds(3));
+                            omega::ibkr_exec::preflight("XAUUSD.M", true, 1.0);
+                        }
                     }).detach();
                 }
 
