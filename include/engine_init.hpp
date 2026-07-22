@@ -7294,7 +7294,11 @@ static void init_engines(const std::string& cfg_path)
                 }
 
                 if (const char* smoke_sym = std::getenv("OMEGA_EXEC_SMOKE")) {
-                    std::thread([sym = std::string(smoke_sym)] {
+                    // OMEGA_EXEC_SMOKE_QTY (S-22j): order size override — FX CASH needs
+                    // >= the IDEALPRO 25k-base minimum; default 1.0 suits FUT/STK/CMDTY.
+                    const double smoke_qty = std::getenv("OMEGA_EXEC_SMOKE_QTY")
+                        ? atof(std::getenv("OMEGA_EXEC_SMOKE_QTY")) : 1.0;
+                    std::thread([sym = std::string(smoke_sym), smoke_qty] {
                         std::printf("[EXEC-SMOKE] armed sym=%s -- waiting for qualified contract\n", sym.c_str());
                         std::fflush(stdout);
                         for (int i = 0; i < 150 && !omega::ibkr_exec::is_resolved(sym); ++i)
@@ -7305,13 +7309,13 @@ static void init_engines(const std::string& cfg_path)
                             return;
                         }
                         std::this_thread::sleep_for(std::chrono::seconds(10));
-                        const std::string oid = send_live_order(sym, true, 1.0, 0.0);
+                        const std::string oid = send_live_order(sym, true, smoke_qty, 0.0);
                         std::printf("[EXEC-SMOKE] BUY sent clOrdId=%s\n",
                                     oid.empty() ? "(EMPTY -- BLOCKED upstream)" : oid.c_str());
                         std::fflush(stdout);
                         if (oid.empty()) return;
                         std::this_thread::sleep_for(std::chrono::seconds(60));
-                        const std::string cid = send_live_order(sym, false, 1.0, 0.0);
+                        const std::string cid = send_live_order(sym, false, smoke_qty, 0.0);
                         std::printf("[EXEC-SMOKE] SELL sent clOrdId=%s -- verify BOTH fills in "
                                     "logs\\trades\\ibkr_fills.csv + TWS statement. If SELL blocked, "
                                     "position is LONG 1 contract -- flatten manually.\n",
