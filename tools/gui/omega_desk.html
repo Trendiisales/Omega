@@ -893,7 +893,7 @@ function render(J){lastJ=J;
   if(REGPOS.length){var sum2=0;var seenLeg2={};
    var rows2=REGPOS.map(function(t){sum2+=safe(t.unrealized_pnl);
    var cr='';/* companion sub-row removed S-2026-07-22e (dead stall book) */
-   return '<tr><td class="l">'+esc(t.symbol)+'</td><td class="l">'+esc((t.engine||'').replace(/Engine$/,''))+'</td><td class="'+(t.side==='LONG'?'g':'r')+'">'+esc(t.side)+'</td>'
+   return '<tr'+' style="background:rgba(46,189,133,0.22);border-left:3px solid #39ff14;font-weight:600"'+'><td class="l">'+esc(t.symbol)+'</td><td class="l">'+esc((t.engine||'').replace(/Engine$/,''))+'</td><td class="'+(t.side==='LONG'?'g':'r')+'">'+esc(t.side)+'</td>'
     +'<td class="num d">'+lots(t.size)+'</td>'
     +'<td class="num">'+fmt2(t.entry)+'</td><td class="num d">'+fmt2(t.current)+'</td>'
     +'<td class="num '+(safe(t.unrealized_pnl)>=0?'g':'r')+'">'+fmt$(safe(t.unrealized_pnl))+'</td></tr>'+cr;}).join('');
@@ -905,7 +905,7 @@ function render(J){lastJ=J;
   var sum=0;var seenLeg={};
   var rows=lts.map(function(t){sum+=safe(t.live_pnl);
   var cr='';/* companion sub-row removed S-2026-07-22e (dead stall book) */
-  return '<tr><td class="l">'+esc(t.symbol)+'</td><td class="l">'+esc(t.engine)+'</td><td class="'+(t.side==='LONG'?'g':'r')+'">'+esc(t.side)+'</td>'
+  return '<tr'+' style="background:rgba(46,189,133,0.22);border-left:3px solid #39ff14;font-weight:600"'+'><td class="l">'+esc(t.symbol)+'</td><td class="l">'+esc(t.engine)+'</td><td class="'+(t.side==='LONG'?'g':'r')+'">'+esc(t.side)+'</td>'
    +'<td class="num d">'+lots(t.size)+'</td>'
    +'<td class="num">'+fmt2(t.entry)+'</td><td class="num">'+fmt2(t.current)+'</td>'
    +'<td class="num '+(t.live_pnl>=0?'g':'r')+'">'+fmt$(safe(t.live_pnl))+'</td>'
