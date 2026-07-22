@@ -197,31 +197,9 @@ a{color:var(--blu);text-decoration:none}
   </div>
 </div>
 
-<!-- ═══ ENGINE HEAT ═══ -->
-<div class="pan" style="margin-top:8px">
-  <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px">
-    <span class="lbl">ENGINE HEAT — pre-trade paper PnL, window matches equity · tile = engine</span>
-    <span class="lbl" style="margin-left:auto">
-      <span style="display:inline-block;width:8px;height:8px;background:var(--grnD);border-radius:2px"></span> +
-      <span style="display:inline-block;width:8px;height:8px;background:var(--redD);border-radius:2px;margin-left:8px"></span> −
-      <span style="display:inline-block;width:8px;height:8px;background:#1d2733;border-radius:2px;margin-left:8px"></span> flat
-    </span>
-  </div>
-  <div id="heat"></div>
-</div>
-
-<!-- ═══ LAST 15 TRADES — relocated here S-2026-07-22 to FILL the right-column void under ENGINE HEAT.
-     History: the XAUUSD L2 panel used to fill this slot, but its depth feed retired S-2026-07-10 and
-     the dead panel was removed 0b2bbedf — which RE-OPENED a ~236px black gap (col1 was 201px vs the
-     437px left chart column under grid align-items:start). Nothing pre-trade fills it (book is flat),
-     so we move the ALWAYS-populated trade log (179 rows) here: fills the void, keeps the 2-col wide
-     packing, and forms a coherent ENGINE LEDGER → ENGINE HEAT → trade-log money rail. ═══ -->
-<div class="pan" style="margin-top:8px">
-  <div class="lbl">LAST 15 TRADES — all books (engine ledger + crypto + stock) · newest first · scroll for history<span id="alltradesn" class="lbl" style="margin-left:8px"></span></div>
-  <div style="max-height:230px;overflow-y:auto;margin-top:3px">
-    <table id="alltrades" style="width:100%"><tr><td class="l d">loading…</td></tr></table>
-  </div>
-</div>
+<!-- ENGINE HEAT + LAST 15 TRADES relocated S-2026-07-22g (operator screenshot ask): moved from
+     this topgrid right column into the left cstack, directly under BIGCAP HI52 — fills the big
+     left-column void under that panel. Single #heat / #alltrades instances, no duplicates. -->
 </div><!-- /tcol right -->
 </div><!-- /topgrid -->
 
@@ -275,9 +253,28 @@ a{color:var(--blu);text-decoration:none}
   <div style="overflow:auto;max-height:220px;font-size:9.5px"><table id="hi52tab" style="width:100%"><tr><td class="l d">loading…</td></tr></table></div>
 </div>
 
-<!-- LAST 15 TRADES relocated S-2026-07-22 to the topgrid right column (fills the void under ENGINE
-     HEAT). Was here (left cstack under INDEX COMPANIONS, S-2026-07-10) — single #alltrades table,
-     no duplicate. -->
+<!-- ═══ ENGINE HEAT — relocated S-2026-07-22g (operator screenshot ask): from the topgrid right
+     column to here, under BIGCAP HI52, filling the left-column void. ═══ -->
+<div class="pan">
+  <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px">
+    <span class="lbl">ENGINE HEAT — pre-trade paper PnL, window matches equity · tile = engine</span>
+    <span class="lbl" style="margin-left:auto">
+      <span style="display:inline-block;width:8px;height:8px;background:var(--grnD);border-radius:2px"></span> +
+      <span style="display:inline-block;width:8px;height:8px;background:var(--redD);border-radius:2px;margin-left:8px"></span> −
+      <span style="display:inline-block;width:8px;height:8px;background:#1d2733;border-radius:2px;margin-left:8px"></span> flat
+    </span>
+  </div>
+  <div id="heat"></div>
+</div>
+
+<!-- ═══ LAST 15 TRADES — relocated S-2026-07-22g with ENGINE HEAT (kept adjacent: coherent
+     heat → trade-log money rail; single #alltrades table, no duplicate). ═══ -->
+<div class="pan">
+  <div class="lbl">LAST 15 TRADES — all books (engine ledger + crypto + stock) · newest first · scroll for history<span id="alltradesn" class="lbl" style="margin-left:8px"></span></div>
+  <div style="max-height:230px;overflow-y:auto;margin-top:3px">
+    <table id="alltrades" style="width:100%"><tr><td class="l d">loading…</td></tr></table>
+  </div>
+</div>
 
 </div><!-- /left column cstack -->
 
