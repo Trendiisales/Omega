@@ -1,0 +1,9 @@
+{
+ "asof": "2026-07-23",
+ "ledger": "/Users/jo/Omega-vps-mirror/logs/trades/omega_trade_closes.csv",
+ "window_days": 30,
+ "criteria": "n>=8 & PF>=2.0 & both-half net>0",
+ "exceptional": [],
+ "all_engines": [],
+ "note": "MIMIC-X2-OWED = empowerment queue: build + certify a BE-floored x2 mimic for this engine (BeFloorOnOpenFoundation), then wire live. Auto-arming uncertified mimics is forbidden by operator hard rule."
+}

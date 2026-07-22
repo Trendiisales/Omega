@@ -1,0 +1,184 @@
+{
+ "asof": "2026-07-23",
+ "source": "https://raw.githubusercontent.com/kadoa-org/congress-trading-monitor/main/public/data/trades.json",
+ "rows": 37,
+ "window_days": 30,
+ "note": "CONTEXT ONLY -- median filing lag 27d; broad follow-signal is beta post-2012 (NBER w26975). Nothing trades on this without a faithful filing-date backtest.",
+ "names": {
+  "NVDA": {
+   "buys": 3,
+   "sells": 2,
+   "buy_usd_mid": 24002,
+   "sell_usd_mid": 40501,
+   "fast_buys": 0,
+   "filers": [
+    "Cleo Fields",
+    "Keith Alan Self",
+    "Rohit Khanna"
+   ]
+  },
+  "AMD": {
+   "buys": 1,
+   "sells": 0,
+   "buy_usd_mid": 8000,
+   "sell_usd_mid": 0,
+   "fast_buys": 0,
+   "filers": [
+    "Gilbert Cisneros"
+   ]
+  },
+  "AVGO": {
+   "buys": 1,
+   "sells": 0,
+   "buy_usd_mid": 32500,
+   "sell_usd_mid": 0,
+   "fast_buys": 0,
+   "filers": [
+    "Rohit Khanna"
+   ]
+  },
+  "MU": {
+   "buys": 1,
+   "sells": 1,
+   "buy_usd_mid": 8000,
+   "sell_usd_mid": 8000,
+   "fast_buys": 0,
+   "filers": [
+    "Sheldon Whitehouse"
+   ]
+  },
+  "META": {
+   "buys": 2,
+   "sells": 2,
+   "buy_usd_mid": 16001,
+   "sell_usd_mid": 16001,
+   "fast_buys": 0,
+   "filers": [
+    "Daniel Crenshaw",
+    "Rohit Khanna"
+   ]
+  },
+  "COIN": {
+   "buys": 0,
+   "sells": 1,
+   "buy_usd_mid": 0,
+   "sell_usd_mid": 8000,
+   "fast_buys": 0,
+   "filers": []
+  },
+  "MSTR": {
+   "buys": 1,
+   "sells": 0,
+   "buy_usd_mid": 32500,
+   "sell_usd_mid": 0,
+   "fast_buys": 0,
+   "filers": [
+    "Gilbert Cisneros"
+   ]
+  },
+  "NOW": {
+   "buys": 1,
+   "sells": 0,
+   "buy_usd_mid": 8000,
+   "sell_usd_mid": 0,
+   "fast_buys": 0,
+   "filers": [
+    "Rohit Khanna"
+   ]
+  },
+  "UBER": {
+   "buys": 1,
+   "sells": 0,
+   "buy_usd_mid": 750000,
+   "sell_usd_mid": 0,
+   "fast_buys": 0,
+   "filers": [
+    "Nancy Pelosi"
+   ]
+  },
+  "INTC": {
+   "buys": 1,
+   "sells": 1,
+   "buy_usd_mid": 3000000,
+   "sell_usd_mid": 8000,
+   "fast_buys": 0,
+   "filers": [
+    "Nancy Pelosi"
+   ]
+  },
+  "AMZN": {
+   "buys": 0,
+   "sells": 2,
+   "buy_usd_mid": 0,
+   "sell_usd_mid": 16001,
+   "fast_buys": 0,
+   "filers": []
+  },
+  "GOOGL": {
+   "buys": 0,
+   "sells": 2,
+   "buy_usd_mid": 0,
+   "sell_usd_mid": 40501,
+   "fast_buys": 0,
+   "filers": []
+  },
+  "MSFT": {
+   "buys": 3,
+   "sells": 3,
+   "buy_usd_mid": 24002,
+   "sell_usd_mid": 73002,
+   "fast_buys": 0,
+   "filers": [
+    "Cleo Fields",
+    "Rohit Khanna"
+   ]
+  },
+  "AAPL": {
+   "buys": 1,
+   "sells": 4,
+   "buy_usd_mid": 8000,
+   "sell_usd_mid": 81002,
+   "fast_buys": 0,
+   "filers": [
+    "Gilbert Cisneros"
+   ]
+  },
+  "CRM": {
+   "buys": 1,
+   "sells": 0,
+   "buy_usd_mid": 32500,
+   "sell_usd_mid": 0,
+   "fast_buys": 0,
+   "filers": [
+    "Maria Elvira Salazar"
+   ]
+  },
+  "ADBE": {
+   "buys": 1,
+   "sells": 0,
+   "buy_usd_mid": 8000,
+   "sell_usd_mid": 0,
+   "fast_buys": 0,
+   "filers": [
+    "Rohit Khanna"
+   ]
+  },
+  "CRDO": {
+   "buys": 0,
+   "sells": 1,
+   "buy_usd_mid": 0,
+   "sell_usd_mid": 8000,
+   "fast_buys": 0,
+   "filers": []
+  }
+ },
+ "cluster_flags": [
+  {
+   "ticker": "NVDA",
+   "filers": 3,
+   "buys": 3,
+   "sells": 2
+  }
+ ],
+ "fast_flags": []
+}
