@@ -570,56 +570,37 @@ def vps_position_parity() -> tuple[str, str]:
 
 def vps_stock_book_health() -> tuple[str, str]:
     """ONE `ssh omega-new` call. CONTENT-based (not mtime) integrity of the stock
-    daily-close book. Catches the two silent failures the mtime manifest CANNOT and
-    that burned us on 2026-07-10:
-      (1) a feed whose file mtime is fresh but whose last DATA ROW is days old
-          (the writer touches/rewrites without appending a new dated close);
-      (2) ladder names registered in the engine but ABSENT from the feed columns
-          -> they seed with bars=0 and can never trade (the 39/45 mismatch).
-    RED if the feed's last data row is >1 trading day behind, or ANY ladder name
-    has bars=0. Returns (status, detail)."""
+    daily-close feed (sp500_long_close.csv — consumed by the live DualMom poller +
+    daily stock books). Catches the silent failure the mtime manifest CANNOT and
+    that burned us on 2026-07-10: a feed whose file mtime is fresh but whose last
+    DATA ROW is days old (the writer touches/rewrites without appending a new
+    dated close). RED if the feed's last data row is >1 trading day behind.
+    History S-2026-07-23g: this probe also read a per-name ladder state json, but
+    that book was retired S-16l — the leftover empty file made the check a
+    permanent false RED (PowerShell null-pipe artifact reported '1/1 bars=0' with
+    an empty name list). Per-name coverage now belongs to the consumers' own boot
+    lines (e.g. [DUALMOM] seed done: N names with history)."""
     ps = (
         r"$f='C:\Omega\data\rdagent\sp500_long_close.csv';"
         r"if(Test-Path $f){$l=Get-Content $f;$last=$l[-1].Split(',')[0];$cols=($l[0].Split(',').Count-1)}else{$last='MISSING';$cols=0};"
-        r"$s='C:\Omega\stockladder_companion_state.json';"
-        r"if(Test-Path $s){$j=Get-Content $s -Raw|ConvertFrom-Json;$zero=@($j.names|Where-Object{[int]$_.bars -lt 1}).Count;$tot=@($j.names).Count;$znames=(@($j.names|Where-Object{[int]$_.bars -lt 1}|ForEach-Object{$_.sym}) -join ' ');"
-        # per-name FRESHNESS: newest bar-ts across names, and any name lagging it by >2 days is
-        # frozen (has bars but stopped updating) -- the false-green that bars>0 alone misses.
-        r"$mx=(@($j.names|ForEach-Object{[long]$_.ts})|Measure-Object -Maximum).Maximum;"
-        r"$lag=@($j.names|Where-Object{ ($mx-[long]$_.ts) -gt 129600 });$lagc=$lag.Count;$lagn=(@($lag|ForEach-Object{$_.sym}) -join ' ')"
-        r"}else{$zero=-1;$tot=0;$znames='NOSTATE';$lagc=-1;$lagn='NOSTATE'};"
-        r"Write-Output ($last+'|'+$cols+'|'+$zero+'|'+$tot+'|'+$znames+'|'+$lagc+'|'+$lagn)"
+        r"Write-Output ($last+'|'+$cols)"
     )
-    # -EncodedCommand (UTF-16LE base64): the probe uses {} | $_ pipes that ssh->cmd.exe
-    # ->powershell -Command mangles (that mangling was the rc=255 false-RED on first run).
-    # Base64 is immune to every quoting layer. Prefix stays `ssh <VPS_HOST> powershell`.
+    # -EncodedCommand (UTF-16LE base64): immune to every ssh->cmd.exe quoting layer.
+    # Prefix stays `ssh <VPS_HOST> powershell`.
     enc = base64.b64encode(ps.encode("utf-16-le")).decode()
     try:
         r = subprocess.run(["ssh", VPS_HOST, "powershell", "-NoProfile", "-EncodedCommand", enc],
                            capture_output=True, text=True, timeout=45)
     except (OSError, subprocess.SubprocessError):
-        return ("RED", f"ssh {VPS_HOST} failed -- stock feed/book UNVERIFIABLE")
+        return ("RED", f"ssh {VPS_HOST} failed -- stock feed UNVERIFIABLE")
     if r.returncode != 0:
-        return ("RED", f"ssh rc={r.returncode} -- stock feed/book UNVERIFIABLE")
+        return ("RED", f"ssh rc={r.returncode} -- stock feed UNVERIFIABLE")
     line = next((x for x in r.stdout.splitlines() if "|" in x), "")
     parts = line.split("|")
-    if len(parts) != 7:
-        return ("RED", f"unparseable stock-book probe: {line!r}")
-    last, cols, zero, tot, znames, lagc, lagn = parts
-    try:
-        z, t, lag = int(zero), int(tot), int(lagc)
-    except ValueError:
-        z, t, lag = -1, 0, -1
-    # (1) per-name coverage — ANY bars=0 name is a dead name (feed missing its column)
-    if z < 0:
-        return ("RED", "stockladder_companion_state.json missing/unreadable -- book UNVERIFIABLE")
-    if z > 0:
-        return ("RED", f"{z}/{t} ladder names have bars=0 (feed missing their columns; can't trade): {znames.strip()}")
-    # (1b) per-name FRESHNESS — a name with bars>0 but a stale latest-ts is FROZEN (bars>0 alone
-    # false-greens it). Caught the 6 backfilled names (WDC/STX/DD/TPR/BMY/SWKS) sitting 2 td behind.
-    if lag > 0:
-        return ("RED", f"{lag}/{t} ladder names FROZEN (bars>0 but latest bar >2d behind the rest; producer not feeding them): {lagn.strip()}")
-    # (2) content-date staleness — last DATA ROW vs last trading day
+    if len(parts) != 2:
+        return ("RED", f"unparseable stock-feed probe: {line!r}")
+    last, cols = parts
+    # content-date staleness — last DATA ROW vs last trading day
     try:
         d = dt.date.fromisoformat(last.strip())
     except ValueError:
@@ -628,7 +609,7 @@ def vps_stock_book_health() -> tuple[str, str]:
     behind = trading_days_between(d, ltd)
     if behind > 1:
         return ("RED", f"feed last DATA ROW {d} is {behind} trading days behind {ltd} -- daily-close writer STALLED (mtime can lie; this reads content)")
-    return ("PASS", f"feed row {d} (<=1td behind {ltd}), {cols} name-cols, {t}/{t} names have bars>0")
+    return ("PASS", f"feed row {d} (<=1td behind {ltd}), {cols} name-cols")
 
 
 # ── SHARED FEED THRESHOLD REGISTRY — SINGLE SOURCE OF TRUTH (S-2026-07-14 sweep item 9) ──

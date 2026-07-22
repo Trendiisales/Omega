@@ -3261,6 +3261,10 @@ static void init_engines(const std::string& cfg_path)
                 g_open_positions.register_source("DualMom",
                     []() { return omega::dual_momentum_engine().collect_positions(); });
                 g_engine_heartbeat.register_engine("DualMom", true, 86400, 0, 24);
+                // boot pulse: registration alone never pulses -> daily-cadence engine
+                // logged [STARTUP-FAIL] every boot and would MISS at 24h forever
+                // (no pulse call existed anywhere as shipped in S-23a).
+                g_engine_heartbeat.pulse("DualMom");
                 // 15-min poller: feed NEW daily rows (per name) + fresh SPY closes.
                 std::thread([]() {
                     std::string last_row;
@@ -3294,6 +3298,7 @@ static void init_engines(const std::string& cfg_path)
                             const double v = atof(lastspy.c_str() + c + 1);
                             if (v > 0) dm2.push_spy_close(v);
                         }
+                        g_engine_heartbeat.pulse("DualMom");
                     }
                 }).detach();
                 printf("[OMEGA-INIT][SEED] DualMomentum wired: K8/rel63/abs251/rebal10 SPY-200 cash gate, "

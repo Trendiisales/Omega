@@ -35,16 +35,13 @@ CHECKS (DISPLAYED vs AUTHORITATIVE, per desk surface):
                       the WIRED values ([CLIP-INIT] det=1h/+2%% vs served
                       det_w/det_thr_pct per cell). WARN on mismatch (stale label,
                       not missing money).
-  [5] STOCK-BASKET-PNL /api/rdagent_book per-row marks + P&L == recomputed from the
-                      AUTHORITATIVE Mac sources (sp500_long_close.csv close on the
-                      served as_of row + avg cost replayed from
-                      factor_basket_orders.csv). Also fails on the column-alias
-                      signature (two basket tickers with identical closes across
-                      recent sessions = cross-wired price pull). Built after
-                      S-2026-07-14q: refresh_close_ibkr reqId bleed wrote CRM's
-                      series into ADBE's column for 251 rows; the desk showed
-                      ADBE -$835 on a position that was really +$174 and the
-                      headline P&L was fiction. Freshness guards all stayed GREEN.
+  [5] STOCK-BASKET-PNL RETIRED S-2026-07-23g (paper stripped off the live desk, operator
+                      order) — now guards the ABSENCE of /api/rdagent_book: FAIL
+                      if the paper endpoint ever gets served again (regression
+                      guard; the old marks-parity recompute went with the panel.
+                      History: original check built after S-2026-07-14q reqId
+                      bleed — CRM's series in ADBE's column for 251 rows, desk
+                      showed ADBE -$835 on a really-+$174 position).
 
 RESULT: marker line + exit 0 GREEN / 2 RED (WARN-only stays GREEN, is printed).
 Interpreter: /usr/bin/python3 (3.9-safe: no datetime.UTC, no 3.11-only APIs).
@@ -730,92 +727,17 @@ def main() -> int:
     else:
         rec("SKIP", "CONFIG-LABEL", "needs both boot [CLIP-INIT] roster and tagged legs (see CRYPTO-ROSTER above)")
 
-    # ═══ [5] STOCK-BASKET P&L PARITY (served marks == authoritative recompute) ═
-    # S-2026-07-14q: the desk showed ADBE -$835 (marked at CRM's price) while the
-    # real position was +$174 — the price CSV column was cross-wired for 251 rows
-    # and every freshness/plumbing guard stayed GREEN. This check recomputes each
-    # served row from the authoritative Mac sources and looks for the alias
-    # signature itself.
-    rb_pos = served_rb.get("positions", []) if isinstance(served_rb, dict) else []
-    rb_asof = served_rb.get("as_of") if isinstance(served_rb, dict) else None
-    RDA = OMEGA + "/data/rdagent"
-    if "__err__" in served_rb:
-        rec("FAIL", "BASKET-PNL", "/api/rdagent_book unreachable: %s" % served_rb["__err__"])
-    elif not rb_pos:
-        rec("SKIP", "BASKET-PNL", "no open basket positions served (flat book)")
+    # ═══ [5] STOCK-BASKET P&L PARITY — RETIRED S-2026-07-23g ═══════════════════
+    # The rdagent basket is a PAPER simulation; operator hard order removed it from
+    # the live desk entirely (panel + pollRdagent + /api/rdagent_book|_rank + push
+    # cron). Nothing served -> nothing to parity-check. The check now guards the
+    # REMOVAL instead: if the endpoint ever comes back it must be re-manifested.
+    if isinstance(served_rb, dict) and "__err__" not in served_rb:
+        rec("FAIL", "BASKET-PNL", "/api/rdagent_book is being SERVED again — paper basket "
+            "was stripped off the live desk S-2026-07-23g (operator order); regression")
     else:
-        import csv as _csv
-        # authoritative closes on the served as_of row + the 10 rows before it
-        closes_asof = {}
-        recent_rows = []
-        try:
-            with open(RDA + "/sp500_long_close.csv") as f:
-                rd = _csv.reader(f)
-                hdr = next(rd)
-                syms = [p.get("sym") for p in rb_pos]
-                idx = {s: hdr.index(s) for s in syms if s in hdr}
-                for row in rd:
-                    recent_rows.append(row)
-                    if len(recent_rows) > 11:
-                        recent_rows.pop(0)
-                    if rb_asof and row[0][:10] == rb_asof:
-                        closes_asof = {s: row[i] for s, i in idx.items() if row[i]}
-        except Exception as e:
-            rec("FAIL", "BASKET-PNL", "authoritative close CSV unreadable: %s" % e)
-            idx = {}
-        # avg cost replayed from the fill ledger (same replay execute_basket does)
-        basis = {}
-        try:
-            with open(RDA + "/factor_basket_orders.csv") as f:
-                for r in _csv.DictReader(f):
-                    s = r.get("instrument"); sh = int(r.get("shares", 0) or 0)
-                    px = float(r.get("price", 0) or 0); fee = float(r.get("cost", 0) or 0)
-                    b = basis.setdefault(s, [0, 0.0])
-                    if sh > 0:
-                        b[0] += sh; b[1] += sh * px + fee
-                    else:
-                        if b[0] > 0:
-                            b[1] += sh * (b[1] / b[0])
-                        b[0] += sh
-        except Exception as e:
-            rec("FAIL", "BASKET-PNL", "fill ledger unreadable: %s" % e)
-        if idx and basis:
-            bad = []
-            if not closes_asof:
-                rec("SKIP", "BASKET-PNL", "served as_of %s has no row in close CSV yet (push lag)" % rb_asof)
-            else:
-                for p in rb_pos:
-                    s = p.get("sym")
-                    if s not in closes_asof:
-                        bad.append("%s: no authoritative close" % s)
-                        continue
-                    auth_last = float(closes_asof[s])
-                    if abs(float(p.get("last", -1)) - auth_last) > 0.011:
-                        bad.append("%s marked %.2f but authoritative close %.2f (WRONG MARK)" %
-                                   (s, float(p.get("last", -1)), auth_last))
-                        continue
-                    b = basis.get(s)
-                    want_pnl = (auth_last - (b[1] / b[0])) * p.get("shares", 0) if b and b[0] > 0 else None
-                    if want_pnl is not None and abs(float(p.get("pnl_usd", 0)) - want_pnl) > 2.0:
-                        bad.append("%s served pnl %.2f but recomputed %.2f" %
-                                   (s, float(p.get("pnl_usd", 0)), want_pnl))
-                # alias signature: two served tickers identical across recent CSV rows
-                aliased = []
-                sym_list = [s for s in idx]
-                for i in range(len(sym_list)):
-                    for j in range(i + 1, len(sym_list)):
-                        a, b2 = sym_list[i], sym_list[j]
-                        vals = [(r[idx[a]], r[idx[b2]]) for r in recent_rows if r[idx[a]] and r[idx[b2]]]
-                        if len(vals) >= 5 and all(x == y for x, y in vals):
-                            aliased.append("%s==%s over %d sessions" % (a, b2, len(vals)))
-                if aliased:
-                    bad.append("ALIASED COLUMNS in close CSV: " + "; ".join(aliased))
-                if bad:
-                    rec("FAIL", "BASKET-PNL", "desk stock-basket P&L DIVERGES from authoritative recompute: " +
-                        "; ".join(bad[:4]) + (" (+%d more)" % (len(bad) - 4) if len(bad) > 4 else ""))
-                else:
-                    rec("PASS", "BASKET-PNL", "all %d served rows match authoritative close+ledger recompute "
-                        "(marks, P&L, no column aliasing)" % len(rb_pos))
+        rec("PASS", "BASKET-PNL", "paper basket endpoint absent from live desk (removed "
+            "S-2026-07-23g; research lives Mac-side only)")
 
     # ── verdict ────────────────────────────────────────────────────────────────
     verdict = ("RED — DESK DISPLAY DIVERGES FROM REALITY (%d mismatch%s)" % (red, "es" if red != 1 else "")

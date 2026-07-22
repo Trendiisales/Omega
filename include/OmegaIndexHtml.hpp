@@ -292,15 +292,12 @@ R"OMEGAD1(  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
   <div id="smtradeswrap" style="display:none;margin-top:6px"><div class="lbl">TRADES LOG (completed forward clips — engine reset after each)</div><div style="overflow-x:auto"><table id="smtrades"></table></div></div>
 </div>
 
-<!-- ═══ STOCK BASKET — rdagent day-mover model (S-2026-07-11 operator: unified onto the desk;
-     was stranded on the Mac-only :7799 page). Pushed via push_basket_to_desk.sh. ═══ -->
-<div class="pan">
-  <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px">
-    <span class="lbl">STOCK BASKET — rdagent day-mover model · pre-trade paper $10k · ONLY BUY/held rows trade — rest = ranking context</span>
-    <span id="rdainfo" class="lbl" style="margin-left:auto">…</span>
-  </div>
-  <div style="overflow:auto;max-height:300px;font-size:9.5px"><table id="rdatab" style="width:100%"><tr><td class="l d">loading…</td></tr></table></div>
-</div>
+<!-- ═══ STOCK BASKET panel REMOVED S-2026-07-23g (operator hard order: "paper is paper and it
+     is NOT in a live setting"). The rdagent day-mover book is a PAPER simulation (execute_basket
+     --mode shadow, no broker connection) — it now lives Mac-side only (research :7799 page +
+     /tmp/rda_basket.json forward record, kept as certification evidence for a possible LIVE
+     conversion). Desk push cron disabled (tools/rdagent/disable_paper_desk_push.sh); endpoints
+     /api/rdagent_book + /api/rdagent_rank removed from OmegaTelemetryServer the same commit. ═══ -->
 
 <!-- BIGCAP HI52 panel relocated S-2026-07-22b (operator, repeat ask): out of the right ladder
      cstack into the left column under INDEX COMPANIONS — fills that panel's empty void, layout
@@ -377,9 +374,9 @@ function tweenNum(id,val,fmtFn){var e=el(id);if(!e)return;
  _tw[id]=val;var st={v:prev};
  gsap.to(st,{v:val,duration:0.6,ease:'power2.out',overwrite:true,
   onUpdate:function(){e.textContent=fmtFn(st.v);},
+  onComplete:function(){e.textContent=fmtFn(val);}});}
 )OMEGAD1"
-R"OMEGAD2(  onComplete:function(){e.textContent=fmtFn(val);}});}
-function flashPan(id){var p=el(id);if(!p)return;p.classList.remove('flashg');void p.offsetWidth;p.classList.add('flashg');}
+R"OMEGAD2(function flashPan(id){var p=el(id);if(!p)return;p.classList.remove('flashg');void p.offsetWidth;p.classList.add('flashg');}
 
 /* ── clock ── */
 function tickClk(){var d=new Date();el('clk').textContent=
@@ -548,9 +545,9 @@ function pollFires(){var now=Date.now();
  /* S-18ak (operator: "there was no sound"): a fire that happens BEFORE page load was baselined
     SILENTLY — reload after a fire never rang. One-shot announce at load when books are already
     TRADING, so opening the desk mid-trade is audible + logged. */
+ else{var la=Object.keys(loadArmed);
 )OMEGAD2"
-R"OMEGAD3( else{var la=Object.keys(loadArmed);
-  if(la.length)almRing('TRADING at page load: '+la.map(function(s){return s+' ×'+loadArmed[s];}).join(', '),'open',entryBell);}
+R"OMEGAD3(  if(la.length)almRing('TRADING at page load: '+la.map(function(s){return s+' ×'+loadArmed[s];}).join(', '),'open',entryBell);}
  window._compBase=false;}
 setInterval(pollFires,5000);
 /* S-2026-07-08c pollCloseBells REMOVED S-2026-07-18c: it read window._compClosed as an ARRAY
@@ -1043,63 +1040,8 @@ function pollTrades(){
 }
 setInterval(pollTrades,5000);pollTrades();
 
-/* ── STOCK BASKET — rdagent day-mover model, unified onto the desk (S-2026-07-11). book = paper
-   P&L; rank = the 23-name model ranking (BUY = day-mover at new high + bull regime). */
-function pollRdagent(){
-  Promise.all([
-    fetch('/api/rdagent_book').then(function(r){return r.json();}).catch(function(){return {};}),
-    fetch('/api/rdagent_rank').then(function(r){return r.json();}).catch(function(){return {};})
-  ]).then(function(res){
-    var book=res[0]||{}, rank=res[1]||{};
-    window._rdatot=safe(book.pnl_usd);/* fold into the desk ALL-TIME total (updDayPnl) in real time */
-    if(typeof updDayPnl==='function')updDayPnl();
-    var inf=el('rdainfo'); if(inf){
-      var pnl=safe(book.pnl_usd), eq=safe(book.equity_usd), n=safe(book.n_names);
-      inf.innerHTML=(book.as_of?('as of '+esc(book.as_of)+' · '):'')+n+' held · equity $'+fmt2(eq,0)+
-        ' · P&L <span style="color:'+(pnl>0?'var(--grn)':(pnl<0?'var(--red)':'var(--t2)'))+'">'+(pnl>=0?'+':'')+'$'+fmt2(pnl,0)+'</span>';
-    }
-    var sig=rank.signal||{}, basket=sig.basket||[];
-    var el2=el('rdatab'); if(!el2)return;
-    if(!basket.length){ el2.innerHTML='<tr><td class="l d">no ranking yet</td></tr>'; return; }
-    /* S-2026-07-14f: per-name paper P&L column (operator ask). Join the held book
-       (/api/rdagent_book positions[], avg-cost from the fills ledger) by symbol —
-       displayed value comes from the SAME file the paper fills wrote (content-parity). */
-    var posBy={};(book.positions||[]).forEach(function(p){if(p&&p.sym)posBy[p.sym]=p;});
-)OMEGAD5"
-R"OMEGAD6(    var hdr='<tr><th>#</th><th class="l">name</th><th>action</th><th>price</th><th title="rank position in the 23-name universe, NOT a signal/confidence score -- BUY needs day-move>=3% AND new 20d-high, see panel subtitle">rank%</th><th>5d</th><th>20d</th><th>pos P&amp;L</th></tr>';
-    /* S-2026-07-15e (operator): the flat 23-row ranking read as "we trade ALL of these,
-       including the red ones". Only action==='BUY' rows are ever bought (execute_basket
-       filters on it); everything else is model-ranking CONTEXT. Partition: held/BUY rows
-       on top, explicit NOT-TRADED divider, context rows dimmed below. */
-    var mkRow=function(b,dim){
-      var buy=b.action==='BUY';
-      var act=buy?'<span class="g">BUY</span>':'<span class="d">—</span>';
-      var c5=safe(b.ret_5d)*100, c20=safe(b.ret_20d)*100;
-      var col5=c5>0?'var(--grn)':'var(--red)', col20=c20>0?'var(--grn)':'var(--red)';
-      var p=posBy[b.instrument], pnlCell='<span class="d">—</span>';
-      if(p&&p.shares){
-        var pp=safe(p.pnl_usd), pcol=pp>0?'var(--grn)':(pp<0?'var(--red)':'var(--t2)');
-        pnlCell='<span style="color:'+pcol+'">'+(pp>=0?'+':'')+'$'+fmt2(pp,0)+'</span>'
-               +' <span class="d" style="font-size:9px">'+esc(p.shares)+'sh@'+fmt2(safe(p.avg_cost),2)+'</span>';
-      }
-      /* S-2026-07-22k operator: BUY/held rows were near-invisible on the dark theme --
-         stronger fill + bright left edge + bold so the traded rows pop off the ranking context. */
-      var sty=buy?' style="background:rgba(46,189,133,0.30);border-left:3px solid var(--grn);font-weight:600"':(dim?' style="opacity:0.45"':'');
-      return '<tr'+sty+'><td class="num">'+esc(b.rank)+'</td><td class="l">'+esc(b.instrument||'')+
-        '</td><td>'+act+'</td><td class="num">'+fmt2(safe(b.price),2)+'</td><td class="num">'+esc(b.percentile)+
-        '</td><td class="num" style="color:'+col5+'">'+(c5>=0?'+':'')+fmt2(c5,1)+'%</td><td class="num" style="color:'+col20+'">'+(c20>=0?'+':'')+fmt2(c20,1)+'%</td><td class="num">'+pnlCell+'</td></tr>';
-    };
-    var traded=[], ctx=[];
-    basket.slice(0,23).forEach(function(b){
-      var p=posBy[b.instrument];
-      if(b.action==='BUY'||(p&&p.shares))traded.push(b); else ctx.push(b);
-    });
-    var div='<tr><td colspan="8" class="d" style="text-align:center;font-size:9px;padding:2px 0;border-top:1px solid rgba(255,255,255,0.10)">▼ ranking context only — NOT traded (BUY/held rows above are the whole book)</td></tr>';
-    el2.innerHTML=hdr+traded.map(function(b){return mkRow(b,false);}).join('')
-                 +(ctx.length?div+ctx.map(function(b){return mkRow(b,true);}).join(''):'');
-  }).catch(function(){});
-}
-setInterval(pollRdagent,5000);pollRdagent();
+/* ── STOCK BASKET poller REMOVED S-2026-07-23g (operator: paper never in a live setting).
+   The rdagent paper book is Mac-side research only now; endpoints deleted same commit. ── */
 
 /* ── crypto mimic books — DYNAMIC render, no baked roster (S-2026-07-13 panel rewrite) ──
    Live truth 13-07: KILL_IMMEDIATE_CLIPS + KILL_IMMEDIATE_PARENTS culled the entire immediate-
@@ -1120,7 +1062,8 @@ var CRYPTO_POOL_USD=10000;
 function bpUsd(bp){return (safe(bp)||0)*CRYPTO_POOL_USD/10000.0;}
 /* S-2026-07-17q (operator order, third ask — the LDO 260-vs-65 split): ONE $ convention
    everywhere. A crypto book's desk-$ is its WEIGHTED bank (bank_bp_real_w = Σ net_bp_real
-   × size_mult), the same number its LAST-15-TRADES rows book. RAW bp may still be shown but
+)OMEGAD5"
+R"OMEGAD6(   × size_mult), the same number its LAST-15-TRADES rows book. RAW bp may still be shown but
    ONLY labelled with its ×mult, never converted to $ on its own. BE-floor clamp applies to
    the weighted value (max(0,·) — mult>=0 so clamping weighted == clamping raw then scaling).
    Fallback: a stale producer frame without bank_bp_real_w degrades to raw×mult, then raw. */
@@ -1254,8 +1197,7 @@ setInterval(pollCH,15000);pollCH();
 
 /* ── shared: render a companion's OPEN-NOW legs + closed-TRADES log into the panel's sub-tables.
    REAL TRADES ONLY — there is no backtest/replay row anywhere in these panels anymore. An open leg
-)OMEGAD6"
-R"OMEGAD7(   shows while live; on close it drops out of OPEN and appears in TRADES (engine leg reset for next). */
+   shows while live; on close it drops out of OPEN and appears in TRADES (engine leg reset for next). */
 function renderCompanionOpenTrades(pfx, open, trades, pxPrec){
  var ow=el(pfx+'openwrap'), ot=el(pfx+'open');
  if(open&&open.length){
@@ -1312,7 +1254,8 @@ function drawStockMover(){var j=window._sm||null;
  names.forEach(function(p){
   var tot=safe(p.usd_real),clips=safe(p.clips),wins=safe(p.wins);
   var w=p.win||{},act=!!w.active,nopen=(p.open||[]).length;desk+=tot;
-  (p.open||[]).forEach(function(o){desk+=safe(o.upnl_usd_real!==undefined?o.upnl_usd_real:o.upnl_usd);allOpen.push(o);});
+)OMEGAD6"
+R"OMEGAD7(  (p.open||[]).forEach(function(o){desk+=safe(o.upnl_usd_real!==undefined?o.upnl_usd_real:o.upnl_usd);allOpen.push(o);});
   (p.trades||[]).forEach(function(t){allTrades.push(t);});
   if(clips<1&&tot===0&&!act&&nopen===0){nidle++;return;}   /* tidy: hide idle names (deploy-forward $0) */
   nact++;
@@ -1423,8 +1366,7 @@ function pollIxLad(){fetch('/api/idxladder_companion').then(function(r){return r
  }).catch(function(){drawLadder('ixlad',window._ixlad,'indices');});}
 setInterval(pollIxLad,15000);pollIxLad();
 /* S-2026-07-11: BigCap2pct impulse companion — endpoint /api/bigcap2pct_companion EXISTED but was
-)OMEGAD7"
-R"OMEGAD8(   orphaned (no poller, not folded) -> its REALIZED bank never reached ALL-TIME. This is the exact gap
+   orphaned (no poller, not folded) -> its REALIZED bank never reached ALL-TIME. This is the exact gap
    the mimic_pnl_completeness_gate.sh now blocks. Fold total_usd_real (realized-only, per the 07-10 rule). */
 function pollBc2pct(){fetch('/api/bigcap2pct_companion').then(function(r){return r.json();}).then(function(j){
  window._bc2tot=safe(j&&j.total_usd_real);
@@ -1483,7 +1425,8 @@ function classOf(eng,sym){var s=(eng||'')+'|'+(sym||'');
 function updDayPnl(){var cut=Math.floor(Date.now()/86400000)*86400;var n=0,p=0,tot=0;
  ROWS.forEach(function(r){tot+=r.pnl;if(r.ts>=cut){n++;p+=r.pnl;}});
  /* stall-clip companion totals removed S-22e (dead book) */
- /* FULL PnL (operator 2026-07-05d: "the Omega pnl should have the crypto profit added, that is
+)OMEGAD7"
+R"OMEGAD8( /* FULL PnL (operator 2026-07-05d: "the Omega pnl should have the crypto profit added, that is
     the actual full pnl") -- ALL-TIME folds engines + OMEGA stall-clip companion + crypto ladder
     companion book. Overrides the earlier "crypto paper must not muddy the Omega number" stance. */
  /* S-2026-07-18w operator ("WHY DO WE HAVE A PHANTOM +49"): crypto PAPER (pre-trade) $ is OUT of
@@ -1500,7 +1443,7 @@ function updDayPnl(){var cut=Math.floor(Date.now()/86400000)*86400;var n=0,p=0,t
     folded into totT/cls.stock -- same bug class as the crypto ccAll/chimAll fold S-18w already
     excluded. Paper $ does not belong in the live headline. Kept referenced (not deleted) so
     mimic_pnl_completeness_gate still sees them, same pattern as ccAll/chimAll. */
- var rdaAll=safe(window._rdatot);/* S-2026-07-11: rdagent stock basket paper P&L, $ (PAPER — display-only, NOT folded S-19g) */
+ /* rdaAll (rdagent basket paper) DELETED S-2026-07-23g — panel+poller+endpoints stripped off the desk (operator: paper never in a live setting) */
  var bc2All=safe(window._bc2tot);/* S-2026-07-11: BigCap2pct impulse companion REALIZED bank, $ (additive, all-time). Endpoint existed but was orphaned from the fold -> mimic_pnl_completeness_gate now enforces it. */
  var chimAll=safe(window._chimtot);/* S-2026-07-12b: chimera EDGE realized, $ (additive, all-time; engine!~CLIP so no _cctot overlap). Was folded into cls.crypto + eqtot only -- pnl_completeness gate caught the missing updDayPnl term. */
  var sdAll=safe(window._sdtot);/* S-2026-07-15m: StockDip/StockTurtle single-name book REALIZED bank, $ (additive, all-time). Book was persisted+servable but never folded -> real stock winners (MU/DELL) showed $0. Routes to STOCK class below. */
@@ -1575,8 +1518,7 @@ function drawLedger(){var t=el('ledger');/* S-19b/19c: crypto companion PAPER ba
  if(!ROWS.length){var z=smc+flc+ilc;/* crypto PAPER NOT in Σ, S-18w; dead-book terms removed S-22e */t.innerHTML='<tr><td class="l d" colspan="7">no closes in ledger</td></tr>';el('ledgern').textContent=z?((smc?'stk '+fmt$(smc):'')+(flc?' · fxlad '+fmt$(flc):'')+(ilc?' · ixlad '+fmt$(ilc):'')+' · Σ '+fmt$(z)):'';return;}
  var by={};
  ROWS.forEach(function(r){var k=r.eng||'?';if(!by[k])by[k]={n:0,pnl:0,w:0,sym:r.sym,last:0};
-)OMEGAD8"
-R"OMEGAD9(  var e=by[k];e.n++;e.pnl+=r.pnl;if(r.pnl>0)e.w++;if(r.ts>e.last){e.last=r.ts;e.sym=r.sym;}});
+  var e=by[k];e.n++;e.pnl+=r.pnl;if(r.pnl>0)e.w++;if(r.ts>e.last){e.last=r.ts;e.sym=r.sym;}});
  var ks=Object.keys(by).sort(function(a,b){return by[b].pnl-by[a].pnl;});
  var mx=1;ks.forEach(function(k){mx=Math.max(mx,Math.abs(by[k].pnl));});
  var rows=ks.map(function(k){var e=by[k],c=e.pnl>=0?'g':'r';
@@ -1627,7 +1569,8 @@ function drawEquity(){var cv=el("eqc");if(!cv)return;/* PRE-TRADE EQUITY panel r
  var ex=X(cum.length-1),ey=Y(cum[cum.length-1]);
  ctx.beginPath();ctx.arc(ex,ey,3,0,6.3);ctx.fillStyle='#2EBD85';ctx.fill();
  ctx.beginPath();ctx.arc(ex,ey,6,0,6.3);ctx.strokeStyle='rgba(46,189,133,0.35)';ctx.lineWidth=1.5;ctx.stroke();
- var p2=0;ctx.beginPath();cum.forEach(function(v,i){p2=Math.max(p2,v);var d=v-p2;i?ctx.lineTo(X(i),Y(d)):ctx.moveTo(X(0),Y(d));});
+)OMEGAD8"
+R"OMEGAD9( var p2=0;ctx.beginPath();cum.forEach(function(v,i){p2=Math.max(p2,v);var d=v-p2;i?ctx.lineTo(X(i),Y(d)):ctx.moveTo(X(0),Y(d));});
  ctx.strokeStyle='#E2484D';ctx.setLineDash([4,3]);ctx.lineWidth=1;ctx.stroke();ctx.setLineDash([]);
  var net=cum[cum.length-1];var cw=0;/* stall-clip bank removed S-22e */var fg0=(WIN!==1&&WIN!==7&&WIN!==30)?(safe(window._smtot)+safe(window._fxladtot)+safe(window._ixladtot)):0;/* LADDER forward banks (all-time); dead-book terms removed S-22e */var clv0=(WIN!==1&&WIN!==7&&WIN!==30)?safe(window._clivetot):0;/* LIVE mirror real realized (S-2026-07-18r); crypto PAPER (cc0/chim0) excluded S-18w */var netT=net+cw+clv0+fg0;tweenNum('eqtot',netT,fmt$);el('eqtot').style.color=netT>=0?'var(--grn)':'var(--red)';
  var pf=gl>0?gp/gl:0,wr=100*wins/rs.length;
@@ -1747,8 +1690,7 @@ var PRD=null,PRSYM=localStorage.getItem('omega_prsym')||'XAUUSD',PRTF=localStora
 var PRSYMS=['XAUUSD','US500','USTEC','EURUSD','GBPUSD','USDJPY','AUDUSD','NZDUSD','USDCAD'],PRTFS=[['m5','5m'],['m15','15m'],['h1','1H']];
 function prBtns(){
  el('prsyms').innerHTML=PRSYMS.map(function(x){return '<button class="'+(x===PRSYM?'on':'')+'" data-s="'+x+'">'+x.replace('USD','')+'</button>';}).join('');
-)OMEGAD9"
-R"OMEGAD10( el('prtfs').innerHTML=PRTFS.map(function(t){return '<button class="'+(t[0]===PRTF?'on':'')+'" data-t="'+t[0]+'">'+t[1]+'</button>';}).join('');
+ el('prtfs').innerHTML=PRTFS.map(function(t){return '<button class="'+(t[0]===PRTF?'on':'')+'" data-t="'+t[0]+'">'+t[1]+'</button>';}).join('');
  Array.prototype.forEach.call(el('prsyms').children,function(b){b.onclick=function(){PRSYM=b.getAttribute('data-s');localStorage.setItem('omega_prsym',PRSYM);prBtns();drawPR();};});
  Array.prototype.forEach.call(el('prtfs').children,function(b){b.onclick=function(){PRTF=b.getAttribute('data-t');localStorage.setItem('omega_prtf',PRTF);prBtns();drawPR();};});}
 prBtns();
@@ -1805,7 +1747,8 @@ function drawPR(){var cv=el("prc");
  var bw=Math.max(1,Math.min(7,pw/n*0.62));
  for(var i=0;i<n;i++){var b=bars[i],up=b[4]>=b[1],c=up?'#2EBD85':'#E2484D',x=X(i);
   ctx.strokeStyle=c;ctx.globalAlpha=0.85;ctx.lineWidth=bw>3?1:0.7;
-  ctx.beginPath();ctx.moveTo(x,Y(b[2]));ctx.lineTo(x,Y(b[3]));ctx.stroke();ctx.globalAlpha=1;
+)OMEGAD9"
+R"OMEGAD10(  ctx.beginPath();ctx.moveTo(x,Y(b[2]));ctx.lineTo(x,Y(b[3]));ctx.stroke();ctx.globalAlpha=1;
   var yt=Math.min(Y(b[1]),Y(b[4])),hh=Math.max(1.2,Math.abs(Y(b[1])-Y(b[4])));
   ctx.globalAlpha=0.92;ctx.fillStyle=c;ctx.fillRect(x-bw/2,yt,bw,hh);ctx.globalAlpha=1;}
  var ap=spts(5);
@@ -1949,8 +1892,7 @@ function prTip(m,cx,cy){var tip=el('prtip');
   +'<br><span class="num" style="color:'+c+';font-weight:600">'+fmt$(r.pnl)+'</span> · '+hold+' · <span class="d">'+esc(r.reason||'')+'</span>'
   +(isPart?'<br><span class="d">partial bank — rest of position closed separately / may still be open</span>':'');
  tip.style.display='block';
-)OMEGAD10"
-R"OMEGAD11( var tw2=tip.offsetWidth,th2=tip.offsetHeight;
+ var tw2=tip.offsetWidth,th2=tip.offsetHeight;
  tip.style.left=Math.min(window.innerWidth-tw2-8,cx+14)+'px';
  tip.style.top=(cy-th2-12<0?cy+18:cy-th2-12)+'px';}
 (function(){var cvp=el('prc');
@@ -1982,6 +1924,6 @@ window.addEventListener('resize',function(){drawEquity();drawMM();drawPR();});
 </script>
 </body>
 </html>
-)OMEGAD11"
+)OMEGAD10"
 ;
 } // namespace omega_gui

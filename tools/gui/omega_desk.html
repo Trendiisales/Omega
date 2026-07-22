@@ -285,15 +285,12 @@ a{color:var(--blu);text-decoration:none}
   <div id="smtradeswrap" style="display:none;margin-top:6px"><div class="lbl">TRADES LOG (completed forward clips — engine reset after each)</div><div style="overflow-x:auto"><table id="smtrades"></table></div></div>
 </div>
 
-<!-- ═══ STOCK BASKET — rdagent day-mover model (S-2026-07-11 operator: unified onto the desk;
-     was stranded on the Mac-only :7799 page). Pushed via push_basket_to_desk.sh. ═══ -->
-<div class="pan">
-  <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px">
-    <span class="lbl">STOCK BASKET — rdagent day-mover model · pre-trade paper $10k · ONLY BUY/held rows trade — rest = ranking context</span>
-    <span id="rdainfo" class="lbl" style="margin-left:auto">…</span>
-  </div>
-  <div style="overflow:auto;max-height:300px;font-size:9.5px"><table id="rdatab" style="width:100%"><tr><td class="l d">loading…</td></tr></table></div>
-</div>
+<!-- ═══ STOCK BASKET panel REMOVED S-2026-07-23g (operator hard order: "paper is paper and it
+     is NOT in a live setting"). The rdagent day-mover book is a PAPER simulation (execute_basket
+     --mode shadow, no broker connection) — it now lives Mac-side only (research :7799 page +
+     /tmp/rda_basket.json forward record, kept as certification evidence for a possible LIVE
+     conversion). Desk push cron disabled (tools/rdagent/disable_paper_desk_push.sh); endpoints
+     /api/rdagent_book + /api/rdagent_rank removed from OmegaTelemetryServer the same commit. ═══ -->
 
 <!-- BIGCAP HI52 panel relocated S-2026-07-22b (operator, repeat ask): out of the right ladder
      cstack into the left column under INDEX COMPANIONS — fills that panel's empty void, layout
@@ -1032,62 +1029,8 @@ function pollTrades(){
 }
 setInterval(pollTrades,5000);pollTrades();
 
-/* ── STOCK BASKET — rdagent day-mover model, unified onto the desk (S-2026-07-11). book = paper
-   P&L; rank = the 23-name model ranking (BUY = day-mover at new high + bull regime). */
-function pollRdagent(){
-  Promise.all([
-    fetch('/api/rdagent_book').then(function(r){return r.json();}).catch(function(){return {};}),
-    fetch('/api/rdagent_rank').then(function(r){return r.json();}).catch(function(){return {};})
-  ]).then(function(res){
-    var book=res[0]||{}, rank=res[1]||{};
-    window._rdatot=safe(book.pnl_usd);/* fold into the desk ALL-TIME total (updDayPnl) in real time */
-    if(typeof updDayPnl==='function')updDayPnl();
-    var inf=el('rdainfo'); if(inf){
-      var pnl=safe(book.pnl_usd), eq=safe(book.equity_usd), n=safe(book.n_names);
-      inf.innerHTML=(book.as_of?('as of '+esc(book.as_of)+' · '):'')+n+' held · equity $'+fmt2(eq,0)+
-        ' · P&L <span style="color:'+(pnl>0?'var(--grn)':(pnl<0?'var(--red)':'var(--t2)'))+'">'+(pnl>=0?'+':'')+'$'+fmt2(pnl,0)+'</span>';
-    }
-    var sig=rank.signal||{}, basket=sig.basket||[];
-    var el2=el('rdatab'); if(!el2)return;
-    if(!basket.length){ el2.innerHTML='<tr><td class="l d">no ranking yet</td></tr>'; return; }
-    /* S-2026-07-14f: per-name paper P&L column (operator ask). Join the held book
-       (/api/rdagent_book positions[], avg-cost from the fills ledger) by symbol —
-       displayed value comes from the SAME file the paper fills wrote (content-parity). */
-    var posBy={};(book.positions||[]).forEach(function(p){if(p&&p.sym)posBy[p.sym]=p;});
-    var hdr='<tr><th>#</th><th class="l">name</th><th>action</th><th>price</th><th title="rank position in the 23-name universe, NOT a signal/confidence score -- BUY needs day-move>=3% AND new 20d-high, see panel subtitle">rank%</th><th>5d</th><th>20d</th><th>pos P&amp;L</th></tr>';
-    /* S-2026-07-15e (operator): the flat 23-row ranking read as "we trade ALL of these,
-       including the red ones". Only action==='BUY' rows are ever bought (execute_basket
-       filters on it); everything else is model-ranking CONTEXT. Partition: held/BUY rows
-       on top, explicit NOT-TRADED divider, context rows dimmed below. */
-    var mkRow=function(b,dim){
-      var buy=b.action==='BUY';
-      var act=buy?'<span class="g">BUY</span>':'<span class="d">—</span>';
-      var c5=safe(b.ret_5d)*100, c20=safe(b.ret_20d)*100;
-      var col5=c5>0?'var(--grn)':'var(--red)', col20=c20>0?'var(--grn)':'var(--red)';
-      var p=posBy[b.instrument], pnlCell='<span class="d">—</span>';
-      if(p&&p.shares){
-        var pp=safe(p.pnl_usd), pcol=pp>0?'var(--grn)':(pp<0?'var(--red)':'var(--t2)');
-        pnlCell='<span style="color:'+pcol+'">'+(pp>=0?'+':'')+'$'+fmt2(pp,0)+'</span>'
-               +' <span class="d" style="font-size:9px">'+esc(p.shares)+'sh@'+fmt2(safe(p.avg_cost),2)+'</span>';
-      }
-      /* S-2026-07-22k operator: BUY/held rows were near-invisible on the dark theme --
-         stronger fill + bright left edge + bold so the traded rows pop off the ranking context. */
-      var sty=buy?' style="background:rgba(46,189,133,0.30);border-left:3px solid var(--grn);font-weight:600"':(dim?' style="opacity:0.45"':'');
-      return '<tr'+sty+'><td class="num">'+esc(b.rank)+'</td><td class="l">'+esc(b.instrument||'')+
-        '</td><td>'+act+'</td><td class="num">'+fmt2(safe(b.price),2)+'</td><td class="num">'+esc(b.percentile)+
-        '</td><td class="num" style="color:'+col5+'">'+(c5>=0?'+':'')+fmt2(c5,1)+'%</td><td class="num" style="color:'+col20+'">'+(c20>=0?'+':'')+fmt2(c20,1)+'%</td><td class="num">'+pnlCell+'</td></tr>';
-    };
-    var traded=[], ctx=[];
-    basket.slice(0,23).forEach(function(b){
-      var p=posBy[b.instrument];
-      if(b.action==='BUY'||(p&&p.shares))traded.push(b); else ctx.push(b);
-    });
-    var div='<tr><td colspan="8" class="d" style="text-align:center;font-size:9px;padding:2px 0;border-top:1px solid rgba(255,255,255,0.10)">▼ ranking context only — NOT traded (BUY/held rows above are the whole book)</td></tr>';
-    el2.innerHTML=hdr+traded.map(function(b){return mkRow(b,false);}).join('')
-                 +(ctx.length?div+ctx.map(function(b){return mkRow(b,true);}).join(''):'');
-  }).catch(function(){});
-}
-setInterval(pollRdagent,5000);pollRdagent();
+/* ── STOCK BASKET poller REMOVED S-2026-07-23g (operator: paper never in a live setting).
+   The rdagent paper book is Mac-side research only now; endpoints deleted same commit. ── */
 
 /* ── crypto mimic books — DYNAMIC render, no baked roster (S-2026-07-13 panel rewrite) ──
    Live truth 13-07: KILL_IMMEDIATE_CLIPS + KILL_IMMEDIATE_PARENTS culled the entire immediate-
@@ -1486,7 +1429,7 @@ function updDayPnl(){var cut=Math.floor(Date.now()/86400000)*86400;var n=0,p=0,t
     folded into totT/cls.stock -- same bug class as the crypto ccAll/chimAll fold S-18w already
     excluded. Paper $ does not belong in the live headline. Kept referenced (not deleted) so
     mimic_pnl_completeness_gate still sees them, same pattern as ccAll/chimAll. */
- var rdaAll=safe(window._rdatot);/* S-2026-07-11: rdagent stock basket paper P&L, $ (PAPER — display-only, NOT folded S-19g) */
+ /* rdaAll (rdagent basket paper) DELETED S-2026-07-23g — panel+poller+endpoints stripped off the desk (operator: paper never in a live setting) */
  var bc2All=safe(window._bc2tot);/* S-2026-07-11: BigCap2pct impulse companion REALIZED bank, $ (additive, all-time). Endpoint existed but was orphaned from the fold -> mimic_pnl_completeness_gate now enforces it. */
  var chimAll=safe(window._chimtot);/* S-2026-07-12b: chimera EDGE realized, $ (additive, all-time; engine!~CLIP so no _cctot overlap). Was folded into cls.crypto + eqtot only -- pnl_completeness gate caught the missing updDayPnl term. */
  var sdAll=safe(window._sdtot);/* S-2026-07-15m: StockDip/StockTurtle single-name book REALIZED bank, $ (additive, all-time). Book was persisted+servable but never folded -> real stock winners (MU/DELL) showed $0. Routes to STOCK class below. */

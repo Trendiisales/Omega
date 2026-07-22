@@ -1321,10 +1321,9 @@ void OmegaTelemetryServer::run(int port)
         // by refresh_crypto_companion.sh HOP 4. GUI header CC chip renders it; a stale ts
         // (dead watch/relay) reads RED = NOT-VERIFIED, never silently green.
         else if (strstr(buf, "GET /api/chimera_health")) { ct = "application/json"; body = loadFile("chimera_health.json"); if (body.empty()) body = "{\"ts\":0}"; }
-        // rdagent stock basket (S-2026-07-11): pushed from the Mac so the META-type picks show ON
-        // the desk instead of the Mac-only :7799 page. book = paper P&L/orders; rank = model ranking.
-        else if (strstr(buf, "GET /api/rdagent_book")) { ct = "application/json"; body = loadFile("data/rdagent/rda_basket.json"); if (body.empty()) body = "{\"mode\":\"none\",\"n_names\":0,\"orders\":[]}"; }
-        else if (strstr(buf, "GET /api/rdagent_rank")) { ct = "application/json"; body = loadFile("data/rdagent/latest.json"); if (body.empty()) body = "{\"signal\":{\"basket\":[]}}"; }
+        // /api/rdagent_book + /api/rdagent_rank REMOVED S-2026-07-23g (operator hard order:
+        // paper never in a live setting). The rdagent basket is a PAPER simulation
+        // (execute_basket --mode shadow, no broker); it lives Mac-side research only now.
         else if (strstr(buf, "GET /api/gold_companion")) { ct = "application/json"; body = loadFile("gold_companion_state.json"); if (body.empty()) body = "{\"ts\":0,\"flavors\":[]}"; }
         else if (strstr(buf, "GET /api/xag_companion"))  { ct = "application/json"; body = loadFile("xag_companion_state.json"); if (body.empty()) body = "{\"ts\":0,\"flavors\":[]}"; }
         else if (strstr(buf, "GET /api/usoil_companion")){ ct = "application/json"; body = loadFile("usoil_companion_state.json"); if (body.empty()) body = "{\"ts\":0,\"flavors\":[]}"; }
