@@ -49,6 +49,10 @@ public:
         led_.open("data/gapshort/daily_ledger.csv", std::ios::app);
         if(!led_) printf("[DAILY][FATAL-LEDGER] data/gapshort/daily_ledger.csv open FAILED -- forward record lost, fix before trusting this session\n");
         if(isnew && led_) led_<<"ts_utc,event,symbol,side,gap_pct,price,stop,shares,notional,mode,note\n";
+        // SESSION heartbeat row every boot: ledger mtime now tracks every run, so a
+        // process that runs but writes nothing is DETECTABLE (feeds_selftest gapshort
+        // ledger-liveness check) instead of indistinguishable from a quiet no-entry day
+        ledger("SESSION","*","-",0,0,0,0,0,"boot");
     }
     bool connect(const char*h,int p,int id){ if(!cli_->eConnect(h,p,id,false))return false; rd_=std::make_unique<EReader>(cli_.get(),&sig_); rd_->start(); return true; }
     void pump(){ sig_.waitForSignal(); rd_->processMsgs(); }

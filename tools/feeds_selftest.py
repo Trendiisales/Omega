@@ -402,6 +402,107 @@ def vps_ibkr_exec_status() -> tuple[str, str]:
     return ("RED", f"no [IBKR-EXEC] ACTIVE line in last 3 logs: {line or 'empty'}")
 
 
+def vps_hash_drift() -> tuple[str, str]:
+    """ONE `ssh omega-new` call + one local `git ls-remote`. Three-way deploy-drift
+    gate: origin/main == VPS working-tree HEAD == RUNNING binary's stamped hash.
+    Built S-2026-07-23 after a detached deploy DIED SILENTLY at launch (no log ever
+    created), the launching session hit its context limit, and the VPS ran 6 commits
+    behind origin overnight with NOTHING flagging it. This is the alarm that makes
+    "deploy never ran" / "built but not restarted" visible the next session start.
+    Grace: a push younger than DRIFT_GRACE_SEC (3h) is a deploy-in-flight, not drift."""
+    DRIFT_GRACE_SEC = 3 * 3600
+    repo = str(HOME / "Omega")
+    try:
+        lr = subprocess.run(["git", "-C", repo, "ls-remote", "origin", "main"],
+                            capture_output=True, text=True, timeout=30)
+        origin = lr.stdout.split()[0][:8] if lr.returncode == 0 and lr.stdout.strip() else ""
+    except (OSError, subprocess.SubprocessError, IndexError):
+        origin = ""
+    if not origin:
+        return ("RED", "git ls-remote origin main failed -- drift UNVERIFIABLE")
+    # VPS side in one call: HEAD + newest stderr 'Git hash:' line (skew-free, box-side).
+    ps = (
+        r"$h=(git -C C:\Omega rev-parse --short=8 HEAD);"
+        r"$g='';$ls=Get-ChildItem 'C:\Omega\logs\omega_service_stderr*.log' -ErrorAction SilentlyContinue;"
+        r"$best=0;foreach($f in $ls){$m=Select-String -Path $f.FullName -Pattern 'Git hash: *([0-9a-f]+)';"
+        r"if($m -and $f.LastWriteTime.Ticks -gt $best){$best=$f.LastWriteTime.Ticks;$g=$m[-1].Matches[0].Groups[1].Value}}"
+        r"Write-Output ($h+[char]9+$g)"
+    )
+    try:
+        r = subprocess.run(["ssh", VPS_HOST, "powershell", "-NoProfile", "-Command", ps],
+                           capture_output=True, text=True, timeout=45)
+    except (OSError, subprocess.SubprocessError):
+        return ("RED", f"ssh {VPS_HOST} failed -- deploy drift UNVERIFIABLE")
+    parts = (r.stdout.strip().splitlines() or [""])[-1].split("\t")
+    vps_head = parts[0].strip()[:8] if parts else ""
+    run_hash = parts[1].strip() if len(parts) > 1 else ""
+    if not vps_head:
+        return ("RED", "VPS rev-parse HEAD empty -- deploy drift UNVERIFIABLE")
+    if not origin.startswith(vps_head) and not vps_head.startswith(origin):
+        # how old is the origin tip? young push == deploy legitimately in flight
+        try:
+            ct = subprocess.run(["git", "-C", repo, "show", "-s", "--format=%ct", origin],
+                                capture_output=True, text=True, timeout=15)
+            age = int(dt.datetime.now(dt.timezone.utc).timestamp()) - int(ct.stdout.strip())
+        except (OSError, subprocess.SubprocessError, ValueError):
+            age = DRIFT_GRACE_SEC + 1  # unknown-object => not a fresh local push => no grace
+        if age > DRIFT_GRACE_SEC:
+            return ("RED", f"VPS HEAD {vps_head} != origin/main {origin} for {age//3600}h "
+                           f"-- DEPLOY NEVER RAN (or died silently); redeploy via tools/omega_deploy.sh")
+        return ("PASS", f"VPS {vps_head} behind origin {origin} but push is {age//60}min old (deploy window)")
+    if run_hash and not (vps_head.startswith(run_hash) or run_hash.startswith(vps_head)):
+        return ("RED", f"RUNNING binary {run_hash} != VPS HEAD {vps_head} "
+                       f"-- built-not-restarted or restart-from-old-binary; verify per CLAUDE.md Deploy Hygiene")
+    return ("PASS", f"origin==VPS-HEAD==running ({origin}{'' if run_hash else '; no Git-hash line found -- tree match only'})")
+
+
+def vps_gapshort_ledger_health() -> tuple[str, str]:
+    """ONE `ssh omega-new` call. GapShortDaily forward-ledger LIVENESS. Built
+    S-2026-07-23 after the first live --orders session recorded NOTHING: POSIX
+    system("mkdir -p") no-opped on Windows, the ledger ofstream open failed and
+    `if(!led_) return;` swallowed every row -- zero errors anywhere (fix 42d7ec67:
+    std::filesystem + [DAILY][FATAL-LEDGER] + a SESSION heartbeat row each boot).
+    REDs on: (1) ledger file missing while the task has fired; (2) ledger mtime not
+    updated by the most recent run (SESSION row makes every run write); (3) a stale
+    Running instance >20h old -- it BLOCKS the next scheduled fire (today's 13:30
+    entry silently never ran because yesterday's instance was still alive)."""
+    ps = (
+        r"$ti=Get-ScheduledTaskInfo -TaskName OmegaGapShortDaily -ErrorAction SilentlyContinue;"
+        r"$t=Get-ScheduledTask -TaskName OmegaGapShortDaily -ErrorAction SilentlyContinue;"
+        r"$now=Get-Date;"
+        r"$lastMin=-1;if($ti -and $ti.LastRunTime -gt (Get-Date '2001-01-01')){$lastMin=[int](($now-$ti.LastRunTime).TotalMinutes)};"
+        r"$state='ABSENT';if($t){$state=$t.State.ToString()};"
+        r"$ledMin=-1;$led=Get-Item 'C:\Omega\data\gapshort\daily_ledger.csv' -ErrorAction SilentlyContinue;"
+        r"if($led){$ledMin=[int](($now-$led.LastWriteTime).TotalMinutes)};"
+        r"Write-Output ($state+[char]9+$lastMin+[char]9+$ledMin)"
+    )
+    try:
+        r = subprocess.run(["ssh", VPS_HOST, "powershell", "-NoProfile", "-Command", ps],
+                           capture_output=True, text=True, timeout=45)
+    except (OSError, subprocess.SubprocessError):
+        return ("RED", f"ssh {VPS_HOST} failed -- gapshort ledger UNVERIFIABLE")
+    parts = (r.stdout.strip().splitlines() or [""])[-1].split("\t")
+    if len(parts) != 3:
+        return ("RED", f"unparseable gapshort probe: {r.stdout.strip()[:120]!r}")
+    state, last_min, led_min = parts[0].strip(), int(parts[1]), int(parts[2])
+    if state == "ABSENT":
+        return ("RED", "task OmegaGapShortDaily ABSENT -- engine unscheduled")
+    if state == "Disabled":
+        return ("RED", "task OmegaGapShortDaily Disabled -- engine silently off")
+    if state == "Running" and last_min > 20 * 60:
+        return ("RED", f"stale Running instance {last_min/60:.0f}h old -- BLOCKS next 13:30 fire; "
+                       f"schtasks /end + let tomorrow's trigger run the current exe")
+    if last_min < 0:
+        return ("PASS", f"task {state}, never fired yet (ledger check idle)")
+    if led_min < 0:
+        return ("RED", f"task fired {last_min/60:.1f}h ago but data\\gapshort\\daily_ledger.csv MISSING "
+                       f"-- forward record silently lost (mkdir/open failure class)")
+    if led_min > last_min + 30:
+        return ("RED", f"task fired {last_min/60:.1f}h ago but ledger last write {led_min/60:.1f}h ago "
+                       f"-- ran WITHOUT writing (SESSION heartbeat absent = old exe or open failure)")
+    return ("PASS", f"task {state}, last fire {last_min/60:.1f}h ago, ledger write {led_min/60:.1f}h ago")
+
+
 def vps_stock_book_health() -> tuple[str, str]:
     """ONE `ssh omega-new` call. CONTENT-based (not mtime) integrity of the stock
     daily-close book. Catches the two silent failures the mtime manifest CANNOT and
@@ -800,6 +901,17 @@ def main() -> int:
         if _wstat != "PASS":
             live_red += 1
 
+    # ── Deploy hash-drift gate (S-2026-07-23: silent dead deploy, VPS 6 behind) ────
+    # Runs every day incl. weekend: drift is drift regardless of market hours.
+    drift_row = vps_hash_drift()
+    if drift_row[0] != "PASS":
+        live_red += 1
+
+    # ── GapShort forward-ledger liveness (S-2026-07-23: ledger silently lost) ──────
+    gapled_row = vps_gapshort_ledger_health()
+    if gapled_row[0] != "PASS":
+        live_red += 1
+
     if not quiet:
         verdict = "RED — LIVE FEED STALE" if live_red else ("AMBER — research stale" if res_red else "GREEN — all feeds fresh")
         mark = {"GREEN": "GREEN", "AMBER": "AMBER", "RED": "RED"}
@@ -820,6 +932,8 @@ def main() -> int:
             print(f"  {tstat:7} [vps-task ] {tname:24} {tdetail}")
         for wname, wstat, wdetail in wdog_rows:
             print(f"  {wstat:7} [vps-wdog ] {wname:24} {wdetail}")
+        print(f"  {drift_row[0]:7} [vps-drift] {'deploy_hash_drift':24} {drift_row[1]}")
+        print(f"  {gapled_row[0]:7} [vps-gapled] {'gapshort_fwd_ledger':23} {gapled_row[1]}")
         if live_red:
             print("  -> A LIVE feed is stale: fix the feeder BEFORE trusting any signal/telemetry.")
         elif res_red:
