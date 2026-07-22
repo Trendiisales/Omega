@@ -69,13 +69,19 @@ public:
     struct Config {
         bool   enabled       = false;
         bool   live_book     = false;
-        double thr_pct       = 7.0;   // entry day-move threshold (cert thr7)
+        // S-2026-07-23 DD-min recert (operator "even lower DD safely"; 540-cell grid,
+        // scratchpad daymover7dd): thr8 + cap32 = $DD@10k -41% ($506->$296), PF 3.27->4.34,
+        // 2022 +103->+164, ex-WDC PF 3.54 — strictly better protection at 77% of net.
+        // The concurrent cap only works AT thr8 (at thr7 it starves 2022: cap<=16 -> +22).
+        // Trail/giveback on this book REJECTED (chops net ~75%, flips 2022 at thr7);
+        // hold-shortening REJECTED (hold30 -> 2022 -213).
+        double thr_pct       = 8.0;   // entry day-move threshold (DD-min cert thr8; 7.0 = max-net cert)
         int    hi_k          = 20;    // new-K-day-closing-high continuation filter (CONTIN_K)
         int    max_hold      = 60;    // WIDE ride window in name-bars (MAX_HOLD)
         double rev3d_cut_pct = 0.0;   // 0 = OFF (cert at thr7); 12.0 = the thr6-certified variant
         int    rev_days      = 3;     // rev-cut window (harness rev_days=3)
         double trail_pct     = 0.0;   // 0 = OFF (cert); harness L94 lever, uncertified at thr7
-        int    max_names     = 64;    // live safety cap (harness uncapped; observed max_conc 64)
+        int    max_names     = 32;    // concurrent cap (DD-min cert cap32; only valid at thr8)
         int    retry_rows    = 3;     // refused-buy retry TTL in daily rows (see retry note below)
         double lot           = 1.0;   // shares per entry (proving size)
         std::string engine_tag = "DayMover7";

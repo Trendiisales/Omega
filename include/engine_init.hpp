@@ -3408,8 +3408,8 @@ static void init_engines(const std::string& cfg_path)
                         g_engine_heartbeat.pulse("DayMover7");
                     }
                 }).detach();
-                printf("[OMEGA-INIT][SEED] DayMover7 wired: thr7 new-20d-high next-close entry, "
-                       "60-bar time-stop exit (cert PF3.27 mDD270 2022 +103 PF1.52), "
+                printf("[OMEGA-INIT][SEED] DayMover7 wired: thr8/cap32 DD-min cell new-20d-high next-close entry, "
+                       "60-bar time-stop exit (cert PF4.34 $DD296@10k 2022 +164, ex-WDC 3.54; thr7 max-net alt PF3.27), "
                        "LIVE 1 share/name, deploy-forward\n");
                 fflush(stdout);
             }
