@@ -44,6 +44,9 @@ bool is_resolved(const std::string& omega_sym) {
 
 void list_open_orders()  { eng().req_open_orders(); }
 void cancel_all_orders() { eng().global_cancel(); }
+long preflight(const std::string& omega_sym, bool is_long, double qty) {
+    return eng().preflight(omega_sym, is_long, qty);
+}
 
 } // namespace ibkr_exec
 } // namespace omega
@@ -63,6 +66,7 @@ long place_order(const std::string&, bool, double, const std::string&, double) {
 bool is_resolved(const std::string&) { return false; }
 void list_open_orders() {}
 void cancel_all_orders() {}
+long preflight(const std::string&, bool, double) { return -1; }
 } // namespace ibkr_exec
 } // namespace omega
 

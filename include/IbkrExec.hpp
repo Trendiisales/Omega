@@ -65,5 +65,9 @@ void list_open_orders();
 // Operator-ordered orphan-order cleanup only. Stub: no-op.
 void cancel_all_orders();
 
+// [EXEC-PREFLIGHT] whatIf margin/permission check -- prints VIABLE (+margin,
+// commission) or the broker error per symbol; NOTHING executes. Stub: -1.
+long preflight(const std::string& omega_sym, bool is_long, double qty);
+
 } // namespace ibkr_exec
 } // namespace omega

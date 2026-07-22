@@ -7273,6 +7273,28 @@ static void init_engines(const std::string& cfg_path)
                     }).detach();
                 }
 
+                // ── [EXEC-PREFLIGHT] per-symbol whatIf verdicts, EVERY boot (S-22j) ──
+                // IBKR evaluates margin + trading permission for a min-size order on
+                // each live-roster instrument and answers via openOrder(whatIf) /
+                // error — NOTHING executes. This is the standing "can we actually
+                // complete a trade on this symbol" check (operator 2026-07-22); it
+                // catches the err-460 (no metals permission) and err-201 (margin)
+                // classes at boot instead of at the first live signal.
+                {
+                    std::thread([] {
+                        std::this_thread::sleep_for(std::chrono::seconds(50)); // connect+qualify settle
+                        const char* roster[] = { "XAUUSD.S", "XAUUSD.M", "NAS100",
+                                                 "US500.F", "DJ30.F", "GBPUSD", "NVDA" };
+                        for (const char* s : roster) {
+                            omega::ibkr_exec::preflight(s, true,
+                                                        std::string(s) == "GBPUSD" ? 25000.0 : 1.0);
+                            std::this_thread::sleep_for(std::chrono::seconds(2));
+                        }
+                        std::printf("[EXEC-PREFLIGHT] roster sweep sent -- VIABLE/err verdicts above are the per-symbol trade-capability truth\n");
+                        std::fflush(stdout);
+                    }).detach();
+                }
+
                 // ── [EXEC-CANCEL-ALL] one-shot orphan-order cleanup (S-2026-07-22i) ──
                 // OMEGA_EXEC_CANCEL_ALL=1: inventory every open order on the account
                 // ([IBKR-EXEC] OPEN-ORDER lines), reqGlobalCancel, re-inventory to

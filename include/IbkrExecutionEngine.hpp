@@ -373,11 +373,56 @@ struct IbkrExecutionEngine : public DefaultEWrapper {
     // identify + delete via API) ----
     void openOrder(OrderId orderId, const Contract& c, const Order& o,
                    const OrderState& st) override {
+        if (o.whatIf) {
+            // [EXEC-PREFLIGHT] S-22j: whatIf response — margin/commission verdict,
+            // NOTHING was executed. This is the per-symbol "can we actually trade
+            // it" check (permission errors arrive via error() with this oid).
+            std::printf("[EXEC-PREFLIGHT] %s %s VIABLE marginChange=%s commission=%.2f%s%s\n",
+                        c.symbol.c_str(), o.action.c_str(),
+                        st.initMarginChange.c_str(),
+                        st.commission == UNSET_DOUBLE ? 0.0 : st.commission,
+                        st.warningText.empty() ? "" : " warn=",
+                        st.warningText.c_str());
+            std::fflush(stdout);
+            return;
+        }
         std::printf("[IBKR-EXEC] OPEN-ORDER oid=%ld %s %s %s qty=%.2f type=%s lmt=%.2f aux=%.2f status=%s\n",
                     (long)orderId, o.action.c_str(), c.symbol.c_str(), c.secType.c_str(),
                     DecimalFunctions::decimalToDouble(o.totalQuantity),
                     o.orderType.c_str(), o.lmtPrice, o.auxPrice, st.status.c_str());
         std::fflush(stdout);
+    }
+
+    // [EXEC-PREFLIGHT] whatIf order — IBKR evaluates margin + permissions and
+    // answers via openOrder(whatIf)/error; NO order is executed. The proper
+    // end-to-end account check (operator 2026-07-22: "there are mechanisms to
+    // test these end to end, use them").
+    long preflight(const std::string& omega_sym, bool is_long, double qty) {
+        if (!enabled.load() || !connected_.load()) return -1;
+        Contract c;
+        {
+            std::lock_guard<std::mutex> lk(mtx_);
+            auto it = resolved_.find(omega_sym);
+            if (it == resolved_.end()) {
+                std::printf("[EXEC-PREFLIGHT] %s SKIP -- contract not qualified\n", omega_sym.c_str());
+                std::fflush(stdout);
+                return -1;
+            }
+            c = it->second;
+        }
+        Order o;
+        o.action = is_long ? "BUY" : "SELL";
+        o.orderType = "MKT";
+        double send_qty = qty;
+        if (c.secType == "FUT" || c.secType == "STK") send_qty = std::max(1.0, std::round(qty));
+        o.totalQuantity = DecimalFunctions::doubleToDecimal(send_qty);
+        o.whatIf = true;
+        long oid = next_id_.fetch_add(1);
+        client_->placeOrder(oid, c, o);
+        std::printf("[EXEC-PREFLIGHT] %s %s qty=%.0f whatIf sent oid=%ld (verdict follows; nothing executes)\n",
+                    omega_sym.c_str(), o.action.c_str(), send_qty, oid);
+        std::fflush(stdout);
+        return oid;
     }
     void openOrderEnd() override {
         std::printf("[IBKR-EXEC] OPEN-ORDER-END (inventory complete)\n");
