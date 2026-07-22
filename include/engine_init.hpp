@@ -5472,7 +5472,7 @@ static void init_engines(const std::string& cfg_path)
     // no position closes, no reconnect. Change any param in the .ini and it
     // takes effect within 2 seconds without rebooting Omega.
     // NOT reloadable: FIX host/port/credentials, mode (SHADOW/LIVE), code changes.
-    OmegaHotReload::start(cfg_path, [&cfg_path]() {
+    auto hot_reload_apply = [&cfg_path]() {
         load_config(cfg_path);
         sanitize_config();
         apply_engine_config(g_eng_sp);
@@ -5512,7 +5512,11 @@ static void init_engines(const std::string& cfg_path)
         }
         printf("[HOT-RELOAD] All engine configs refreshed\n");
         fflush(stdout);
-    });
+    };
+    OmegaHotReload::start(cfg_path, hot_reload_apply);
+    // S-2026-07-23a: apply once at BOOT too — sizing/gates from the ini used to
+    // need a file-touch after every restart (apply only fired on change).
+    hot_reload_apply();
 
     // ?? Position sizing ???????????????????????????????????????????????????????
     // ENTRY_SIZE on each engine is the FALLBACK lot used only when
