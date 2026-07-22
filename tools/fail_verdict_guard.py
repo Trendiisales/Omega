@@ -68,6 +68,10 @@ KNOWN_NONGLOBAL_SHAPES = [
      "GoldDailyCbeMimic local ref (auto& gdm = omega::gold_daily_cbe_mimic(), engine_init "
      "S-22i block); x2 companion CERTIFIED PASS standalone (same findings doc, MIMIC=1 "
      "grid), no FAIL verdict exists for it"),
+    (re.compile(r'^dm\.cfg$'),
+     "DualMomentumEngine local ref (auto& dm = omega::dual_momentum_engine(), engine_init "
+     "S-23a block); CERTIFIED PASS (backtest/dualmom_sweep.py + DD/whipsaw lever passes: "
+     "Sharpe 1.86 mdd 21.5% both-WF+ 2x-cost), no FAIL verdict exists for it"),
 ]
 
 def find_brace_span(text, open_idx):

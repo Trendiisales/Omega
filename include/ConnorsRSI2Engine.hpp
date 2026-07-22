@@ -240,7 +240,12 @@ public:
         if (pos.active) { const double fav=bid-pos.entry_px; if(fav>pos.mfe)pos.mfe=fav; if(fav<pos.mae)pos.mae=fav; }
     }
 
-    void force_close(double bid, double, int64_t now_ms) { if (pos.active) _close(bid, now_ms, "FORCE_CLOSE"); }
+    void force_close(double bid, double, int64_t now_ms) {
+        if (!pos.active) return;
+        // feed-gap guard (KILL-ALL path): book at entry rather than 0 -- the
+        // broker close itself is a MKT order via token, unaffected by this px.
+        _close(bid > 0 ? bid : pos.entry_px, now_ms, "FORCE_CLOSE");
+    }
 
 private:
     double _rsi(int n) const {

@@ -185,7 +185,10 @@ def parse_index_futures(bridge_path):
 # Execution-only futures rows with NO feed counterpart BY DESIGN (see header):
 # gold execution = COMEX futures; gold feed = spot CMDTY special-case + the MGC
 # depth-feed key, which is a different role than XAUUSD.M order routing.
-EXEC_ONLY_FUT = {"XAUUSD", "XAUUSD.M"}
+EXEC_ONLY_FUT = {"XAUUSD", "XAUUSD.M", "XAUUSD.O"}
+# XAUUSD.O (S-2026-07-23): 1OZ COMEX micro-gold execution alias for the
+# [GOLD-PROBE] MGC-funds path — order routing only; gold FEED stays the spot
+# CMDTY special-case, so no INDEX_FUTURES row exists by design.
 
 # S-2026-07-18 real-money cutover: EXECUTION trades the MICRO tier while the
 # FEED keeps watching the deep full-size book (same underlying, prices track

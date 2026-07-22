@@ -3194,6 +3194,113 @@ static void init_engines(const std::string& cfg_path)
             // S-2026-07-23a: LIVE OPEN TRADES visibility — the family's open
             // positions (e.g. the first real fill, BMY) were invisible to the
             // GUI registry until this source registration.
+            // ── DUAL-MOMENTUM rotation (S-2026-07-23a operator wire; cert in the
+            //    engine header: Sharpe 1.86 / mdd 21.5% / both-WF+ / 2x-cost;
+            //    whipsaw levers TESTED — plain gate + stop20 + vol25 optimal).
+            {
+                auto& dm = omega::dual_momentum_engine();
+                dm.cfg.enabled = true; dm.cfg.live_book = true; dm.cfg.lot = 1.0;
+                static const char* DM_UNIV[] = {
+                    "NVDA","AMD","AVGO","MU","MRVL","SMCI","ARM","PLTR","TSLA","META",
+                    "NFLX","CRWD","SHOP","COIN","MSTR","SNOW","NOW","PANW","UBER","ABNB",
+                    "DELL","ORCL","QCOM","INTC","AMZN","GOOGL","MSFT","AAPL","CRM","ADBE",
+                    "IONQ","RGTI","QBTS","ASTS","RKLB","NBIS","CRWV","ALAB","CRDO","WDC",
+                    "STX","DD","TPR","BMY","SWKS" };
+                for (const char* nm : DM_UNIV) dm.cfg.universe.push_back(nm);
+                dm.set_exec(
+                    [](const std::string& sym, bool is_long, double lots, double px) -> std::string {
+                        return send_live_order(sym, is_long, lots, px);
+                    },
+                    [](const std::string& sym, bool orig_is_long, double lots, double px, const std::string& token) {
+                        send_live_order(sym, !orig_is_long, lots, px, token);
+                    },
+                    [](const std::string& sym, double tp_dist_pts, double lots) -> bool {
+                        return ExecutionCostGuard::is_viable(sym.c_str(), 0.02, tp_dist_pts, lots);
+                    },
+                    [](const std::string& engine, const std::string& sym, bool is_long,
+                       double entry_px, double exit_px, double lots,
+                       int64_t entry_ts, int64_t exit_ts, const char* reason) {
+                        omega::TradeRecord tr;
+                        tr.engine = engine; tr.symbol = sym; tr.side = is_long ? "LONG" : "SHORT";
+                        tr.entryPrice = entry_px; tr.exitPrice = exit_px; tr.size = lots;
+                        tr.entryTs = entry_ts; tr.exitTs = exit_ts; tr.exitReason = reason;
+                        tr.pnl = (is_long ? (exit_px - entry_px) : (entry_px - exit_px)) * lots;
+                        handle_closed_trade(tr);
+                    });
+                // seed histories: wide daily-close csv (per-name column) + SPY regime
+                {
+                    std::ifstream wf(omega::resolve_seed_path("data/rdagent/sp500_long_close.csv"));
+                    std::string hdr;
+                    if (wf.is_open() && std::getline(wf, hdr)) {
+                        std::vector<std::string> cols; { std::stringstream hs(hdr); std::string t;
+                            while (std::getline(hs, t, ',')) cols.push_back(t); }
+                        std::string ln;
+                        while (std::getline(wf, ln)) {
+                            std::stringstream ls(ln); std::string tok; size_t ci = 0;
+                            while (std::getline(ls, tok, ',')) {
+                                if (ci > 0 && ci < cols.size() && !tok.empty()) {
+                                    const double v = atof(tok.c_str());
+                                    if (v > 0) dm.seed_close(cols[ci], v);
+                                }
+                                ++ci;
+                            }
+                        }
+                    }
+                    std::ifstream sf(omega::resolve_seed_path("data/spy_close_hist.csv"));
+                    std::string ln2;
+                    while (sf.is_open() && std::getline(sf, ln2)) {
+                        const auto c = ln2.rfind(',');
+                        if (c != std::string::npos) {
+                            const double v = atof(ln2.c_str() + c + 1);
+                            if (v > 0) dm.push_spy_close(v);
+                        }
+                    }
+                }
+                dm.finalize_seed();
+                dm.load_state();
+                g_open_positions.register_source("DualMom",
+                    []() { return omega::dual_momentum_engine().collect_positions(); });
+                g_engine_heartbeat.register_engine("DualMom", true, 86400, 0, 24);
+                // 15-min poller: feed NEW daily rows (per name) + fresh SPY closes.
+                std::thread([]() {
+                    std::string last_row;
+                    for (;;) {
+                        std::this_thread::sleep_for(std::chrono::minutes(15));
+                        auto& dm2 = omega::dual_momentum_engine();
+                        std::ifstream wf(omega::resolve_seed_path("data/rdagent/sp500_long_close.csv"));
+                        if (!wf.is_open()) continue;
+                        std::string hdr, ln, lastln;
+                        std::getline(wf, hdr);
+                        while (std::getline(wf, ln)) if (!ln.empty()) lastln = ln;
+                        if (lastln.empty() || lastln == last_row) continue;
+                        last_row = lastln;
+                        std::vector<std::string> cols; { std::stringstream hs(hdr); std::string t;
+                            while (std::getline(hs, t, ',')) cols.push_back(t); }
+                        const int64_t now_s = (int64_t)std::chrono::duration_cast<std::chrono::seconds>(
+                            std::chrono::system_clock::now().time_since_epoch()).count();
+                        std::stringstream ls(lastln); std::string tok; size_t ci = 0;
+                        while (std::getline(ls, tok, ',')) {
+                            if (ci > 0 && ci < cols.size() && !tok.empty()) {
+                                const double v = atof(tok.c_str());
+                                if (v > 0) dm2.on_daily_close(cols[ci], now_s, v);
+                            }
+                            ++ci;
+                        }
+                        std::ifstream sf(omega::resolve_seed_path("data/spy_close_hist.csv"));
+                        std::string l2, lastspy;
+                        while (sf.is_open() && std::getline(sf, l2)) if (!l2.empty()) lastspy = l2;
+                        const auto c = lastspy.rfind(',');
+                        if (c != std::string::npos) {
+                            const double v = atof(lastspy.c_str() + c + 1);
+                            if (v > 0) dm2.push_spy_close(v);
+                        }
+                    }
+                }).detach();
+                printf("[OMEGA-INIT][SEED] DualMomentum wired: K8/rel63/abs251/rebal10 SPY-200 cash gate, "
+                       "stop20/name + volTgt25 (cert Sharpe 1.86 mdd 21.5), LIVE 1 share/name, deploy-forward\n");
+                fflush(stdout);
+            }
+
             g_open_positions.register_source("StockDipTurtle",
                 []() {
                     // S-23a: enrich with LIVE marks — the book is daily-close driven,

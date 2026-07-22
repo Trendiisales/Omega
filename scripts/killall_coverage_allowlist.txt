@@ -3,3 +3,5 @@
 # (empty today: all 7 set_exec book families gm/sdm/sdt/fl/il/sl/bi are covered
 #  by the on_tick KILL-ALL fan-out, S-2026-07-20)
 gd GoldDailyCbe global instance (auto& gd = g_gold_daily_cbe, not a singleton accessor); KILL-ALL coverage is DIRECT: on_tick.hpp fan-out calls g_gold_daily_cbe.kill_all(px_of("XAUUSD"), now) (S-2026-07-22i)
+g_connors_nas ConnorsRSI2 global instance (no singleton accessor); KILL-ALL coverage is DIRECT: on_tick flatten block sweeps the cns[] ConnorsRSI2Engine* array (12 instances incl. this one) via has_open_position()+force_close() (S-2026-07-23a)
+e ConnorsRSI2 mr-family cfg_mr lambda param (each cell is a g_* global: g_ibs_nas/g_streak_nas/g_dbl_nas/g_streak_spx/g_dbl_spx/g_rsi3_nas/g_ibs_spx/g_rsi2_spx/g_ibs_dj/g_rsi2_dj); ALL are in the on_tick cns[] KILL-ALL sweep (S-2026-07-23a)

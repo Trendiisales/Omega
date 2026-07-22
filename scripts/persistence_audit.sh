@@ -85,6 +85,12 @@ NqFutMomo DonchianPortfolio EmaPullbackPortfolio Us30Ensemble XauSessNYpm"
 # (qndx_sqf_ibkr.cpp warm_from_csv/ingest_daily_bar). A persist wire would fight
 # the signal-state reconcile. Allowed as designed-out, not as a gap.
 allow="$allow QndxSqf"
+# StockDipTurtle (S-2026-07-22) + DualMom (S-2026-07-23a): SELF-PERSISTING by
+# construction, same class as QndxSqf -- each owns an atomic tmp+rename state file
+# restored at boot (StockDipTurtleEngine cfg_.live_path save_live_/load_live_;
+# DualMomentumEngine cfg.state_path save_/load_state incl. day counter + tokens).
+# A PositionPersistence wire would double-restore. Allowed as designed-out.
+allow="$allow StockDipTurtle DualMom"
 while read -r tag; do
   [ -z "$tag" ] && continue
   printf '%s\n' "$pers" | grep -qx "$tag" && continue
