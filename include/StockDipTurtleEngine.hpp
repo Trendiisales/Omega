@@ -78,6 +78,7 @@
 #include <mutex>
 #include <cmath>
 #include "SeedGuard.hpp"   // omega::resolve_seed_path (VPS cwd-robust warm-seed)
+#include "OpenPositionRegistry.hpp"   // S-23a: PositionSnapshot for the LIVE panel
 
 namespace omega {
 
@@ -131,6 +132,19 @@ public:
     // wiped the queued PreSubmitted entries). Empty-token positions are paper-era
     // rides (they send no broker close either) and are left alone. Returns 1 if
     // an order was re-sent.
+    // S-2026-07-23a GUI visibility: the BMY fill proved this family's open
+    // positions were INVISIBLE to the LIVE OPEN TRADES panel (no registry
+    // source). Snapshot the active position for g_open_positions.
+    bool snapshot(omega::PositionSnapshot& o) const noexcept {
+        if (!pos_.active) return false;
+        o.engine = engine_tag(); o.symbol = cfg_.live_sym; o.side = "LONG";
+        o.size = cfg_.lot; o.entry = pos_.epx;
+        o.current = c_.empty() ? pos_.epx : c_.back();
+        o.unrealized_pnl = (o.current - pos_.epx) * cfg_.lot;
+        o.entry_ts = pos_.entry_ts; o.sl = 0.0; o.tp = 0.0;
+        return true;
+    }
+
     int resend_unfilled() noexcept {
         if (!pos_.active || pos_.token.empty() || !open_fn_) return 0;
         const std::string old = pos_.token;
@@ -622,6 +636,14 @@ public:
 
     // S-2026-07-22i broker-reconcile one-shot (see StockDipTurtleSym::resend_unfilled).
     int resend_unfilled_all() { std::lock_guard<std::mutex> lk(mu_); int n = 0; for (auto& s : syms_) n += s.resend_unfilled(); return n; }
+
+    // S-2026-07-23a: all active positions for the GUI registry.
+    std::vector<omega::PositionSnapshot> collect_positions() {
+        std::lock_guard<std::mutex> lk(mu_);
+        std::vector<omega::PositionSnapshot> v;
+        for (auto& s : syms_) { omega::PositionSnapshot o; if (s.snapshot(o)) v.push_back(o); }
+        return v;
+    }
 
     // LIVE: one closed daily bar for `sym` (both families). Poller uses the row variant.
     void on_daily_bar(const std::string& sym, int64_t ts_sec, double close) {

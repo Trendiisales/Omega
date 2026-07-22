@@ -3191,6 +3191,11 @@ static void init_engines(const std::string& cfg_path)
             }
 
             sdt.start_poller(sdt_csv, 900000);   // own 15-min poller
+            // S-2026-07-23a: LIVE OPEN TRADES visibility — the family's open
+            // positions (e.g. the first real fill, BMY) were invisible to the
+            // GUI registry until this source registration.
+            g_open_positions.register_source("StockDipTurtle",
+                []() { return omega::stock_dipturtle_book().collect_positions(); });
             printf("[OMEGA-INIT][SEED] StockDip/StockTurtle books wired: %d dip + %d turtle names (incl S-17k ext-11 dip @16bp retire -$9.7k + ext-14 turtle @16bp retire -$23k), %zu seed rows, %zu forward bars restored, %zu open entry_ts exempted from phantom-drop, $10k notional, live-11 rt 8bp retire dip -$9.5k / turtle -$8.5k, LONG-only, LIVE in mode=LIVE (S-2026-07-19t: parent 1-share/name real money) else PRE-TRADE, deploy-forward, daily-CSV-polled\n",
                    n_dip, n_tur, sdt_seeded, sdt_restored, sdt_exempt);
             fflush(stdout);
