@@ -6258,7 +6258,7 @@ static void init_engines(const std::string& cfg_path)
         // forward shadow-ledger read of bull-regime behaviour.
         g_idx_bear_short_sp.symbol      = "US500";
         g_idx_bear_short_sp.engine_name = "IndexBearShort";
-        g_idx_bear_short_sp.shadow_mode = false;  // S-2026-07-01: LIVE on IBKR 4002 paper (operator all-engines cutover)
+        g_idx_bear_short_sp.shadow_mode = true;   // S-2026-07-22 DEMOTE-to-shadow (operator): fails both-WF-halves (H2 -177pt PF0.88), 2024-26 bull -181pt, 2xcost H2 -200; only 2022 bear leg real. INDEX_REVALIDATE_2026-07-21 verdict=DEMOTE. Was LIVE since S-07-01 cutover.
         g_idx_bear_short_sp.enabled     = true;
         g_idx_bear_short_sp.COST_PTS    = 0.6;       // US500 RT pts (real-engine SPX2022 cost)
         g_idx_bear_short_sp.lot         = 1.0;
