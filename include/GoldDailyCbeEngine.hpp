@@ -58,13 +58,13 @@ public:
         bool        atr_band      = true;    // ATR14 within P10-P90 of trailing 120d
         std::string state_path    = "golddailycbe_live.txt";
         std::string dump_path     = "golddailycbe_daily.csv";
-        // S-22j GLD->MGC auto-switch (operator: "keep gld until the 5k lands then
-        // switch to mgc"): when the GOLD-PROBE sees an MGC whatIf clear margin,
-        // it flips use_mgc — NEW entries route mgc_sym/mgc_lot (1 contract = 10 oz,
-        // 23h session, no ETF-hours gap). An OPEN GLD position finishes its ride
-        // on GLD (token-matched close). Flag is atomic; string members are never
+        // S-2026-07-23a futures venue (operator FINAL: "minimum lot ... not 10oz"):
+        // CME 1-Ounce Gold future (XAUUSD.O -> 1OZ, 1 oz/contract = the true
+        // minimum futures lot, 23h session). The GOLD-PROBE flips use_mgc only
+        // after a CLEAN broker whatIf on 1OZ; an open GLD position finishes its
+        // ride on GLD (venue captured per-position). Flag atomic; strings never
         // mutated after boot.
-        std::string mgc_sym       = "XAUUSD.M";
+        std::string mgc_sym       = "XAUUSD.O";
         double      mgc_lot       = 1.0;
         // boot Asian-range backfill sources (VPS-relative; missing = fallback)
         std::string l2_prefix     = "logs/l2_ticks_XAUUSD_";

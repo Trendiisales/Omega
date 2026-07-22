@@ -131,6 +131,11 @@ struct IbkrExecutionEngine : public DefaultEWrapper {
         // notional at RT ~5.3bp (cheaper than spot would have been). MGC futures
         // remain the upgrade path once funding covers the margin (probed 30-min).
         add("XAUUSD.S",{"GLD",    "STK",  "SMART",    "USD", 1.0, "ARCA"});
+        // CME 1-Ounce Gold future (S-2026-07-23a, operator: "use mgc but minimum
+        // lot ... not 10oz" — MGC min IS 10oz; 1OZ is the true minimum futures
+        // lot: 1 oz/contract, ~$400 margin, 23h session). Boot preflight
+        // verifies the account can trade it before the engine switches to it.
+        add("XAUUSD.O",{"1OZ",    "FUT",  "COMEX",    "USD", 1.0});
         // Micro gold (10oz) for the small-notional mimic books (S-2026-07-14 operator
         // sizing: 1 MGC). Distinct omega sym kept for per-book routing/attribution.
         add("XAUUSD.M",{"MGC",    "FUT",  "COMEX",    "USD", 1.0});

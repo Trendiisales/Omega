@@ -7318,7 +7318,7 @@ static void init_engines(const std::string& cfg_path)
                         std::this_thread::sleep_for(std::chrono::seconds(50)); // connect+qualify settle
                         // GBPUSD dropped from the roster S-22j: FX ladder disabled
                         // (operator: no 25k-min trades) — probing it would imply intent.
-                        const char* roster[] = { "XAUUSD.S", "XAUUSD.M", "NAS100",
+                        const char* roster[] = { "XAUUSD.S", "XAUUSD.M", "XAUUSD.O", "NAS100",
                                                  "US500.F", "DJ30.F", "NVDA" };
                         for (const char* s : roster) {
                             omega::ibkr_exec::preflight(s, true, 1.0);
@@ -7345,13 +7345,19 @@ static void init_engines(const std::string& cfg_path)
                             const long poid = omega::ibkr_exec::preflight("XAUUSD.M", true, 1.0);
                             std::this_thread::sleep_for(std::chrono::seconds(8));
                             if (poid >= 0 && !omega::ibkr_exec::preflight_rejected(poid)) {
-                                // AUTO-SWITCH CANCELLED (operator S-22j final: "keep it at .01
-                                // lots until its proven") — MGC minimum is 10 oz = 0.1 lot, 10x
-                                // the cap. GLD 11 shares ~= 1 oz = the 0.01-lot equivalent and
-                                // STAYS the venue. This branch only reports that MGC now fits;
-                                // switching requires an explicit operator order (flip use_mgc).
-                                std::printf("[GOLD-VENUE] MGC margin now FITS -- holding GLD per operator "
-                                            "0.01-lot cap (MGC min = 10 oz = 0.1 lot; switch = operator order)\n");
+                                std::printf("[GOLD-PROBE] MGC (10oz) margin fits -- informational only\n");
+                                std::fflush(stdout);
+                            }
+                            // S-2026-07-23a operator FINAL: gold futures at the TRUE minimum
+                            // lot = CME 1-Ounce Gold (1OZ, 1 oz/contract). Broker-verified
+                            // flip: first clean 1OZ whatIf switches the engine off GLD.
+                            const long ooid = omega::ibkr_exec::preflight("XAUUSD.O", true, 1.0);
+                            std::this_thread::sleep_for(std::chrono::seconds(8));
+                            if (ooid >= 0 && !omega::ibkr_exec::preflight_rejected(ooid)) {
+                                g_gold_daily_cbe.use_mgc.store(true);
+                                std::printf("[GOLD-VENUE] *** 1OZ future VERIFIED (1 oz = true minimum lot) -- "
+                                            "GoldDailyCbe SWITCHED GLD -> 1OZ (23h session). Open GLD "
+                                            "position, if any, finishes on GLD. ***\n");
                                 std::fflush(stdout);
                             }
                         }
