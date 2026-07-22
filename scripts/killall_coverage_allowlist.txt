@@ -2,3 +2,4 @@
 # Format: <set_exec-var-or-accessor> <reason>
 # (empty today: all 7 set_exec book families gm/sdm/sdt/fl/il/sl/bi are covered
 #  by the on_tick KILL-ALL fan-out, S-2026-07-20)
+gd GoldDailyCbe global instance (auto& gd = g_gold_daily_cbe, not a singleton accessor); KILL-ALL coverage is DIRECT: on_tick.hpp fan-out calls g_gold_daily_cbe.kill_all(px_of("XAUUSD"), now) (S-2026-07-22i)

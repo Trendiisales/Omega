@@ -765,6 +765,13 @@ static omega::GoldBothWaysShortTfEngine g_gold_don_h1;      // DON h1 20/10 stop
 // S-16, feeder was dead compute — see omega_main.hpp cull note).
 static omega::GoldBothWaysShortTfEngine g_gold_don_10m;     // DON 10m 30/35 stop3ATR
 
+// S-2026-07-22i: Gold Daily CBE (operator-spec Asian-range break->retrace->confirm
+// LONG, daily-ATR SL/partial/trail, multi-day). Certified LONG-only, all-3-regimes+,
+// 2x-cost+, plateau (backtest/GOLD_DAILY_CBE_FINDINGS_2026-07-22.md). Spot venue
+// XAUUSD.S (CMDTY), NOT MGC. Config in engine_init.hpp; ticks from on_tick_gold.
+#include "GoldDailyCbeEngine.hpp"
+static omega::GoldDailyCbeEngine g_gold_daily_cbe;
+
 // S-2026-07-08c: MgcSlowDonchian30m -- gold deep-dive candidate #1 (Study 7,
 // outputs/GOLD_DEEP_DIVE_2026-07-08.md, evidence commit 4bca1036). Donchian
 // Nin40/Nout20 LONG on the same MGC 30m feed as MgcFastDon, next-bar-open entry,

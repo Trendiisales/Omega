@@ -29,6 +29,10 @@ static void on_tick_gold(
     //   (sustained-bear long-block). Self-contained (no external feed) -> cannot
     //   silently degrade to all-clear in a real bear. See RegimeState.hpp.
     omega::gold_regime().on_tick(bid, ask, omega::pg::_pg_now_ms());
+    // S-2026-07-22i: Gold Daily CBE — internal M1 aggregation off the spot mid;
+    // all trade decisions on M1/D1 closes inside the engine (backtest parity).
+    g_gold_daily_cbe.on_tick(bid, ask, omega::pg::_pg_now_ms());
+    g_engine_heartbeat.pulse("GoldDailyCBE");
     // (XauBracketCascade + gold mimic dispatch removed S-2026-07-13 code cull — families deleted.)
     // 2026-06-17: macro-hostile tightening ON TOP of the price core. Fail-safe --
     //   g_macro_gold_gate.hostile() returns false on disabled/missing/stale feed,

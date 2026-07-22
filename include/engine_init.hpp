@@ -1893,7 +1893,56 @@ static void init_engines(const std::string& cfg_path)
                 c.notional=40000.0; c.lot=1.0; gm.add(std::move(c)); }  // LOT-GATE-OK: 1 MGC micro-future contract/leg (2 legs T+W = 2 MGC), NOT a 100oz CFD lot -- same sizing basis as the live XAU_4h_DonchN20 cell; LIVE via live_book gate
             // XAU-H1 SMA200 regime gate seed (bear-gate proviso): warm from boot, 1101-bar CSV.
             gm.seed_xau_regime_h1_csv(omega::resolve_seed_path("phase1/signal_discovery/warmup_XAUUSD_H1.csv"));
+        }
+
+        // ── Gold Daily CBE (S-2026-07-22i, operator-spec build + certify + roll-out) ──
+        //   Asian-range(00-08 UTC) break -> 25% retrace -> M1-close confirm, LONG only,
+        //   EMA200(D1) gate + ATR P10-P90 band + 0.4% min-range, SL 1.75xATR14(D1),
+        //   50% partial at +1R, runner 2.0xATR trail on D1 closes (0.75x after +2R),
+        //   NO BE-ratchet (backtested: ratchet variants lower net), multi-day hold,
+        //   max 1 entry/day. Certified backtest/gold_daily_cbe_bt.cpp on the certified
+        //   2022-26 M1 splice at SPOT cost (1.5bp/side + measured $0.34 spread):
+        //   PF 2.39 n79, 2022bear 1.79 / 2023chop 1.28 / bull 3.22, WF 1.68/3.19,
+        //   2x-cost 2.30, 4/4 SLxTRAIL plateau neighbors WF-both+. SHORT dead (not built).
+        //   Findings: backtest/GOLD_DAILY_CBE_FINDINGS_2026-07-22.md.
+        //   VENUE: SPOT gold XAUUSD.S (CMDTY/SMART, fractional oz) — operator: NOT MGC.
+        //   LIVE (live-only rule): 1 oz/position (min-unit sizing, revisit-lot-sizes).
+        {
+            auto& gd = g_gold_daily_cbe;
+            gd.cfg.enabled   = true;
+            gd.cfg.live_book = true;
+            gd.cfg.lot_oz    = 1.0;
+            gd.set_exec(
+                /* open   */ [](const std::string& sym, bool is_long, double lots, double px) -> std::string {
+                    return send_live_order(sym, is_long, lots, px);
+                },
+                /* close  */ [](const std::string& sym, bool orig_is_long, double lots, double px, const std::string& token) {
+                    send_live_order(sym, !orig_is_long, lots, px, token);
+                },
+                /* gate   */ [](const std::string& sym, double tp_dist_pts, double lots) -> bool {
+                    return ExecutionCostGuard::is_viable(sym.c_str(), 0.34, tp_dist_pts, lots, 1.5); // measured spot spread
+                },
+                /* ledger */ [](const std::string& engine, const std::string& sym, bool is_long,
+                                double entry_px, double exit_px, double lots,
+                                int64_t entry_ts, int64_t exit_ts, const char* reason) {
+                    omega::TradeRecord tr;
+                    tr.engine = engine; tr.symbol = sym; tr.side = is_long ? "LONG" : "SHORT";
+                    tr.entryPrice = entry_px; tr.exitPrice = exit_px; tr.size = lots;
+                    tr.entryTs = entry_ts; tr.exitTs = exit_ts; tr.exitReason = reason;
+                    tr.pnl = (is_long ? (exit_px - entry_px) : (entry_px - exit_px)) * lots;
+                    handle_closed_trade(tr);
+                });
+            const size_t gdrows = gd.seed_daily_csv(omega::resolve_seed_path("phase1/signal_discovery/warmup_XAUUSD_D1.csv"));
+            g_engine_heartbeat.register_engine("GoldDailyCBE", gd.cfg.enabled, 1800, 0, 24);
+            printf("[OMEGA-INIT][SEED] GoldDailyCbe wired: %zu D1 warmup bars (EMA200/ATR14/band), "
+                   "Asian break-retrace-confirm LONG, SL1.75xATR + 50%%@1R + 2.0xATR D1 trail, no-BE-ratchet, "
+                   "LIVE 1oz SPOT XAUUSD.S (certified all-3-regimes+ 2x-cost+ plateau, S-2026-07-22i), deploy-forward\n",
+                   gdrows);
+            fflush(stdout);
+        }
+        {
             // USTEC_4h_ZMR book REMOVED here S-2026-07-14 (intrabar FAIL, see verdict above).
+            auto& gm = omega::gold_trend_mimic();   // re-scope: block split by the GoldDailyCbe wire (S-22i)
             gm.set_exec(
                 [](const std::string& sym, bool is_long, double lots, double px)->std::string { return send_live_order(sym, is_long, lots, px); },
                 [](const std::string& sym, bool orig_is_long, double lots, double px, const std::string& token){ send_live_order(sym, !orig_is_long, lots, px, token); },

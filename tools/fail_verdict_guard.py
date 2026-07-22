@@ -60,6 +60,10 @@ KNOWN_NONGLOBAL_SHAPES = [
     (re.compile(r'^(omega::)?gold_wt\(\)$'),
      "GoldWaveTrend momentum-confirm GATE singleton (GoldWaveTrend.hpp:133 accessor); "
      "a filter, not a position engine"),
+    (re.compile(r'^gd\.cfg$'),
+     "GoldDailyCbe local ref (auto& gd = g_gold_daily_cbe, engine_init S-22i block); "
+     "resolves to global g_gold_daily_cbe -- CERTIFIED PASS engine "
+     "(backtest/GOLD_DAILY_CBE_FINDINGS_2026-07-22.md), no FAIL verdict exists for it"),
 ]
 
 def find_brace_span(text, open_idx):

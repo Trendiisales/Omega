@@ -124,6 +124,11 @@ struct IbkrExecutionEngine : public DefaultEWrapper {
             spec_[om] = s; ibkr_to_omega_[s.ibkr_symbol] = om;
         };
         add("XAUUSD",  {"MGC",    "FUT",  "COMEX",    "USD", 1.0});
+        // SPOT gold (London bullion, CMDTY/SMART, fractional-oz OK — no FUT/STK
+        // integer floor, no futures margin). S-2026-07-22i for GoldDailyCbe
+        // (operator: "we are not using mgc" — commodities-segment margin blocks
+        // MGC at this account size). Qualification failure = orders BLOCKED loud.
+        add("XAUUSD.S",{"XAUUSD", "CMDTY","SMART",    "USD", 1.0});
         // Micro gold (10oz) for the small-notional mimic books (S-2026-07-14 operator
         // sizing: 1 MGC). Distinct omega sym kept for per-book routing/attribution.
         add("XAUUSD.M",{"MGC",    "FUT",  "COMEX",    "USD", 1.0});
