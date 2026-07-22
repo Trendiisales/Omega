@@ -7077,6 +7077,13 @@ static void init_engines(const std::string& cfg_path)
         OMEGA_PP(g_xs_mom_long); OMEGA_PP(g_xs_mom_ls); OMEGA_PP(g_xs_mr_ls);
         OMEGA_PP(g_imacro_sp); OMEGA_PP(g_imacro_nq); OMEGA_PP(g_imacro_nas); OMEGA_PP(g_imacro_us30);
         #undef OMEGA_PP
+        // Survivor cells: same class-has-no-order-path condition (S-22j sweep found
+        // the 2 remaining "live" counts were these) -> purge until rewired.
+        for (auto& c : g_survivor.cells)
+            if (g_survivor.enabled && c.st.enabled) {
+                c.st.enabled = false; ++purged;
+                std::printf("[PAPER-PURGE] Survivor_%s force-disabled (no real order path)\n", c.cfg.tag);
+            }
         std::printf("[PAPER-PURGE] %d flag-only 'live' engine(s) force-disabled -- rewire+recert to revive\n", purged);
         std::fflush(stdout);
     }
