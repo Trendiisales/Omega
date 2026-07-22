@@ -38,6 +38,10 @@ long place_order(const std::string& omega_sym, bool is_long, double qty,
     return eng().place_order(omega_sym, is_long, qty, type, px);
 }
 
+bool is_resolved(const std::string& omega_sym) {
+    return eng().is_resolved(omega_sym);
+}
+
 } // namespace ibkr_exec
 } // namespace omega
 
@@ -53,6 +57,7 @@ bool connect() { return false; }
 void disconnect() {}
 void start_watchdog() {}
 long place_order(const std::string&, bool, double, const std::string&, double) { return -1; }
+bool is_resolved(const std::string&) { return false; }
 } // namespace ibkr_exec
 } // namespace omega
 

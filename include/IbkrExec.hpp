@@ -53,5 +53,9 @@ void start_watchdog();
 long place_order(const std::string& omega_sym, bool is_long, double qty,
                  const std::string& type = "MKT", double px = 0.0);
 
+// True once the omega symbol has a qualified (front-month-resolved) contract.
+// Used by [EXEC-SMOKE] to wait for qualification before firing. Stub: false.
+bool is_resolved(const std::string& omega_sym);
+
 } // namespace ibkr_exec
 } // namespace omega
