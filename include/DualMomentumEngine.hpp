@@ -134,13 +134,20 @@ public:
         if (!f.is_open()) return;
         f >> day_no_;
         std::string s, tok; double e; long long ts;
-        while (f >> s >> e >> ts >> tok) {
+        while (f >> s) {
+            // RETRY rows persist broker-refused buys across a service restart --
+            // without this the in-memory retry_ set dies with the process and the
+            // refused slot silently sits empty until the next rebalance
+            // (ALAB/SNOW 2026-07-23: refusal 17:05Z, deploy restart 17:18Z wiped it).
+            if (s == "RETRY") { std::string r; if (f >> r) retry_.insert(r); continue; }
+            if (!(f >> e >> ts >> tok)) break;
             Pos p; p.entry = e; p.entry_ts = (int64_t)ts;
             p.token = (tok == "-") ? std::string() : tok;
             held_[s] = p;
         }
-        if (!held_.empty())
-            std::printf("[DUALMOM] restored %zu holding(s), day_no=%d\n", held_.size(), day_no_);
+        if (!held_.empty() || !retry_.empty())
+            std::printf("[DUALMOM] restored %zu holding(s), %zu retry slot(s), day_no=%d\n",
+                        held_.size(), retry_.size(), day_no_);
     }
 
 private:
@@ -283,7 +290,8 @@ private:
           f << day_no_ << "\n";
           for (const auto& [s, p] : held_)
               f << s << " " << p.entry << " " << (long long)p.entry_ts << " "
-                << (p.token.empty() ? "-" : p.token) << "\n"; }
+                << (p.token.empty() ? "-" : p.token) << "\n";
+          for (const auto& s : retry_) f << "RETRY " << s << "\n"; }
 #if defined(_WIN32)
         std::remove(cfg.state_path.c_str());
 #endif
