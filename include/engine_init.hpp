@@ -7326,10 +7326,13 @@ static void init_engines(const std::string& cfg_path)
                             const long poid = omega::ibkr_exec::preflight("XAUUSD.M", true, 1.0);
                             std::this_thread::sleep_for(std::chrono::seconds(8));
                             if (poid >= 0 && !omega::ibkr_exec::preflight_rejected(poid)) {
-                                g_gold_daily_cbe.use_mgc.store(true);
-                                std::printf("[GOLD-VENUE] *** MGC MARGIN CLEARED -- GoldDailyCbe SWITCHED GLD -> MGC "
-                                            "(1 contract = 10 oz, 23h session; operator standing order S-22j). "
-                                            "Open GLD position, if any, finishes its ride on GLD. ***\n");
+                                // AUTO-SWITCH CANCELLED (operator S-22j final: "keep it at .01
+                                // lots until its proven") — MGC minimum is 10 oz = 0.1 lot, 10x
+                                // the cap. GLD 11 shares ~= 1 oz = the 0.01-lot equivalent and
+                                // STAYS the venue. This branch only reports that MGC now fits;
+                                // switching requires an explicit operator order (flip use_mgc).
+                                std::printf("[GOLD-VENUE] MGC margin now FITS -- holding GLD per operator "
+                                            "0.01-lot cap (MGC min = 10 oz = 0.1 lot; switch = operator order)\n");
                                 std::fflush(stdout);
                             }
                         }
