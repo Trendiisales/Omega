@@ -152,6 +152,7 @@ private:
     std::deque<double> book_ret_;
     double last_book_val_ = 0;
     int day_no_ = 0;
+    std::set<std::string> retry_;   // broker-refused buys awaiting per-row re-attempt
     std::mutex mu_;
     OpenFn open_fn_; CloseFn close_fn_; GateFn gate_fn_; LedgerFn ledger_fn_;
 
@@ -193,8 +194,31 @@ private:
             for (auto& [s, p] : held_) close_name_(s, p, last_px_(s), ts, "REGIME_CASH");
             held_.clear(); save_(); return;
         }
+        // refused-buy retry (broker rejected at rebalance, e.g. boot-time qualify
+        // race): re-attempt on EVERY daily row until filled or rotated out, so a
+        // slot doesn't sit empty for a whole rebal_d cycle.
+        if (!retry_.empty() && gate_on()) {
+            for (auto it = retry_.begin(); it != retry_.end();) {
+                const std::string& s = *it;
+                double px = last_px_(s);
+                if (held_.count(s) || px <= 0) { ++it; continue; }
+                std::string tok;
+                if (cfg.live_book && open_fn_) {
+                    if (gate_fn_ && !gate_fn_(s, px * 0.02, cfg.lot)) { ++it; continue; }
+                    tok = open_fn_(s, true, cfg.lot, px);
+                    if (tok.empty()) { ++it; continue; }   // still refused, keep retrying
+                }
+                Pos p; p.entry = px; p.entry_ts = ts; p.token = tok;
+                held_[s] = p;
+                std::printf("[DUALMOM] BUY %s @%.2f (RETRY after refusal) tok=%s\n",
+                            s.c_str(), px, tok.empty() ? "(book-only)" : tok.c_str());
+                std::fflush(stdout);
+                it = retry_.erase(it);
+            }
+        }
         if (day_no_ % cfg.rebal_d != 0) { save_(); return; }
         if (!gate_on()) { save_(); return; }
+        retry_.clear();   // fresh selection supersedes any stale refused slots
 
         // vol-target -> effective K (name-count scaling; documented deviation)
         int keff = cfg.K;
@@ -234,6 +258,16 @@ private:
             if (cfg.live_book && open_fn_) {
                 if (gate_fn_ && !gate_fn_(s, px * 0.02, cfg.lot)) continue;
                 p.token = open_fn_(s, true, cfg.lot, px);
+                // broker refused (e.g. contract qualify still pending on a boot-time
+                // rebalance -- ALAB/SNOW 2026-07-23): do NOT book a phantom the broker
+                // doesn't hold; leave the slot open so the next daily poll retries.
+                if (p.token.empty()) {
+                    std::printf("[DUALMOM] BUY %s @%.2f REFUSED by exec (no token) -- not booked, retry next row\n",
+                                s.c_str(), px);
+                    std::fflush(stdout);
+                    retry_.insert(s);
+                    continue;
+                }
             }
             std::printf("[DUALMOM] BUY %s @%.2f (K_eff=%d) tok=%s\n",
                         s.c_str(), px, keff, p.token.empty() ? "(book-only)" : p.token.c_str());
