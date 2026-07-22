@@ -34,8 +34,12 @@ SRV=src/gui/OmegaTelemetryServer.cpp
 GUI=tools/gui/omega_desk.html
 fails=0
 
-# Intentional non-poll exclusions (retired BE-floor endpoints, empty state).
-EXCLUDE_EP='stockmover_companion|gold_companion|usoil_companion|xag_companion'
+# Intentional non-poll exclusions (retired/culled dead books, empty state).
+# S-2026-07-22e additions (operator: dead/culled books never displayed -> GUI pollers deleted):
+#   * ^companion$ — StallCompanionRegistry master-disabled S-22c (stall-clip paper aggregate)
+#   * fx_companion — FX BE-floor RETIRED S-07-07 (fold-only poller deleted)
+#   * index_companion — index BE-floor CULLED S-07-09 (panel + poller deleted)
+EXCLUDE_EP='stockmover_companion|gold_companion|usoil_companion|xag_companion|^companion$|fx_companion|index_companion'
 
 # (1) POLLER-EXISTS -----------------------------------------------------
 MONEY_EP=$(grep -oE 'GET /api/[a-z0-9_]+' "$SRV" | sed 's#GET /api/##' \

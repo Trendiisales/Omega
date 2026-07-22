@@ -3798,10 +3798,15 @@ static void init_engines(const std::string& cfg_path)
                         auto seed_xs = [&](omega::CrossSectionalIndexEngine& e){
                             e.shadow_mode=true; e.use_cost_guard=true; e.lot=0.01;
                             for (int i=0;i<5;++i) e.seed_from_d1_csv(i, xs_fn[i]);
-                            e.enabled=true;   // shadow-only; live flip gated on >=30 shadow trades + EngineGate
+                            // CULLED S-2026-07-22e (live-only rule): the S-22c sweep missed this
+                            // lambda's enabled=true+shadow combo; [LIVE-ONLY-GATE] caught it at boot
+                            // (3 VIOLATION force-disables on 5d7ebd50). Explicit disable = source
+                            // matches running state. Faithful certs exist (MOM_LONG PF~1.56 /
+                            // MOM_LS PF~2.03 / MR_LS PF~1.52) -> PROMOTE-CANDIDATE, operator call.
+                            e.enabled=false;
                         };
                         seed_xs(g_xs_mom_long); seed_xs(g_xs_mom_ls); seed_xs(g_xs_mr_ls);
-                        std::printf("[OMEGA-INIT] CrossSectionalIndex x3 (MOM_LONG/MOM_LS/MR_LS, 5-idx rank) -- shadow, warm-seeded\n");
+                        std::printf("[OMEGA-INIT] CrossSectionalIndex x3 CULLED S-22e (certs on file, promote = operator call)\n");
                     }
 
                     // S-2026-06-21: AdaptiveTfGoldEngine -- dynamic-timeframe XAUUSD (regime

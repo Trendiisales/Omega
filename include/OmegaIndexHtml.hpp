@@ -105,7 +105,9 @@ a{color:var(--blu);text-decoration:none}
     <span style="display:inline-flex;align-items:baseline;gap:4px"><span class="lbl">GOLD</span><span id="pnl_gld" class="num" style="font-size:12px;font-weight:600;color:var(--t2)">…</span></span>
     <span id="pnl_rem" class="lbl" style="display:none;color:var(--ambB)" title="unclassified remainder: 4-class sum did not reconcile to ALL-TIME (see console.warn)"></span>
   </span>
-  <span id="compbankwrap" style="display:inline-flex;align-items:baseline;gap:6px" title="companion (stall-clip) realized bank — paper, accounting-only"><span class="lbl">COMP-BANK</span><span id="compbank" class="num" style="font-size:14px;font-weight:600;color:var(--t2)">…</span></span>
+  <!-- COMP-BANK span REMOVED S-2026-07-22e (operator: dead/culled books never displayed).
+       StallCompanionRegistry master-disabled S-22c -> the stall-clip paper bank is a dead
+       book; its frozen number has no place on the live desk. -->
   <button id="snd">SND OFF</button>
   <button id="almbtn" title="alarm log — every audible alert with its cause (click to open)" style="position:relative">🔔<span id="almct" class="num" style="margin-left:3px;color:var(--t2)">0</span></button>
   <button id="killall" title="PANIC: market-close ALL open positions in THIS book (sends live opposing MKT orders)" style="background:#3a0d0d;color:#ff5a5a;border:1px solid #ff5a5a;font-weight:700;letter-spacing:.5px" onclick="killAll(this)">KILL ALL</button>
@@ -264,16 +266,9 @@ R"OMEGAD1(      <span id="prtrend" class="chip" style="background:var(--pan2)"><
 <!-- ═══ GOLD/XAG/USOIL/FX retired BE-floor banners moved to the compact RETIRED strip below
      (S-2026-07-07w, operator: bottom boxes wasted space — actives up, retired tucked underneath) ═══ -->
 
-<!-- ═══ INDEX COMPANIONS — per-symbol Pos/Neg BE-floor books (pre-trade, additive) ═══ -->
-<div class="pan">
-  <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px">
-    <span class="lbl">INDEX COMPANIONS — US500 Pos/Neg BE-floor · 5 tiers/dir (r20/r50/r100/r150/r400) · thr 1.5%/be10/cap25bp real-fill reconfig S-07-07 (native C++ · pre-trade · additive · REAL-fill column · never vs-WIDE)</span>
-    <span id="icinfo" class="lbl" style="margin-left:auto">…</span>
-  </div>
-  <div style="overflow:auto;max-height:340px"><table id="ictab"><tr><td class="l d">loading…</td></tr></table></div>
-  <div id="icopenwrap" style="display:none;margin-top:6px"><div class="lbl" style="color:var(--grn)">OPEN NOW (live legs)</div><div style="overflow-x:auto"><table id="icopen"></table></div></div>
-  <div id="ictradeswrap" style="display:none;margin-top:6px"><div class="lbl">TRADES LOG (completed forward clips — engine reset after each)</div><div style="overflow-x:auto"><table id="ictrades"></table></div></div>
-</div>
+<!-- INDEX COMPANIONS panel REMOVED S-2026-07-22e (operator: dead/culled books never displayed).
+     The index BE-floor book was CULLED S-2026-07-09 (all befloors culled); the aggregate has
+     published an empty state since — the panel was a permanent "no trades yet" dead card. -->
 
 <!-- ═══ BIGCAP HI52 — within-5%-of-52wk-high weekly rotation (S-2026-07-17m desk wire; engine
      shipped 17l PRE-TRADE deploy-forward, hi52_state.json was servable but had no endpoint/panel —
@@ -374,8 +369,7 @@ function fmt$(v){var s=v<0?'-':'+';return s+'$'+Math.abs(v).toLocaleString(undef
    rendered "-$0/+$0" under whole-dollar fmt$ — useless. Always 2dp for small-book panels. */
 function fmtc$(v){var s=v<0?'-':'+';return s+'$'+Math.abs(v).toFixed(2);}
 function fmt2(v,n){return safe(v).toFixed(n===undefined?2:n);}
-)OMEGAD1"
-R"OMEGAD2(function lots(v){v=safe(v);return v>0?String(+v.toFixed(4)):'—';}
+function lots(v){v=safe(v);return v>0?String(+v.toFixed(4)):'—';}
 function el(id){return document.getElementById(id);}
 function esc(s){return String(s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
 /* DPR-aware canvas setup: crisp on retina/4K (old code hardcoded 2x). Returns
@@ -387,7 +381,8 @@ function prep(cv,h){var dpr=window.devicePixelRatio||1,w=cv.clientWidth||300;
 var _tw={};
 function tweenNum(id,val,fmtFn){var e=el(id);if(!e)return;
  var prev=_tw[id];
- if(prev===undefined||!window.gsap||Math.abs(val-prev)<0.5){_tw[id]=val;e.textContent=fmtFn(val);return;}
+)OMEGAD1"
+R"OMEGAD2( if(prev===undefined||!window.gsap||Math.abs(val-prev)<0.5){_tw[id]=val;e.textContent=fmtFn(val);return;}
  if(prev===val)return;
  _tw[id]=val;var st={v:prev};
  gsap.to(st,{v:val,duration:0.6,ease:'power2.out',overwrite:true,
@@ -524,7 +519,7 @@ function __compOpens(j){var out=[];if(!j)return out;
  return out;}
 function __compClosed(j){if(!j)return 0;var n=(j.trades||[]).length;
  (j.syms||j.names||j.pairs||j.flavors||[]).forEach(function(s){n+=((s.trades||[]).length);});return n;}
-var __compBooks=[['gold','_gold'],['idx','_idx'],['fx','_fx'],['xag','_xag'],['usoil','_usoil'],['stk','_sm']];
+var __compBooks=[['stk','_sm']];/* dead befloor books removed S-22e; crypto handled below via _cc */
 function pollFires(){var now=Date.now();
  /* _compClosedN (S-2026-07-18c): RENAMED from _compClosed -- pollComp stores the
     closed_detail ARRAY under window._compClosed for compClipRows; this map was
@@ -549,8 +544,7 @@ function pollFires(){var now=Date.now();
      key -> COMP's 5-leg fire rang NOTHING. Armed = open BE-floored book = the entry event. */
   (p.sublegs||[]).forEach(function(sl){if(!sl.armed&&!p.armed)return;
    var k='crypto|'+ct+'|'+(sl.id||'leg')+'|armed';
-)OMEGAD2"
-R"OMEGAD3(   if(!(k in window._seenComp)||(now-window._seenComp[k])>90000){if(!window._compBase)openWhy.push('crypto '+(p.sym||'')+' '+String(p.cell||ct));
+   if(!(k in window._seenComp)||(now-window._seenComp[k])>90000){if(!window._compBase)openWhy.push('crypto '+(p.sym||'')+' '+String(p.cell||ct));
     else loadArmed[p.sym||'?']=(loadArmed[p.sym||'?']||0)+1;}
    window._seenComp[k]=now;});
   var cn=safe(p.clips),cp=window._compClosedN['crypto|'+ct];
@@ -560,7 +554,8 @@ R"OMEGAD3(   if(!(k in window._seenComp)||(now-window._seenComp[k])>90000){if(!w
  if(!window._compBase){
   if(openWhy.length)almRing('companion open: '+openWhy.slice(0,4).join(', ')+(openWhy.length>4?' +'+(openWhy.length-4):''),'open',entryBell);
   else if(bankWhy.length)almRing('companion clip banked: '+bankWhy.join(', '),'win',winBell);}
- /* S-18ak (operator: "there was no sound"): a fire that happens BEFORE page load was baselined
+)OMEGAD2"
+R"OMEGAD3( /* S-18ak (operator: "there was no sound"): a fire that happens BEFORE page load was baselined
     SILENTLY — reload after a fire never rang. One-shot announce at load when books are already
     TRADING, so opening the desk mid-trade is audible + logged. */
  else{var la=Object.keys(loadArmed);
@@ -725,8 +720,7 @@ function drawProx(){var best=ccProx();var has={};
    /* $ is HONEST: real mark-to-market when we hold a live leg; $0/no-capital otherwise -- never a
       lookalike pk%/% with no real capital behind it (feedback-no-backtest-in-live-gui). */
    var dollarT=holding
-)OMEGAD3"
-R"OMEGAD4(    ?'<span style="font-weight:700;color:'+(mp>=0?'#39ff14':'var(--redB)')+'">$'+(mp>=0?'+':'&minus;')+fmt2(Math.abs(mp),2)+'</span>'
+    ?'<span style="font-weight:700;color:'+(mp>=0?'#39ff14':'var(--redB)')+'">$'+(mp>=0?'+':'&minus;')+fmt2(Math.abs(mp),2)+'</span>'
     :'<span style="color:var(--t2)">$0<span style="opacity:.55"> no live capital</span></span>';
    var nlab=(b&&b.n)?(' '+b.n):'';
    var pklab=(holding&&b&&b.pk)?' <span style="color:var(--t2)">pk +'+fmt2(b.pk,2)+'%</span>':'';
@@ -736,7 +730,8 @@ R"OMEGAD4(    ?'<span style="font-weight:700;color:'+(mp>=0?'#39ff14':'var(--red
   if(mp===null){
    pe.innerHTML='<span style="color:var(--t2)">$0<span style="opacity:.55"> no live capital</span></span>';
    r.style.width='0%';r.style.background='var(--t2)';return;}
-  var dollar='<span style="font-weight:700;color:'+(mp>=0?'#39ff14':'var(--redB)')+'">$'+(mp>=0?'+':'&minus;')+fmt2(Math.abs(mp),2)+'</span>';
+)OMEGAD3"
+R"OMEGAD4(  var dollar='<span style="font-weight:700;color:'+(mp>=0?'#39ff14':'var(--redB)')+'">$'+(mp>=0?'+':'&minus;')+fmt2(Math.abs(mp),2)+'</span>';
   if(b&&b.open){
    if(bx){bx.style.outline='1px solid var(--amb)';bx.style.outlineOffset='-1px';
     bx.style.background='rgba(240,180,41,.08)';}
@@ -807,91 +802,9 @@ function markTiles(){
 }
 setInterval(markTiles,1000);
 
-/* companion (stall-clip) sub-row for a live trade: the REAL amount CAUGHT (banked $ for this
-   engine) + the live open clip's MFE$/state. Rendered UNDER each open trade in BOTH the
-   live-feed and weekend-registry paths (operator 2026-07-04 — was previously only nested in the
-   live path, so it went invisible on the weekend registry fallback). Additive standalone book —
-   never compared vs riding WIDE ([[CompanionDominanceError]]). Fed by pollComp (window._comp =
-   open_detail OMEGA book; window._gcPer = per_engine banked rollup). */
-/* Companion books get GLOBALLY-UNIQUE display names (operator 2026-07-04j: "if they
-   have 6 books each then show all 6, give them unique names"). Most books already carry a
-   descriptive prefix (xau_tf4h_clip, gvb_m30_usd_a). The offender is the bare name 'main',
-   which several engines emit (XauTrendFollow4h, LondonFixMomentum, QndxSqfTrend) — identical
-   + meaningless. Qualify it with the engine's book-prefix derived from a sibling book
-   (xau_tf4h_aggr -> xau_tf4h -> 'xau_tf4h_main'); if 'main' is the only book, slug the engine
-   name ('londonfixmomentum_main'). Every name is then unique across the whole desk. */
-function uniqBookName(raw,bks,engShort){
- raw=raw||'';
- if(raw!=='main')return raw;
- var slug='';
- for(var i=0;i<bks.length;i++){var nm=bks[i].book||'';
-  if(nm&&nm!=='main'){slug=nm.replace(/_(clip|usd_a|usd_b|usd|aggr_b|aggr)(_gv\d+)?$/,'');break;}}
- if(!slug)slug=(engShort||'').toLowerCase().replace(/[^a-z0-9]+/g,'');
- return slug+'_main';
-}
-function compSub(engine,symbol,colspan,nLegs){
- var comp=window._comp||{},per=window._gcPer||{},pbooks=window._gcPerBooks||{};
- var e=(engine||'').replace(/Engine$/,'');
- var cm=comp[(engine||'')+'|'+(symbol||'')]||comp[e+'|'+(symbol||'')];
- var pe=per[engine||'']||per[e];
- var bks=pbooks[engine||'']||pbooks[e]||[];
- if(!cm&&!pe&&!bks.length)return '';
- /* An engine can run SEVERAL companion books (gold = 2+ per engine, operator 2026-07-04).
-    Each book is a SEPARATE additive standalone engine with its OWN banked $ — NEVER a
-    multiple of one shared number ([[CompanionDominanceError]]). When N legs of the same
-    engine are open, the companion set is rendered ONCE at engine level (not ×N) and each
-    book is listed by name with its OWN pnl so no number is double-counted. */
- var legNote=(nLegs>1)?(' <span class="d">· covers '+nLegs+' open legs</span>'):'';
- var parts=[];
- if(cm){var arm=cm.eligible?'<span class="g">ARMED</span>':'<span class="d">tracking · pre-gate (rides wide)</span>';
-  parts.push(arm+' · peak MFE '+fmt2(cm.mfe_pct,2)+'% ('+fmt$(safe(cm.mfe_usd))+') · stall '+cm.stall+' · live '+fmt$(safe(cm.upnl)));}
- if(pe){var bk=safe(pe.realized);
-  parts.push('caught <span style="color:'+(bk>0?'var(--grn)':(bk<0?'var(--red)':'var(--t2)'))+'">'+fmt$(bk)+'</span> banked (sum of books below) · '+(pe.closed||0)+' clip'+((pe.closed||0)===1?'':'s')+' · '+bks.length+' book'+(bks.length===1?'':'s'));}
- var html='<tr><td></td><td class="l d" colspan="'+colspan+'" style="border-left:2px solid var(--grn)">&#8627; '+esc(e)+' companions'+legNote+' · '+parts.join(' · ')+'</td></tr>';
- /* per-BOOK breakdown: EVERY companion book listed on its OWN row by UNIQUE name with its
-    OWN pnl + gauge params (operator 2026-07-04j "show all 6, give them unique names"). No
-    collapse — every book of the engine renders as a distinct line so all N are visible. Each
-    book is a SEPARATE additive standalone engine ([[CompanionDominanceError]]); its $ is its
-    own, never a multiple of a shared number. */
- bks.forEach(function(b){
-   var nm=uniqBookName(b.book||'',bks,e);
-   var bk=safe(b.realized),clips=b.closed||0;
-   var gz=(b.gauge==='USD')?('$'+fmt2(b.arm_usd,0)+'/'+fmt2(b.trail_usd,0)):'PCT';
-   var state=b.idle?'<span class="d">idle</span>':(b.open?'<span class="g">open</span>':'<span class="d">flat</span>');
-   var op=b.idle?'.6':'.9';
-   var col=(bk>0?'var(--grn)':(bk<0?'var(--red)':'var(--t2)'));
-   html+='<tr><td></td><td class="l d" colspan="'+colspan+'" style="border-left:2px solid var(--t3);padding-left:26px;font-size:10px;opacity:'+op+'">&#8627; <b>'+esc(nm)+'</b> <span class="d">['+gz+']</span> · '+state+' · '+clips+' clip'+(clips===1?'':'s')+' · <span style="color:'+col+'">'+fmt$(bk)+'</span></td></tr>';
- });
- return html;
-}
-/* PER-LEG companion (operator 2026-07-04 "true per-leg accounting"): show EACH real leg's own
-   companion bank, matched by entry price, instead of one engine-family number repeated under every
-   leg. Reads window._gcPerLeg (aggregate per_leg, keyed "engine|entry"). The companion producer
-   keys positions by (engine, entry) -- so two real legs opened at the SAME price are ONE companion
-   position (price-keyed; the paper book gets no leg-id from telemetry). Dedup by entry handles that:
-   the shared companion is shown once, repeats note "shares entry". STANDALONE additive, never vs-WIDE. */
-function findLeg(engine,entry){
- var pl=window._gcPerLeg||{};var e=(engine||'').replace(/Engine$/,'');var eNum=safe(entry);var best=null;
- Object.keys(pl).forEach(function(k){var v=pl[k];var keng=(v.engine||'').replace(/Engine$/,'');
-  if(keng!==e&&keng!==(engine||''))return;
-  if(Math.abs(safe(v.entry)-eNum)<0.01)best=v;});
- return best;
-}
-function compSubLeg(engine,symbol,entry,colspan,dup){
- var e=(engine||'').replace(/Engine$/,'');var eNum=safe(entry);
- if(dup)return '<tr><td></td><td class="l d" colspan="'+colspan+'" style="border-left:2px solid var(--t3);opacity:.45;font-size:10px">&#8627; '+esc(e)+' companion @ '+fmt2(eNum,2)+' · <span class="d">shares entry with leg above (one price-keyed companion)</span></td></tr>';
- var m=findLeg(engine,entry);
- if(!m)return '<tr><td></td><td class="l d" colspan="'+colspan+'" style="border-left:2px solid var(--t3);opacity:.5;font-size:10px">&#8627; '+esc(e)+' companion @ '+fmt2(eNum,2)+' · <span class="d">no clip on this leg</span></td></tr>';
- var bk=safe(m.realized);var col=(bk>0?'var(--grn)':(bk<0?'var(--red)':'var(--t2)'));
- var head='<tr><td></td><td class="l d" colspan="'+colspan+'" style="border-left:2px solid var(--grn);font-size:10px">&#8627; '+esc(e)+' companion @ '+fmt2(eNum,2)+' · <span style="color:'+col+'">'+fmt$(bk)+'</span> banked · '+(m.closed||0)+' clip'+((m.closed||0)===1?'':'s')+(m.open?' · <span class="g">'+m.open+' open</span>':'')+' <span class="d">(this leg only · additive)</span></td></tr>';
- var sub='';(m.books||[]).forEach(function(b){
-   var rb=safe(b.realized);var c2=(rb>0?'var(--grn)':(rb<0?'var(--red)':'var(--t2)'));
-   var nm=(b.book==='main')?(e.toLowerCase().replace(/[^a-z0-9]+/g,'')+'_main'):b.book;
-   var state=b.open?'<span class="g">open</span>':(b.closed?'<span class="d">clipped</span>':'<span class="d">flat</span>');
-   sub+='<tr><td></td><td class="l d" colspan="'+colspan+'" style="border-left:2px solid var(--t3);padding-left:26px;font-size:10px;opacity:.85">&#8627; <b>'+esc(nm)+'</b> · '+state+' · '+(b.closed||0)+' clip'+((b.closed||0)===1?'':'s')+' · <span style="color:'+c2+'">'+fmt$(rb)+'</span></td></tr>';
- });
- return head+sub;
-}
+/* companion (stall-clip) sub-row machinery REMOVED S-2026-07-22e (operator: dead/culled
+   books never displayed). StallCompanionRegistry master-disabled S-22c -> /api/companion is a
+   dead feed; the per-trade paper sub-rows have no live producer. */
 /* ── telemetry render ── */
 var lastJ=null;
 function render(J){lastJ=J;
@@ -899,8 +812,7 @@ function render(J){lastJ=J;
  var m=el('mode');m.textContent=shadowMode?'PRE-TRADE — 0 live engines':'LIVE';
  m.style.background=shadowMode?'var(--ambD)':'var(--grnD)';m.style.color=shadowMode?'var(--ambB)':'var(--grnB)';
  function dot(id,ok){el(id).style.background=ok?'var(--grn)':'var(--red)';}
-)OMEGAD4"
-R"OMEGAD5( dot('fixq',(J.fix_quote_status||'').indexOf('CONNECT')>=0||(J.fix_quote_status||'').indexOf('UP')>=0||J.quote_msg_rate>0);
+ dot('fixq',(J.fix_quote_status||'').indexOf('CONNECT')>=0||(J.fix_quote_status||'').indexOf('UP')>=0||J.quote_msg_rate>0);
  dot('fixt',(J.fix_trade_status||'').indexOf('CONNECT')>=0||(J.fix_trade_status||'').indexOf('UP')>=0);
  dot('l2d',safe(J.ctrader_l2_live)>0);dot('domd',safe(J.gold_l2_real)>0);
  var up=safe(J.uptime_sec);el('uptime').textContent='up '+Math.floor(up/86400)+'d'+Math.floor(up%86400/3600)+'h'+Math.floor(up%3600/60)+'m';
@@ -997,30 +909,27 @@ R"OMEGAD5( dot('fixq',(J.fix_quote_status||'').indexOf('CONNECT')>=0||(J.fix_quo
      served by the read-API on :7781 so the desk never shows a phantom FLAT. */
   if(REGPOS.length){var sum2=0;var seenLeg2={};
    var rows2=REGPOS.map(function(t){sum2+=safe(t.unrealized_pnl);
-   var lk=(t.engine||'')+'|'+fmt2(t.entry,2);var dup=!!seenLeg2[lk];seenLeg2[lk]=1;
-   var cr=compSubLeg(t.engine,t.symbol,t.entry,6,dup);
+   var cr='';/* companion sub-row removed S-2026-07-22e (dead stall book) */
    return '<tr><td class="l">'+esc(t.symbol)+'</td><td class="l">'+esc((t.engine||'').replace(/Engine$/,''))+'</td><td class="'+(t.side==='LONG'?'g':'r')+'">'+esc(t.side)+'</td>'
     +'<td class="num d">'+lots(t.size)+'</td>'
-    +'<td class="num">'+fmt2(t.entry)+'</td><td class="num d">'+fmt2(t.current)+'</td>'
+)OMEGAD4"
+R"OMEGAD5(    +'<td class="num">'+fmt2(t.entry)+'</td><td class="num d">'+fmt2(t.current)+'</td>'
     +'<td class="num '+(safe(t.unrealized_pnl)>=0?'g':'r')+'">'+fmt$(safe(t.unrealized_pnl))+'</td></tr>'+cr;}).join('');
    el('lt').innerHTML='<tr><th class="l">sym</th><th class="l">engine</th><th>side</th><th>lots</th><th>entry</th><th>last</th><th>unreal</th></tr>'+rows2;
    el('ltcount').textContent=REGPOS.length+' open · from registry (feed quiet — prices stale)';
-   var cbank2=safe((window._comptot||{}).all);
-   el('ltpnl').innerHTML=cbank2?('<span style="font-size:11px;color:var(--t3)">+ '+fmt$(cbank2)+' companion (paper, additive)</span>'):'';}
+   el('ltpnl').innerHTML='';/* companion paper suffix removed S-2026-07-22e (dead stall book) */}
   else{el('lt').innerHTML='<tr><td class="l d">FLAT — no open positions</td></tr>';el('ltpnl').textContent='';el('ltcount').textContent='';}}
  else{el('ltcount').textContent=lts.length+' open';
   var sum=0;var seenLeg={};
   var rows=lts.map(function(t){sum+=safe(t.live_pnl);
-  var lk=(t.engine||'')+'|'+fmt2(t.entry,2);var dup=!!seenLeg[lk];seenLeg[lk]=1;
-  var cr=compSubLeg(t.engine,t.symbol,t.entry,9,dup);
+  var cr='';/* companion sub-row removed S-2026-07-22e (dead stall book) */
   return '<tr><td class="l">'+esc(t.symbol)+'</td><td class="l">'+esc(t.engine)+'</td><td class="'+(t.side==='LONG'?'g':'r')+'">'+esc(t.side)+'</td>'
    +'<td class="num d">'+lots(t.size)+'</td>'
    +'<td class="num">'+fmt2(t.entry)+'</td><td class="num">'+fmt2(t.current)+'</td>'
    +'<td class="num '+(t.live_pnl>=0?'g':'r')+'">'+fmt$(safe(t.live_pnl))+'</td>'
    +'<td class="num">'+Math.floor(safe(t.held_sec)/60)+'m</td><td class="num">'+fmt2(t.dist_sl,1)+'</td><td class="num">'+fmt2(t.dist_tp,1)+'</td></tr>'+cr;}).join('');
   el('lt').innerHTML='<tr><th class="l">sym</th><th class="l">engine</th><th>side</th><th>lots</th><th>entry</th><th>now</th><th>pnl</th><th>held</th><th>→SL</th><th>→TP</th></tr>'+rows;
-  var cbank=safe((window._comptot||{}).all);
-  el('ltpnl').innerHTML=fmt$(sum)+' unreal <span style="font-size:11px;color:var(--t3)">+ '+fmt$(cbank)+' companion (paper, additive)</span>';
+  el('ltpnl').innerHTML=fmt$(sum)+' unreal';/* companion paper suffix removed S-2026-07-22e (dead stall book) */
   el('ltpnl').style.color=sum>=0?'var(--grn)':'var(--red)';}
 }
 
@@ -1033,57 +942,8 @@ function setConn(ok,via){el('conn').style.background=ok?'var(--grn)':'var(--red)
  s.onerror=function(){wsOk=false;};}catch(e){wsOk=false;}})();
 function poll(){if(wsOk)return;fetch('/api/telemetry').then(function(r){return r.json();}).then(function(j){render(j);setConn(true,'http');}).catch(function(){setConn(false);});}
 setInterval(poll,1000);poll();
-/* companion (stall-clip) overlay -- pushed from the Mac stall-accountant to C:\Omega\companion_state.json,
-   served at /api/companion. Nested as a sub-row under each live trade (OMEGA book). */
-function pollComp(){fetch('/api/companion').then(function(r){return r.json();}).then(function(j){
- /* GUARD (S-2026-07-03): /api/companion transiently returns a PARTIAL aggregation with no OMEGA book
-    (~6% of polls, realized_total empty/partial) while the many cron companion books rewrite their state
-    files. Folding that empty frame zeroed the paper bucket -> headline flickered TODAY 178<->120,
-    COMP-BANK 54<->29, ALL-TIME 169<->115 roughly every ~80s. Ignore any frame missing the OMEGA book;
-    keep the last-good companion totals. Real root: make the companion state read atomic in
-    OmegaTelemetryServer (tracked separately). */
- if(!(j&&j.by_book&&j.by_book.OMEGA)){return;}
- var m={};(j.open_detail||[]).forEach(function(p){if((p.book||'')==='OMEGA')m[(p.eng||'')+'|'+(p.sym||'')]=p;});window._comp=m;
- /* recent banked clips (2026-07-08): the rows that EXPLAIN a COMP-BANK / ALL-TIME increase.
-    Keep last-good when a frame omits them (older binary / partial write). */
- if(j.closed_detail&&j.closed_detail.length)window._compClosed=j.closed_detail;
- /* per-BOOK split (operator rule): Omega desk shows ONLY Omega data, EXCEPT this one comp-bank
-    total where cross-book is allowed -- and even there Omega vs Crypto are differentiated. */
- var ob=(j.by_book&&j.by_book.OMEGA)||{},cbk=(j.by_book&&j.by_book.CRYPTO)||{};
- var om=safe(ob.realized),cr=safe(cbk.realized),rt=safe(j.realized_total),be=document.getElementById('compbank');
- if(be){be.innerHTML=fmt$(rt)+' <span style="font-size:10px;color:var(--t3)">(&#937; '+fmt$(om)+' &middot; &#8383; '+fmt$(cr)+')</span>';
-  be.style.color=rt>0?'var(--grn)':(rt<0?'var(--red)':'var(--t2)');
-  var obr=ob.by_reason||{},cbr=cbk.by_reason||{};
-  var tip='COMP-BANK '+fmt$(rt)+' (paper, accounting-only)\nOMEGA '+fmt$(om)+':';
-  Object.keys(obr).forEach(function(k){tip+='\n  '+k+': '+fmt$(safe(obr[k]));});
-  tip+='\nCRYPTO '+fmt$(cr)+':';
-  Object.keys(cbr).forEach(function(k){tip+='\n  '+k+': '+fmt$(safe(cbr[k]));});
-  tip+='\nopen: '+(j.open_companions||0);var w=document.getElementById('compbankwrap');if(w)w.title=tip;}
- /* fold ONLY the OMEGA companion bucket into the Omega headline totals -- crypto paper must NOT
-    muddy the Omega real-broker number (operator rule: relevant Omega data only on the Omega GUI). */
- window._comptot={today:safe(ob.realized_today),d7:safe(ob.realized_7d),d30:safe(ob.realized_30d),all:om};
- /* call unconditionally -- the companion (paper) bank must fold in even when there are
-    zero pre-trade closes in the window, otherwise a no-trade day silently drops the paper bucket */
- if(typeof updDayPnl==='function')updDayPnl();
- if(typeof drawEquity==='function')drawEquity();
- /* GOLD COMPANIONS panel feed: per-engine rollup + open detail (OMEGA book, gold engines only),
-    so each gold trend engine's live companion trade-count + paper bank render always-on (the nested
-    per-trade overlay only shows while a position is OPEN -> invisible on a flat/weekend book). */
- window._gcPer=j.per_engine||{};
- window._gcPerBooks=j.per_engine_books||{};
- window._gcPerLeg=j.per_leg||{};
- var gm={};(j.open_detail||[]).forEach(function(p){if((p.book||'')==='OMEGA'&&/xau|gold|london|mgc/i.test(p.eng||''))gm[p.eng]=p;});
- window._gcOpen=gm;
- /* GOLD COMPANIONS panel now driven by pollGold() off /api/gold_companion (native C++ AUPOS/AUNEG),
-)OMEGAD5"
-R"OMEGAD6(    not this /api/companion python rollup. Left the _gc* sets above for the per-engine sub-rows only. */
- /* refresh the ENGINE LEDGER too so the companion sub-row under each engine picks up
-    fresh per_engine banked totals (operator: companion shown under the engine it mimics).
-    UNCONDITIONAL (2026-07-08): with an empty post-reset ledger the redraw was skipped, so a
-    companion clip raised the totals with NO visible row explaining why. */
- if(typeof drawLedger==='function')drawLedger();
- }).catch(function(){});}
-setInterval(pollComp,5000);pollComp();
+/* pollComp REMOVED S-2026-07-22e: StallCompanionRegistry master-disabled S-22c -> the
+   /api/companion stall-clip paper aggregate is a dead book (operator: never displayed). */
 
 /* ── LAST 15 TRADES — merge engine ledger (/api/trades) + crypto (/api/crypto_trades),
    newest-first, scrollable. S-2026-07-10 operator: "all engines with data, last 15, scrollable." */
@@ -1214,7 +1074,8 @@ function pollRdagent(){
     var posBy={};(book.positions||[]).forEach(function(p){if(p&&p.sym)posBy[p.sym]=p;});
     var hdr='<tr><th>#</th><th class="l">name</th><th>action</th><th>price</th><th title="rank position in the 23-name universe, NOT a signal/confidence score -- BUY needs day-move>=3% AND new 20d-high, see panel subtitle">rank%</th><th>5d</th><th>20d</th><th>pos P&amp;L</th></tr>';
     /* S-2026-07-15e (operator): the flat 23-row ranking read as "we trade ALL of these,
-       including the red ones". Only action==='BUY' rows are ever bought (execute_basket
+)OMEGAD5"
+R"OMEGAD6(       including the red ones". Only action==='BUY' rows are ever bought (execute_basket
        filters on it); everything else is model-ranking CONTEXT. Partition: held/BUY rows
        on top, explicit NOT-TRADED divider, context rows dimmed below. */
     var mkRow=function(b,dim){
@@ -1245,8 +1106,7 @@ function pollRdagent(){
 }
 setInterval(pollRdagent,5000);pollRdagent();
 
-)OMEGAD6"
-R"OMEGAD7(/* ── crypto mimic books — DYNAMIC render, no baked roster (S-2026-07-13 panel rewrite) ──
+/* ── crypto mimic books — DYNAMIC render, no baked roster (S-2026-07-13 panel rewrite) ──
    Live truth 13-07: KILL_IMMEDIATE_CLIPS + KILL_IMMEDIATE_PARENTS culled the entire immediate-
    entry clip grid (68 cells + daily cascades) on josgp1. The box now runs ONLY
    companion-at-BE MIMIC books (permitted class — never opens underwater, confirm=20bp,
@@ -1407,7 +1267,8 @@ function renderCompanionOpenTrades(pfx, open, trades, pxPrec){
        +'<td class="lbl">now</td><td class="lbl">peak</td><td class="lbl">uPnL($)</td></tr>';
   open.forEach(function(o){var u=safe(o.upnl_usd);
    h+='<tr><td class="l">'+esc(o.flavor)+'</td><td class="l">'+esc(o.dir)+'</td><td class="l">'+esc(o.tier)+'</td>'
-     +'<td class="num">'+fmt2(safe(o.entry),pxPrec)+'</td><td class="num">'+fmt2(safe(o.cur),pxPrec)+'</td>'
+)OMEGAD6"
+R"OMEGAD7(     +'<td class="num">'+fmt2(safe(o.entry),pxPrec)+'</td><td class="num">'+fmt2(safe(o.cur),pxPrec)+'</td>'
      +'<td class="num">'+fmt2(safe(o.wm),pxPrec)+'</td>'
      +'<td class="num" style="color:'+(u>0?'var(--grn)':(u<0?'var(--red)':'var(--t2)'))+'">'+fmtc$(u)+'</td></tr>';});
   ot.innerHTML=h; ow.style.display='';
@@ -1426,194 +1287,17 @@ function renderCompanionOpenTrades(pfx, open, trades, pxPrec){
  } else { tt.innerHTML=''; tw.style.display='none'; }
 }
 
-/* ── GOLD COMPANIONS (AUPOS/AUNEG BE-floor · native C++ · additive, judged STANDALONE) ──
-   Fed by pollGold() off /api/gold_companion (gold_companion_state.json, written in-binary by
-   omega::gold_befloor_companion). REAL FORWARD TRADES ONLY — the backtest/replay number is GONE
-   (operator: if it is not a real trade it does not belong in the live GUI). desk_usd = the real
-   forward book ($0 until the first live clip closes). Two runners/dir (banker r20 + runner r150).
-   Schema: {ts,lot,dpp,bars,deploy_ts,desk_pts,desk_usd,open:[{flavor,dir,tier,entry,wm,cur,
-   upnl_pts,upnl_usd,entry_ts}],trades:[{flavor,dir,tier,entry,exit,pts,usd,reason,entry_ts,
-   exit_ts}],flavors:[{name,dir,clips,wins,book_pts,book_usd,runners:[{tier,gb_bp,clips,wins,
-)OMEGAD7"
-R"OMEGAD8(   pts,usd}]}]}. RETIRED S-2026-07-07e (real-fill re-validation negative, registry §5) — panel folds the
-   REAL columns (usd_real/pts_real) of the persisted forward history; no new arms. */
-function drawGold(){var j=window._gold||null;
- var h='<tr><td class="l lbl">book</td><td class="l lbl">dir</td><td class="lbl">tier</td><td class="lbl">gb bp</td>'
-      +'<td class="lbl">clips</td><td class="lbl">wins</td><td class="lbl">pts real</td><td class="lbl">forward($ real)</td></tr>';
- if(1){/* S-2026-07-07u: RETIRED panel force-collapsed to banner (operator: GUI untidy); history archived .pre_reset_20260707c */el('gctab').innerHTML=h+'<tr><td class="l d" colspan="8">RETIRED S-2026-07-07 — real-fill re-validation negative (registry §5); history rows stand, no new arms</td></tr>';
-  el('gcinfo').textContent='native C++ · pre-trade · real forward trades only';renderCompanionOpenTrades('gc',[],[],2);return;}
- (j.flavors||[]).forEach(function(fl){
-  var runs=fl.runners||[];var rs=runs.length||1;var first=true;
-  runs.forEach(function(r){var u=safe(r.usd_real!==undefined?r.usd_real:r.usd);/* REAL column (S-2026-07-07e): model usd is a max(0,.) clamp */
-   h+='<tr>';
-   if(first){h+='<td class="l" rowspan="'+rs+'" style="font-weight:600">'+esc(fl.name)+'</td>'
-               +'<td class="l" rowspan="'+rs+'">'+esc(fl.dir)+'</td>';}
-   h+='<td class="l">'+esc(r.tier)+'</td><td class="num">'+safe(r.gb_bp)+'</td>'
-     +'<td class="num">'+safe(r.clips)+'</td><td class="num">'+safe(r.wins)+'</td>'
-     +'<td class="num">'+fmt2(safe(r.pts_real!==undefined?r.pts_real:r.pts),2)+'</td>'
-     +'<td class="num" style="font-weight:600;color:'+(u>0?'var(--grn)':(u<0?'var(--red)':'var(--t2)'))+'">'+fmtc$(u)+'</td></tr>';
-   first=false;
-  });
- });
- el('gctab').innerHTML=h;
- var tot=safe(j.desk_usd_real!==undefined?j.desk_usd_real:j.desk_usd)+(j.open||[]).reduce(function(s,o){return s+safe(o.upnl_usd_real!==undefined?o.upnl_usd_real:o.upnl_usd);},0);/* REAL column only (S-2026-07-07e); NO backtest number folded in (operator 2026-07-06) */
- var dcol=(tot>0?'var(--grn)':(tot<0?'var(--red)':'var(--t2)'));
- var open=(j.open||[]),trades=(j.trades||[]);
- var openTxt=open.length?(' · <span style="color:var(--grn)">'+open.length+' open now</span>'):'';
- el('gcinfo').innerHTML='DESK <span style="color:'+dcol+';font-weight:600">'+fmt$(tot)+'</span> forward · '
-   +trades.length+' closed trade'+(trades.length===1?'':'s')+openTxt+' · lot '+safe(j.lot)
-   +' · '+safe(j.bars)+' H1 bars · pre-trade · RETIRED S-2026-07-07e (real-fill negative; history only, no new arms)';
- renderCompanionOpenTrades('gc',open,trades,2);
-}
-/* pollGold removed S-2026-07-08c: RETIRED BE-floor panels deleted (operator: unused = remove) */
-
-
-/* ── XAG (SILVER) COMPANIONS (XAGPos/XAGNeg BE-floor · native C++ · additive, judged STANDALONE) ──
-   Gold-twin of the AUPOS/AUNEG panel, SILVER. Fed by pollXag() off /api/xag_companion
-   (xag_companion_state.json, written in-binary by omega::xag_befloor_companion). REAL FORWARD
-   TRADES ONLY. desk_usd = the real forward book ($0 until the first live clip closes). Two
-   runners/dir (banker r20 + runner r150). Same schema as gold. RETIRED S-2026-07-07e (real-fill: every
-   grid cell negative incl the silver squeeze, registry §5) — panel folds the REAL columns; no new arms. */
-function drawXag(){var j=window._xag||null;
- var h='<tr><td class="l lbl">book</td><td class="l lbl">dir</td><td class="lbl">tier</td><td class="lbl">gb bp</td>'
-      +'<td class="lbl">clips</td><td class="lbl">wins</td><td class="lbl">pts real</td><td class="lbl">forward($ real)</td></tr>';
- if(1){/* S-2026-07-07u: RETIRED panel force-collapsed to banner (operator: GUI untidy); history archived .pre_reset_20260707c */el('xctab').innerHTML=h+'<tr><td class="l d" colspan="8">RETIRED S-2026-07-07 — real-fill re-validation negative (registry §5); history rows stand, no new arms</td></tr>';
-  el('xcinfo').textContent='native C++ · pre-trade · real forward trades only';renderCompanionOpenTrades('xc',[],[],2);return;}
- (j.flavors||[]).forEach(function(fl){
-  var runs=fl.runners||[];var rs=runs.length||1;var first=true;
-  runs.forEach(function(r){var u=safe(r.usd_real!==undefined?r.usd_real:r.usd);/* REAL column (S-2026-07-07e): model usd is a max(0,.) clamp */
-   h+='<tr>';
-   if(first){h+='<td class="l" rowspan="'+rs+'" style="font-weight:600">'+esc(fl.name)+'</td>'
-               +'<td class="l" rowspan="'+rs+'">'+esc(fl.dir)+'</td>';}
-   h+='<td class="l">'+esc(r.tier)+'</td><td class="num">'+safe(r.gb_bp)+'</td>'
-     +'<td class="num">'+safe(r.clips)+'</td><td class="num">'+safe(r.wins)+'</td>'
-     +'<td class="num">'+fmt2(safe(r.pts_real!==undefined?r.pts_real:r.pts),2)+'</td>'
-     +'<td class="num" style="font-weight:600;color:'+(u>0?'var(--grn)':(u<0?'var(--red)':'var(--t2)'))+'">'+fmtc$(u)+'</td></tr>';
-   first=false;
-  });
- });
- el('xctab').innerHTML=h;
- var tot=safe(j.desk_usd_real!==undefined?j.desk_usd_real:j.desk_usd)+(j.open||[]).reduce(function(s,o){return s+safe(o.upnl_usd_real!==undefined?o.upnl_usd_real:o.upnl_usd);},0);/* REAL column only (S-2026-07-07e); NO backtest number folded in */
- var dcol=(tot>0?'var(--grn)':(tot<0?'var(--red)':'var(--t2)'));
- var open=(j.open||[]),trades=(j.trades||[]);
- var openTxt=open.length?(' · <span style="color:var(--grn)">'+open.length+' open now</span>'):'';
- el('xcinfo').innerHTML='DESK <span style="color:'+dcol+';font-weight:600">'+fmt$(tot)+'</span> forward · '
-   +trades.length+' closed trade'+(trades.length===1?'':'s')+openTxt+' · lot '+safe(j.lot)
-   +' · '+safe(j.bars)+' H1 bars · pre-trade · RETIRED S-2026-07-07e (real-fill negative; history only, no new arms)';
- renderCompanionOpenTrades('xc',open,trades,2);
-}
-/* pollXag removed S-2026-07-08c: RETIRED BE-floor panels deleted (operator: unused = remove) */
-
-
-/* ── USOIL (WTI) COMPANIONS (USOILPos/USOILNeg BE-floor · native C++ · additive, STANDALONE) ──
-   Gold-twin of the AUPOS/AUNEG panel, WTI CRUDE. Fed by pollUsoil() off /api/usoil_companion
-   (usoil_companion_state.json, written in-binary by omega::usoil_befloor_companion). REAL FORWARD
-   TRADES ONLY. desk_usd = the real forward book. Same schema as gold. RETIRED S-2026-07-07e (real-fill:
-   2026 grid sea of red; lone + cell refuted by 16mo Brent real ticks, registry §5) — panel folds the
-   REAL columns; no new arms. */
-function drawUsoil(){var j=window._usoil||null;
- var h='<tr><td class="l lbl">book</td><td class="l lbl">dir</td><td class="lbl">tier</td><td class="lbl">gb bp</td>'
-      +'<td class="lbl">clips</td><td class="lbl">wins</td><td class="lbl">pts real</td><td class="lbl">forward($ real)</td></tr>';
- if(1){/* S-2026-07-07u: RETIRED panel force-collapsed to banner (operator: GUI untidy); history archived .pre_reset_20260707c */el('uctab').innerHTML=h+'<tr><td class="l d" colspan="8">RETIRED S-2026-07-07 — real-fill re-validation negative (registry §5); history rows stand, no new arms</td></tr>';
-  el('ucinfo').textContent='native C++ · pre-trade · real forward trades only';renderCompanionOpenTrades('uc',[],[],2);return;}
- (j.flavors||[]).forEach(function(fl){
-  var runs=fl.runners||[];var rs=runs.length||1;var first=true;
-  runs.forEach(function(r){var u=safe(r.usd_real!==undefined?r.usd_real:r.usd);/* REAL column (S-2026-07-07e): model usd is a max(0,.) clamp */
-   h+='<tr>';
-   if(first){h+='<td class="l" rowspan="'+rs+'" style="font-weight:600">'+esc(fl.name)+'</td>'
-               +'<td class="l" rowspan="'+rs+'">'+esc(fl.dir)+'</td>';}
-   h+='<td class="l">'+esc(r.tier)+'</td><td class="num">'+safe(r.gb_bp)+'</td>'
-     +'<td class="num">'+safe(r.clips)+'</td><td class="num">'+safe(r.wins)+'</td>'
-     +'<td class="num">'+fmt2(safe(r.pts_real!==undefined?r.pts_real:r.pts),2)+'</td>'
-     +'<td class="num" style="font-weight:600;color:'+(u>0?'var(--grn)':(u<0?'var(--red)':'var(--t2)'))+'">'+fmtc$(u)+'</td></tr>';
-   first=false;
-  });
- });
- el('uctab').innerHTML=h;
- var tot=safe(j.desk_usd_real!==undefined?j.desk_usd_real:j.desk_usd)+(j.open||[]).reduce(function(s,o){return s+safe(o.upnl_usd_real!==undefined?o.upnl_usd_real:o.upnl_usd);},0);/* REAL column only (S-2026-07-07e); NO backtest number folded in */
- var dcol=(tot>0?'var(--grn)':(tot<0?'var(--red)':'var(--t2)'));
- var open=(j.open||[]),trades=(j.trades||[]);
- var openTxt=open.length?(' · <span style="color:var(--grn)">'+open.length+' open now</span>'):'';
- el('ucinfo').innerHTML='DESK <span style="color:'+dcol+';font-weight:600">'+fmt$(tot)+'</span> forward · '
-   +trades.length+' closed trade'+(trades.length===1?'':'s')+openTxt+' · lot '+safe(j.lot)
-   +' · '+safe(j.bars)+' H1 bars · pre-trade · RETIRED S-2026-07-07e (real-fill negative; history only, no new arms)';
- renderCompanionOpenTrades('uc',open,trades,2);
-}
-/* pollUsoil removed S-2026-07-08c: RETIRED BE-floor panels deleted (operator: unused = remove) */
+/* drawGold/drawXag/drawUsoil REMOVED S-2026-07-22e: RETIRED BE-floor books (S-07-07e)
+   -- pollers were already deleted 07-08c; the dead draw fns + banner text go with them
+   (operator: dead/culled books never displayed). */
 
 
 
-/* ── FX COMPANIONS (per-pair <PAIR>Pos/<PAIR>Neg BE-floor · native C++ · additive, STANDALONE) ──
-   Fed by pollFx() off /api/fx_companion (fx_companion_state.json). REAL FORWARD TRADES ONLY — the
-   backtest/replay number is GONE (previously the WHOLE fx book_usd WAS the replay; now it is the
-   real forward book, $0 until a live clip closes). Two runners/dir (banker r20 + runner r150).
-   Schema: {engine,pre-trade,ts,pairs:[{pair,bars,deploy_ts,pct,usd,open:[..],trades:[..],flavors:[
-   {name,dir,clips,wins,book_pct,book_usd,runners:[{tier,gb_bp,clips,wins,pct,usd}]}]}]}. ("neg=0" was the
-   max(0,.) research clamp — registry §5.) STANDALONE additive — NEVER compared vs riding WIDE. */
-/* drawFx removed S-2026-07-08c: RETIRED FX BE-floor panel deleted */
-function pollFx(){fetch('/api/fx_companion').then(function(r){return r.json();}).then(function(j){
- if(j&&(j.pairs||[]).length)window._fx=j;
- window._fxtot=(((window._fx||{}).pairs)||[]).reduce(function(s,p){return s+safe(p.usd);},0);/* S-2026-07-10: ALL-TIME folds REALIZED forward clips ONLY. Open-leg unrealized MTM removed from the header total -- on pre-trade ladder books it bounced red/green each mark and read as a phantom "continuous drop" in ALL-TIME (operator: "artifacts showing up / fix the pnl"). Per-panel DESK below still shows live uPnL for monitoring. Supersedes the 2026-07-06 MTM-in-header choice. */
- if(typeof updDayPnl==='function')updDayPnl();if(typeof drawLedger==='function')drawLedger();
- }).catch(function(){});}
-setInterval(pollFx,15000);pollFx();
+/* pollFx REMOVED S-2026-07-22e: FX BE-floor book RETIRED S-07-07 (drawFx deleted 07-08c;
+   this poller survived only to fold the dead book's history into the ledger Σ -- gone). */
 
-/* ── INDEX COMPANIONS (per-symbol <SYM>Pos/<SYM>Neg BE-floor · native C++ · additive, STANDALONE) ──
-   Fed by pollIndex() off /api/index_companion (index_companion_state.json). REAL FORWARD TRADES ONLY —
-   the real forward book, $0 until a live clip closes. Two runners/dir (banker r20 + runner r150).
-   Books in PRICE POINTS -> USD via per-symbol point-value (US500.F $50/pt · NAS100 $1 · DJ30.F $5 ·
-   GER40 ~$1.10). Schema: {engine,pre-trade,ts,syms:[{sym,live_sym,bars,deploy_ts,dpp,pts,usd,open:[..],
-   trades:[..],flavors:[{name,dir,clips,wins,book_pts,book_pts_real,book_usd,book_usd_real,runners:[
-   {tier,gb_bp,clips,wins,pts,pts_real,usd,usd_real}]}]}]}. Panel + headline fold the REAL column
-   (usd_real: worse-of fill or intrabar cap, minus rt cost — CAN be negative); the model usd column
-   is fiction (research clamps clips to max(0,.)). US500-only since the S-2026-07-07 real-fill
-   re-validation (thr 1.5% be10 cap25bp). STANDALONE additive — NEVER compared vs riding WIDE. */
-function drawIndex(){var j=window._idx||null;
- var h='<tr><td class="l lbl">sym</td><td class="l lbl">book</td><td class="l lbl">dir</td><td class="lbl">tier</td>'
-      +'<td class="lbl">gb bp</td><td class="lbl">clips</td>'
-      +'<td class="lbl">wins</td><td class="lbl">pts real</td><td class="lbl">forward($ real)</td></tr>';
- var syms=(j&&j.syms)||[];
- if(!syms.length){el('ictab').innerHTML=h+'<tr><td class="l d" colspan="9">no trades yet (deploy-forward · $0 until first forward clip closes)</td></tr>';
-  el('icinfo').textContent='native C++ · pre-trade · real forward trades only';renderCompanionOpenTrades('ic',[],[],2);return;}
- var desk=0,allOpen=[],allTrades=[];
- syms.forEach(function(p){
-  desk+=safe(p.usd_real);(p.open||[]).forEach(function(o){desk+=safe(o.upnl_usd_real!==undefined?o.upnl_usd_real:o.upnl_usd);});
-  (p.open||[]).forEach(function(o){allOpen.push(o);});
-  (p.trades||[]).forEach(function(t){allTrades.push(t);});
-  var fls=p.flavors||[];var prows=0;fls.forEach(function(fl){prows+=(fl.runners||[]).length||1;});
-  var firstSym=true;
-  fls.forEach(function(fl){
-   var runs=fl.runners||[];var rs=runs.length||1;var first=true;
-   var bu=(fl.book_usd_real!==undefined?fl.book_usd_real:fl.book_usd);
-   var bcol=(bu>0?'var(--grn)':(bu<0?'var(--red)':'var(--t2)'));
-   runs.forEach(function(c){
-    h+='<tr>';
-    if(firstSym){h+='<td class="l" rowspan="'+prows+'" style="font-weight:700">'+esc(p.sym)+'</td>';firstSym=false;}
-    if(first){h+='<td class="l" rowspan="'+rs+'" style="font-weight:600">'+esc(fl.name)+'</td>'
-                +'<td class="l" rowspan="'+rs+'">'+esc(fl.dir)+'</td>';}
-    h+='<td class="l">'+esc(c.tier)+'</td><td class="num">'+safe(c.gb_bp)+'</td>'
-      +'<td class="num">'+safe(c.clips)+'</td><td class="num">'+safe(c.wins)+'</td>'
-      +'<td class="num">'+fmt2(safe(c.pts_real!==undefined?c.pts_real:c.pts),2)+'</td>';
-    if(first){h+='<td class="num" rowspan="'+rs+'" style="font-weight:600;color:'+bcol+'">'+fmt$(safe(bu))+'</td>';}
-    h+='</tr>';first=false;
-   });
-  });
- });
- el('ictab').innerHTML=h;
- var dcol=(desk>0?'var(--grn)':(desk<0?'var(--red)':'var(--t2)'));
- var openTxt=allOpen.length?(' · <span style="color:var(--grn)">'+allOpen.length+' open now</span>'):'';
- el('icinfo').innerHTML='DESK <span style="color:'+dcol+';font-weight:600">'+fmt$(desk)+'</span> forward · '
-   +allTrades.length+' closed trade'+(allTrades.length===1?'':'s')+openTxt+' · '+syms.length+' syms · pre-trade · additive';
- renderCompanionOpenTrades('ic',allOpen,allTrades,2);
-}
-)OMEGAD8"
-R"OMEGAD9(function pollIndex(){fetch('/api/index_companion').then(function(r){return r.json();}).then(function(j){
- if(j&&(j.syms||[]).length)window._idx=j;
- window._idxtot=(((window._idx||{}).syms)||[]).reduce(function(s,p){return s+safe(p.usd_real);},0);/* S-2026-07-10: ALL-TIME folds REALIZED forward clips ONLY (usd_real). Open-leg unrealized MTM removed from the header -- the index ladder's stacked no-floor legs mark red between reclips and dragged ALL-TIME as a phantom drop; per-panel DESK still shows uPnL. (model usd is a max(0,.) clamp, still never folds.) */
- drawIndex();
- if(typeof updDayPnl==='function')updDayPnl();if(typeof drawLedger==='function')drawLedger();
- }).catch(function(){drawIndex();});}
-setInterval(pollIndex,15000);pollIndex();
+/* INDEX COMPANIONS JS REMOVED S-2026-07-22e: index BE-floor book CULLED S-07-09 (empty
+   state ever since); panel deleted this session (operator: dead/culled books never displayed). */
 
 /* ── STOCK MOVERS (per-name BIGCAP mimic LADDER · long-only · no-floor · native C++ · additive, STANDALONE) ──
    S-2026-07-07w: panel repointed from the RETIRED BE-floor (/api/stockmover_companion, real-fill -$110.7k,
@@ -1756,7 +1440,8 @@ setInterval(pollBc2pct,15000);pollBc2pct();
 var ROWS=[],WIN=1;
 function parseShadow(txt){
  /* HEADER-DRIVEN parse of omega_shadow.csv. The 06-12 rewrite hardcoded a
-    12-column layout that never matched the real 41-column file (col 0 is
+)OMEGAD7"
+R"OMEGAD8(    12-column layout that never matched the real 41-column file (col 0 is
     trade_id, not ts) -> parseInt('0') falsy -> EVERY row skipped -> all
     analytics showed "$0 / no pre-trade closes". Map columns by header name. */
  var out=[];var ls=txt.split('\n');if(ls.length<2)return out;
@@ -1776,8 +1461,7 @@ function parseShadow(txt){
    epx:ix.entry_px!==undefined?(parseFloat(f[ix.entry_px])||0):0,
    xpx:ix.exit_px!==undefined?(parseFloat(f[ix.exit_px])||0):0,
    pnl:parseFloat(f[ix.net_pnl])||0,
-)OMEGAD9"
-R"OMEGAD10(   size:ix.size!==undefined?(parseFloat(f[ix.size])||0):0,
+   size:ix.size!==undefined?(parseFloat(f[ix.size])||0):0,
    mfe:ix.mfe!==undefined?(parseFloat(f[ix.mfe])||0):0,
    mae:ix.mae!==undefined?(parseFloat(f[ix.mae])||0):0,
    hold:ix.hold_sec!==undefined?(parseInt(f[ix.hold_sec],10)||0):0,
@@ -1803,7 +1487,7 @@ function classOf(eng,sym){var s=(eng||'')+'|'+(sym||'');
  return 'other';}
 function updDayPnl(){var cut=Math.floor(Date.now()/86400000)*86400;var n=0,p=0,tot=0;
  ROWS.forEach(function(r){tot+=r.pnl;if(r.ts>=cut){n++;p+=r.pnl;}});
- var ct=window._comptot||{},cToday=safe(ct.today),cAll=safe(ct.all);
+ /* stall-clip companion totals removed S-22e (dead book) */
  /* FULL PnL (operator 2026-07-05d: "the Omega pnl should have the crypto profit added, that is
     the actual full pnl") -- ALL-TIME folds engines + OMEGA stall-clip companion + crypto ladder
     companion book. Overrides the earlier "crypto paper must not muddy the Omega number" stance. */
@@ -1815,7 +1499,7 @@ function updDayPnl(){var cut=Math.floor(Date.now()/86400000)*86400;var n=0,p=0,t
     pre-trade clip is not money. (mimic_pnl_completeness_gate: ._cctot ._chimtot referenced here
     as DOCUMENTED-EXCLUDED, not orphaned.) */
  var ccAll=bpUsd(safe(window._cctot));/* crypto ladder companion all-time bank, $ (PAPER — display-only, NOT folded) */
- var fxAll=safe(window._fxtot),gbAll=safe(window._goldtot),ixAll=safe(window._idxtot),xgAll=safe(window._xagtot),uoAll=safe(window._usoiltot),smAll=safe(window._smtot),flAll=safe(window._fxladtot),ilAll=safe(window._ixladtot);/* FX + gold + xag + usoil + stockmover/fx/index-ladder forward books, $ (additive, all-time; forward-only banks -> fold into ALL-TIME, not today) */
+ var smAll=safe(window._smtot),flAll=safe(window._fxladtot),ilAll=safe(window._ixladtot);/* stockmover/fx/index-LADDER forward books, $ (additive, all-time). Dead-book terms (stall-clip comp, fx/gold/xag/usoil/index BE-floor) REMOVED S-2026-07-22e -- books retired/culled, pollers deleted, always $0. */
  /* S-2026-07-19g operator ("why didn't you fix ALL of these"): rdaAll (rdagent stock basket) and
     h52All (BigCapHi52) are labelled "paper P&L" in their own declarations below yet were still
     folded into totT/cls.stock -- same bug class as the crypto ccAll/chimAll fold S-18w already
@@ -1839,7 +1523,7 @@ function updDayPnl(){var cut=Math.floor(Date.now()/86400000)*86400;var n=0,p=0,t
     WHEN Omega real fills wire in (livebook_closes poller), add that REAL term here — never the shadow ledger. */
  var pT=0,totT=clvAll;/* real-fills-only: Omega $0 (no fill ever), crypto real cash only */
  tweenNum('daypnl',pT,fmt$);el('daypnl').style.color=pT>=0?'var(--grn)':'var(--red)';
- el('daypnln').textContent=n+' closes today (UTC)'+(cToday?' · incl '+fmt$(cToday)+' paper':'');
+ el('daypnln').textContent=n+' closes today (UTC)';
  tweenNum('totpnl',totT,fmt$);el('totpnl').style.color=totT>=0?'var(--grn)':'var(--red)';
  /* ── PER-ASSET-CLASS SPLIT of ALL-TIME (does NOT touch totT/daypnl above) ──
     Same sources totT folds, routed to exactly one class. Reconciliation invariant:
@@ -1881,48 +1565,9 @@ function updDayPnl(){var cut=Math.floor(Date.now()/86400000)*86400;var n=0,p=0,t
    console.warn('classPnl reconciliation: STOCK+CRYPTO+FX+GOLD='+fmt$(cls4)+' vs ALL-TIME='+fmt$(totT)+' -> remainder '+fmt$(rem));}
   else remEl.style.display='none';}}
 
-/* ── companion→engine match + sub-row for the ENGINE LEDGER ──
-   Operator 2026-07-04: "companion engines displayed underneath their respective engines they
-   mimic." Each companion (stall-clip) book mimics ONE parent engine and is keyed in
-   /api/companion per_engine by that parent's name (LondonFixMomentum / XauTrendFollow4h /
-   QndxSqfTrend). The ledger keys are the pre-trade-ledger engine tags (e.g.
-   XauTrendFollow4h_Donchian_N20_sl1.5tp3.0) -> match by base-name prefix. When a ledger engine
-   HAS a companion, render its book indented directly beneath the engine row. Separate additive
-   book -- NEVER compared to riding WIDE ([[CompanionDominanceError]]); shown STANDALONE. */
-function gcMatch(k){var per=window._gcPer||{};var kb=(k||'').replace(/Engine$/,'');
- if(per[k])return {key:k,e:per[k]};
- for(var ck in per){var cb=ck.replace(/Engine$/,'');
-  if(kb===cb||kb.indexOf(cb)===0||cb.indexOf(kb)===0)return {key:ck,e:per[ck]};}
- return null;}
-function ledgerCompRow(k,seen,sym){var m=gcMatch(k);if(!m)return '';
- /* one family companion book (per_engine keyed by FAMILY) can match MULTIPLE ledger variant
-    rows (XauTrendFollow4h_Donchian… + _Keltner… both strip to XauTrendFollow4h). Render the
-    book ONCE — under the first (highest-pnl) matching variant — else phantom double-count. */
- if(seen){if(seen[m.key])return '';seen[m.key]=1;}
- var e=m.e||{},od=(window._gcOpen||{})[m.key];
- var closed=e.closed||0,openn=e.open||0,bank=safe(e.realized);
- if(!closed&&!openn&&!bank)return '';
- var armed=!!(od&&od.eligible);
- var st=od?(armed?'<span class="g">ARMED</span>'+(od.mfe_pct!=null?' '+fmt2(od.mfe_pct,2)+'% peak':''):'<span class="d">tracking</span>'):'';
- var bc=bank>0?'var(--grn)':(bank<0?'var(--red)':'var(--t2)');
- /* operator 2026-07-17m: label the book by ITS SYMBOL -- "<SYM> comp" -- so the mimic's bank
-    reads as that symbol's companion money, not an anonymous sub-row. */
- return '<tr><td></td><td class="l d" colspan="3" style="border-left:2px solid var(--grn)">&#8627; <span style="color:var(--t1)">'+esc((sym||'').trim()||m.key)+' comp</span> (stall-clip · paper · additive) · '
-  +closed+' banked'+(openn?' · '+openn+' open':'')+(st?' · '+st:'')+'</td>'
-  +'<td class="num" style="color:'+bc+'">'+fmt$(bank)+'</td><td colspan="2"></td></tr>';}
+/* companion→engine ledger sub-row machinery (gcMatch/ledgerCompRow/compClipRows) REMOVED
+   S-2026-07-22e: StallCompanionRegistry master-disabled S-22c -> dead book, never displayed. */
 /* ── engine ledger: ALL-TIME running totals per engine (window-independent) ── */
-/* recent companion clip closes (paper, additive) — rendered under the ENGINE LEDGER so the
-   COMP-BANK / ALL-TIME totals are always explained by visible rows. window._compClosed is fed
-   by pollComp from /api/companion closed_detail (StallCompanion aggregate, newest first). */
-function compClipRows(){var cl=window._compClosed||[];if(!cl.length)return '';
- var rows=cl.slice(0,6).map(function(d){var p=safe(d.pnl),c=p>=0?'g':'r';
-  var t=d.ts?new Date(d.ts*1000).toISOString().slice(5,16).replace('T',' '):'';
-  return '<tr><td class="l d" style="font-size:10px;border-left:2px solid var(--grn)">&#8627; '+esc(t)+'</td>'
-   +'<td class="l d" style="font-size:10px">'+esc((d.sym||''))+'</td>'
-   +'<td class="l d" colspan="2" style="font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:170px" title="'+esc((d.eng||'')+' '+(d.side||'')+' @ '+(d.entry||''))+'">'+esc((d.eng||'').replace(/Engine$/,''))+' · '+esc(d.reason||'')+'</td>'
-)OMEGAD10"
-R"OMEGAD11(   +'<td class="num '+c+'" style="font-size:10px">'+fmt$(p)+'</td><td colspan="2" class="l d" style="font-size:10px">'+esc(d.book||'')+'</td></tr>';}).join('');
- return '<tr><td class="l d" colspan="7" style="padding-top:6px">companion clips — recent closes (paper, additive; why COMP-BANK moved)</td></tr>'+rows;}
 /* S-19c (operator "WHY IS THE COMP LEDGER STILL THERE" -- S-19b only fixed the Σ line's units,
    not location): the per-symbol/per-book crypto companion breakdown formerly rendered here
    (cryptoLedgerRows()) was a pure DUPLICATE of what drawCC() already renders into #cctab under
@@ -1931,46 +1576,38 @@ R"OMEGAD11(   +'<td class="num '+c+'" style="font-size:10px">'+fmt$(p)+'</td><td
    already lives in the right panel. */
 function drawLedger(){var t=el('ledger');/* S-19b/19c: crypto companion PAPER bank never renders
     anywhere in this function -- its bp detail lives ONLY in #cctab (CRYPTO MIMIC BOOKS, drawCC) */
- var omc=safe((window._comptot||{}).all);/* OMEGA (XAU stall-clip) companion all-time bank, $ (additive) -- same bucket the header ALL-TIME folds */
- var fxc=safe(window._fxtot),gbc=safe(window._goldtot),ixc=safe(window._idxtot),xgc=safe(window._xagtot),uoc=safe(window._usoiltot),smc=safe(window._smtot),flc=safe(window._fxladtot),ilc=safe(window._ixladtot);/* FX + gold + xag + usoil + stockmover/fx/index-ladder forward books, $ (additive, all-time) */
- if(!ROWS.length){var z=omc+fxc+gbc+ixc+xgc+uoc+smc+flc+ilc;/* crypto PAPER NOT in Σ, S-18w */t.innerHTML='<tr><td class="l d" colspan="7">no closes in ledger</td></tr>'+compClipRows();el('ledgern').textContent=z?((omc?'companion '+fmt$(omc):'')+(fxc?' · fx '+fmt$(fxc):'')+(gbc?' · gold '+fmt$(gbc):'')+(ixc?' · idx '+fmt$(ixc):'')+(xgc?' · xag '+fmt$(xgc):'')+(uoc?' · usoil '+fmt$(uoc):'')+(smc?' · stk '+fmt$(smc):'')+(flc?' · fxlad '+fmt$(flc):'')+(ilc?' · ixlad '+fmt$(ilc):'')+' · Σ '+fmt$(z)):'';return;}
+ var smc=safe(window._smtot),flc=safe(window._fxladtot),ilc=safe(window._ixladtot);/* stockmover/fx/index-LADDER forward books, $ (additive, all-time). Dead-book chips REMOVED S-2026-07-22e. */
+ if(!ROWS.length){var z=smc+flc+ilc;/* crypto PAPER NOT in Σ, S-18w; dead-book terms removed S-22e */t.innerHTML='<tr><td class="l d" colspan="7">no closes in ledger</td></tr>';el('ledgern').textContent=z?((smc?'stk '+fmt$(smc):'')+(flc?' · fxlad '+fmt$(flc):'')+(ilc?' · ixlad '+fmt$(ilc):'')+' · Σ '+fmt$(z)):'';return;}
  var by={};
  ROWS.forEach(function(r){var k=r.eng||'?';if(!by[k])by[k]={n:0,pnl:0,w:0,sym:r.sym,last:0};
   var e=by[k];e.n++;e.pnl+=r.pnl;if(r.pnl>0)e.w++;if(r.ts>e.last){e.last=r.ts;e.sym=r.sym;}});
  var ks=Object.keys(by).sort(function(a,b){return by[b].pnl-by[a].pnl;});
  var mx=1;ks.forEach(function(k){mx=Math.max(mx,Math.abs(by[k].pnl));});
- var seenComp={};
  var rows=ks.map(function(k){var e=by[k],c=e.pnl>=0?'g':'r';
   var w=Math.max(2,Math.abs(e.pnl)/mx*100);
   return '<tr><td class="l" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:170px" title="'+esc(k)+'">'+esc(k.replace(/Engine$/,''))+'</td>'
    +'<td class="l d">'+esc(e.sym)+'</td><td class="num d">'+e.n+'</td>'
    +'<td class="num d">'+Math.round(100*e.w/e.n)+'%</td>'
-   +'<td class="num '+c+'">'+fmt$(e.pnl)+'</td>'
+)OMEGAD8"
+R"OMEGAD9(   +'<td class="num '+c+'">'+fmt$(e.pnl)+'</td>'
    +'<td style="width:90px"><span class="bar" style="display:block"><i style="width:'+w+'%;background:'+(e.pnl>=0?'var(--grn)':'var(--red)')+'"></i></span></td>'
-   +'<td class="num '+(e.pnl>=0?'g':'r')+'">'+fmt$(e.pnl/e.n)+'/t</td></tr>'
-   +ledgerCompRow(k,seenComp,e.sym);}).join('');
- t.innerHTML='<tr><th class="l">engine</th><th class="l">sym</th><th>n</th><th>WR</th><th>net</th><th></th><th>avg</th></tr>'+rows+compClipRows();
+   +'<td class="num '+(e.pnl>=0?'g':'r')+'">'+fmt$(e.pnl/e.n)+'/t</td></tr>';}).join('');/* companion sub-rows + clip rows removed S-22e (dead stall book) */
+ t.innerHTML='<tr><th class="l">engine</th><th class="l">sym</th><th>n</th><th>WR</th><th>net</th><th></th><th>avg</th></tr>'+rows;
  var net=0;ks.forEach(function(k){net+=by[k].pnl;});
- var tot=net+omc+fxc+gbc+ixc+xgc+uoc+smc+flc+ilc;   /* fold companion books into the all-time total -- matches header ALL-TIME; cc (crypto PAPER) labelled but EXCLUDED S-18w */
+ var tot=net+smc+flc+ilc;   /* live LADDER books only -- dead-book terms removed S-22e; cc (crypto PAPER) EXCLUDED S-18w */
  el('ledgern').textContent=ks.length+' engines · net '+fmt$(net)
-   +(omc?' · companion '+fmt$(omc):'')
-   +(fxc?' · fx '+fmt$(fxc):'')
-   +(gbc?' · gold '+fmt$(gbc):'')
-   +(ixc?' · idx '+fmt$(ixc):'')
-   +(xgc?' · xag '+fmt$(xgc):'')
-   +(uoc?' · usoil '+fmt$(uoc):'')
    +(smc?' · stk '+fmt$(smc):'')
    +(flc?' · fxlad '+fmt$(flc):'')
    +(ilc?' · ixlad '+fmt$(ilc):'')
-   +((omc||fxc||gbc||ixc||xgc||uoc||smc||flc||ilc)?' · Σ '+fmt$(tot):'');}
+   +((smc||flc||ilc)?' · Σ '+fmt$(tot):'');}
 
 function drawEquity(){var cv=el("eqc");if(!cv)return;/* PRE-TRADE EQUITY panel removed 2026-07-06 (operator: useless) */var H=110,ctx=prep(cv,H);
  var W=cv.clientWidth;ctx.clearRect(0,0,W,H);
  var rs=winRows();if(!rs.length){ctx.fillStyle='#6B7785';ctx.font='11px IBM Plex Mono';ctx.fillText('no pre-trade closes in window',10,20);
   /* no pre-trade closes -> still fold the companion (paper) bank for the window so it never silently drops */
-  var ct=window._comptot||{};var cw=WIN===1?safe(ct.today):WIN===7?safe(ct.d7):WIN===30?safe(ct.d30):safe(ct.all);
+  var cw=0;/* stall-clip companion window bank removed S-22e (dead book) */
   var clv0=(WIN!==1&&WIN!==7&&WIN!==30)?safe(window._clivetot):0;/* LIVE mirror real realized (S-2026-07-18r); crypto PAPER (cc0/chim0) excluded S-18w */
-  var fg0=(WIN!==1&&WIN!==7&&WIN!==30)?(safe(window._fxtot)+safe(window._goldtot)+safe(window._idxtot)+safe(window._xagtot)+safe(window._usoiltot)+safe(window._smtot)+safe(window._fxladtot)+safe(window._ixladtot)):0;/* FX + gold + xag + usoil + stockmover-ladder forward banks are all-time -> only fold in 'all' window */
+  var fg0=(WIN!==1&&WIN!==7&&WIN!==30)?(safe(window._smtot)+safe(window._fxladtot)+safe(window._ixladtot)):0;/* stockmover/fx/index-LADDER forward banks (all-time) -- dead-book terms removed S-22e */
   var cwT=cw+clv0+fg0;tweenNum('eqtot',cwT,fmt$);el('eqtot').style.color=cwT>=0?'var(--grn)':'var(--red)';el('eqstats').innerHTML=cwT?'<span style="color:var(--t3)">paper only</span>':'';return;}
  var cum=[],c=0,pk=0,mdd=0,wins=0,gp=0,gl=0;
  rs.forEach(function(r){c+=r.pnl;cum.push(c);pk=Math.max(pk,c);mdd=Math.min(mdd,c-pk);
@@ -1997,7 +1634,7 @@ function drawEquity(){var cv=el("eqc");if(!cv)return;/* PRE-TRADE EQUITY panel r
  ctx.beginPath();ctx.arc(ex,ey,6,0,6.3);ctx.strokeStyle='rgba(46,189,133,0.35)';ctx.lineWidth=1.5;ctx.stroke();
  var p2=0;ctx.beginPath();cum.forEach(function(v,i){p2=Math.max(p2,v);var d=v-p2;i?ctx.lineTo(X(i),Y(d)):ctx.moveTo(X(0),Y(d));});
  ctx.strokeStyle='#E2484D';ctx.setLineDash([4,3]);ctx.lineWidth=1;ctx.stroke();ctx.setLineDash([]);
- var net=cum[cum.length-1];var ct=window._comptot||{};var cw=WIN===1?safe(ct.today):WIN===7?safe(ct.d7):WIN===30?safe(ct.d30):safe(ct.all);var fg0=(WIN!==1&&WIN!==7&&WIN!==30)?(safe(window._fxtot)+safe(window._goldtot)+safe(window._idxtot)+safe(window._xagtot)+safe(window._usoiltot)+safe(window._smtot)+safe(window._fxladtot)+safe(window._ixladtot)):0;/* FX + gold + xag + usoil + stockmover-ladder forward banks (all-time) fold in 'all' window */var clv0=(WIN!==1&&WIN!==7&&WIN!==30)?safe(window._clivetot):0;/* LIVE mirror real realized (S-2026-07-18r); crypto PAPER (cc0/chim0) excluded S-18w */var netT=net+cw+clv0+fg0;tweenNum('eqtot',netT,fmt$);el('eqtot').style.color=netT>=0?'var(--grn)':'var(--red)';
+ var net=cum[cum.length-1];var cw=0;/* stall-clip bank removed S-22e */var fg0=(WIN!==1&&WIN!==7&&WIN!==30)?(safe(window._smtot)+safe(window._fxladtot)+safe(window._ixladtot)):0;/* LADDER forward banks (all-time); dead-book terms removed S-22e */var clv0=(WIN!==1&&WIN!==7&&WIN!==30)?safe(window._clivetot):0;/* LIVE mirror real realized (S-2026-07-18r); crypto PAPER (cc0/chim0) excluded S-18w */var netT=net+cw+clv0+fg0;tweenNum('eqtot',netT,fmt$);el('eqtot').style.color=netT>=0?'var(--grn)':'var(--red)';
  var pf=gl>0?gp/gl:0,wr=100*wins/rs.length;
  el('eqstats').innerHTML='<span>n <span class="w">'+rs.length+'</span></span><span>PF <span class="w">'+fmt2(pf)+'</span></span>'
   +'<span>WR <span class="w">'+fmt2(wr,1)+'%</span></span><span>maxDD <span class="r">'+fmt$(mdd)+'</span></span>'
@@ -2080,8 +1717,7 @@ function drawPromo(){if(!el('promo'))return;/* PROMOTION TRACKER panel removed 2
    +'<span class="bar"><i style="width:'+Math.min(100,e.n/GATE*100)+'%;background:'+col+'"></i></span>'
    +'<span class="num d">'+e.n+'/'+GATE+'</span><span class="num" style="color:'+col+'">'+fmt$(avg)+'/t</span>'
    +'<span class="lbl" style="color:'+col+'">'+tag+'</span></div>';});
-)OMEGAD11"
-R"OMEGAD12( el('promo').innerHTML=h;}
+ el('promo').innerHTML=h;}
 
 function drawBlot(){fetch('/api/shadow_trades').then(function(r){return r.json();}).then(function(a){
  if(!a||!a.length){return;}
@@ -2122,7 +1758,8 @@ function prBtns(){
 prBtns();
 var PRMK=[],PRMOUSE=null,PRHOVER=null;
 function drawPR(){var cv=el("prc");
- /* S-2026-07-10: DYNAMIC chart height — measure the RIGHT topgrid column (ENGINE LEDGER+HEAT;
+)OMEGAD9"
+R"OMEGAD10( /* S-2026-07-10: DYNAMIC chart height — measure the RIGHT topgrid column (ENGINE LEDGER+HEAT;
     DOM/OBI panel removed S-2026-07-22) and size the chart to fill the LEFT column so there is no
     gap below it. Recomputed every draw. Fallback 300 if measurement fails. */
  var H=300;
@@ -2284,8 +1921,7 @@ function drawPR(){var cv=el("prc");
   ctx.fillStyle='rgba(11,15,20,0.8)';ctx.fillRect(padL+4,padT+2,ctx.measureText(ohlc).width+10,14);
   ctx.fillStyle=mb[4]>=mb[1]?'#9FE1CB':'#F7C1C1';ctx.fillText(ohlc,padL+9,padT+12);}
  var lastC=bars[n-1][4],yl=Y(lastC),trend=0;
-)OMEGAD12"
-R"OMEGAD13( for(var i=n-1;i>=0;i--){if(bars[i][10]){trend=bars[i][10];break;}}
+ for(var i=n-1;i>=0;i--){if(bars[i][10]){trend=bars[i][10];break;}}
  var tc=trend>0?'#2EBD85':trend<0?'#E2484D':'#85B7EB';
  ctx.strokeStyle=tc;ctx.globalAlpha=0.5;ctx.setLineDash([2,4]);
  ctx.beginPath();ctx.moveTo(padL,yl);ctx.lineTo(padL+pw,yl);ctx.stroke();ctx.setLineDash([]);ctx.globalAlpha=1;
@@ -2330,7 +1966,8 @@ function prTip(m,cx,cy){var tip=el('prtip');
  var tw2=tip.offsetWidth,th2=tip.offsetHeight;
  tip.style.left=Math.min(window.innerWidth-tw2-8,cx+14)+'px';
  tip.style.top=(cy-th2-12<0?cy+18:cy-th2-12)+'px';}
-(function(){var cvp=el('prc');
+)OMEGAD10"
+R"OMEGAD11((function(){var cvp=el('prc');
  cvp.addEventListener('mousemove',function(e){var rc=cvp.getBoundingClientRect();
   PRMOUSE={x:e.clientX-rc.left,y:e.clientY-rc.top};
   var hit=null,best=160;
@@ -2359,6 +1996,6 @@ window.addEventListener('resize',function(){drawEquity();drawMM();drawPR();});
 </script>
 </body>
 </html>
-)OMEGAD13"
+)OMEGAD11"
 ;
 } // namespace omega_gui
