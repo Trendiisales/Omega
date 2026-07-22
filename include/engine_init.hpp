@@ -1911,7 +1911,7 @@ static void init_engines(const std::string& cfg_path)
             auto& gd = g_gold_daily_cbe;
             gd.cfg.enabled   = true;
             gd.cfg.live_book = true;
-            gd.cfg.lot_oz    = 3.0;   // S-22j FINAL operator size cap ("not 1 oz"): 3 GLD shares (~$1.1k, ~0.27oz), RT ~19bp = inside the certified 2x-cost stress; ~$45 risk/trade at the cert stop. 1 share would be ~54bp RT = cost eats the edge
+            gd.cfg.lot_oz    = 11.0;  // S-22j FINAL-2 operator: "happy with a real 0.01 size" = 1 oz = 11 GLD shares (~$4.2k, RT ~5.3bp, ~$165 risk/trade at the cert stop)
             gd.set_exec(
                 /* open   */ [](const std::string& sym, bool is_long, double lots, double px) -> std::string {
                     return send_live_order(sym, is_long, lots, px);
