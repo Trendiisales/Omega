@@ -1911,7 +1911,7 @@ static void init_engines(const std::string& cfg_path)
             auto& gd = g_gold_daily_cbe;
             gd.cfg.enabled   = true;
             gd.cfg.live_book = true;
-            gd.cfg.lot_oz    = 11.0;  // S-22j GLD-proxy: 11 shares ~= certified 1-oz notional (~$4.2k), RT ~5.3bp
+            gd.cfg.lot_oz    = 3.0;   // S-22j FINAL operator size cap ("not 1 oz"): 3 GLD shares (~$1.1k, ~0.27oz), RT ~19bp = inside the certified 2x-cost stress; ~$45 risk/trade at the cert stop. 1 share would be ~54bp RT = cost eats the edge
             gd.set_exec(
                 /* open   */ [](const std::string& sym, bool is_long, double lots, double px) -> std::string {
                     return send_live_order(sym, is_long, lots, px);
@@ -1959,7 +1959,7 @@ static void init_engines(const std::string& cfg_path)
                 auto& gdm = omega::gold_daily_cbe_mimic();
                 gdm.cfg.enabled   = true;
                 gdm.cfg.live_book = true;
-                gdm.cfg.lot_oz    = 5.0;   // S-22j GLD-proxy: 5 shares/leg (~$1.9k), RT ~11bp = certified cost basis
+                gdm.cfg.lot_oz    = 3.0;   // S-22j FINAL operator size cap: 3 GLD shares/leg (~$1.1k), RT ~19bp = inside 2x-cost cert
                 gdm.set_exec(
                     /* open   */ [](const std::string& sym, bool is_long, double lots, double px) -> std::string {
                         return send_live_order(sym, is_long, lots, px);
