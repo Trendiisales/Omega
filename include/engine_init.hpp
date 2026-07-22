@@ -2152,6 +2152,12 @@ static void init_engines(const std::string& cfg_path)
         //   FEED: tick_fx.hpp H1 roll (h/l/c — manage is intrabar adverse-first, in-calibration).
         {
             auto& fl = omega::fx_mimic_ladder_book();
+            // S-2026-07-22j FX DISABLED (operator: "i dont want 25k trades disable
+            // it") — IDEALPRO's 25k-base minimum makes every FX order ~NZ$56k
+            // notional, out of proportion to the book. Exec fns left UNWIRED below
+            // (set_exec skipped) => the ladder detects/books nothing live and can
+            // never send an order. Re-enable = operator order + re-wire set_exec.
+            const bool FX_LADDER_DISABLED = true;
             // {pair, W, thr%, rt_cost_bp, short_downjump, notional$, retire_usd, warmup CSV (ts,o,h,l,c H1)}
             struct FLCfg { const char* pair; int W; double thr; double rt;
                            bool short_dj; double notional; double retire; const char* csv; };
@@ -2242,6 +2248,12 @@ static void init_engines(const std::string& cfg_path)
             size_t flseeded = 0;
             for (const auto& fc : FL) flseeded += fl.seed_pair(fc.pair, fc.csv);
             size_t flrestored = fl.seed_dumps_all();   // own persisted forward h/l/c bars
+            if (FX_LADDER_DISABLED) {
+                printf("[OMEGA-INIT][SEED] FX jump LADDER DISABLED (S-2026-07-22j operator: no 25k-min FX trades) -- "
+                       "%zu bars seeded for state continuity, exec UNWIRED, live_step short-circuits, zero orders possible\n",
+                       flseeded + flrestored);
+                fflush(stdout);
+            } else
             fl.set_exec(
                 /* open   */ [](const std::string& sym, bool is_long, double lots, double px) -> std::string {
                     return send_live_order(sym, is_long, lots, px);
@@ -2263,9 +2275,11 @@ static void init_engines(const std::string& cfg_path)
                     handle_closed_trade(tr);
                 });
             fl.finalize_all();
-            printf("[OMEGA-INIT][SEED] FX jump LADDER wired: GBPUSD(W48/0.75 L) only -- S-2026-07-09c IBKR-feed revalidation: GBPUSD PASS all-6 (+40.5%% PF1.44 n526, 2x-cost holds); EURUSD/NZDUSD/AUDUSD/USDCAD DISABLED (fail all-6 standalone on 3Y IBKR data). %zu H1 bars seeded, %zu forward bars restored, LC5thr+trail+window-flush, LIVE-EXEC (send_live_order, S-22c live-only), deploy-forward\n",
-                   flseeded, flrestored);
-            fflush(stdout);
+            if (!FX_LADDER_DISABLED) {
+                printf("[OMEGA-INIT][SEED] FX jump LADDER wired: GBPUSD(W48/0.75 L) only -- S-2026-07-09c IBKR-feed revalidation: GBPUSD PASS all-6 (+40.5%% PF1.44 n526, 2x-cost holds); EURUSD/NZDUSD/AUDUSD/USDCAD DISABLED (fail all-6 standalone on 3Y IBKR data). %zu H1 bars seeded, %zu forward bars restored, LC5thr+trail+window-flush, LIVE-EXEC (send_live_order, S-22c live-only), deploy-forward\n",
+                       flseeded, flrestored);
+                fflush(stdout);
+            }
         }
 
         // ── INDEX mimic LADDER companion (S-2026-07-07x resume, operator: "more NAS100/
@@ -7283,11 +7297,12 @@ static void init_engines(const std::string& cfg_path)
                 {
                     std::thread([] {
                         std::this_thread::sleep_for(std::chrono::seconds(50)); // connect+qualify settle
+                        // GBPUSD dropped from the roster S-22j: FX ladder disabled
+                        // (operator: no 25k-min trades) — probing it would imply intent.
                         const char* roster[] = { "XAUUSD.S", "XAUUSD.M", "NAS100",
-                                                 "US500.F", "DJ30.F", "GBPUSD", "NVDA" };
+                                                 "US500.F", "DJ30.F", "NVDA" };
                         for (const char* s : roster) {
-                            omega::ibkr_exec::preflight(s, true,
-                                                        std::string(s) == "GBPUSD" ? 25000.0 : 1.0);
+                            omega::ibkr_exec::preflight(s, true, 1.0);
                             std::this_thread::sleep_for(std::chrono::seconds(2));
                         }
                         std::printf("[EXEC-PREFLIGHT] roster sweep sent -- VIABLE/err verdicts above are the per-symbol trade-capability truth\n");
