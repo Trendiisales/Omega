@@ -44,8 +44,10 @@ static int    VB      = 0;            // env VB=1: mirror production vol-band ga
 // contract -> $0.208/oz RT, fixed not price-proportional (pair with SPREAD=0.10,
 // one exchange tick). Total ~0.31pt RT vs spot ~1.4pt at 4000.
 static int MGC = 0;
+static double LC4  = 0.0;         // env LC: LOSS_CUT_PCT on the 4h engine (prod 1.5)
+static double COSTX = 1.0;        // env COSTX: multiply commission (2x-cost stress)
 static inline double ibkr_comm_usd(double entry_px){
-    return MGC ? 0.208 : 2.0 * 0.00015 * entry_px;
+    return COSTX * (MGC ? 0.208 : 2.0 * 0.00015 * entry_px);
 }
 
 struct BarCSV { int64_t ts; double o,h,l,c; };
@@ -77,6 +79,7 @@ template<class Eng, bool IS_4H>
 static void run(const std::vector<BarCSV>& bars, const char* label){
     Eng eng; eng.shadow_mode=true; eng.enabled=true; eng.lot=0.01; eng.max_spread=1.0;
     if constexpr (IS_4H) { eng.min_impulse_atr = IMP; eng.min_adx_entry = ADXF; if(MASK4>=0) eng.cell_enable_mask=(uint32_t)MASK4;
+        eng.LOSS_CUT_PCT = LC4;   // prod g_xau_tf_4h.LOSS_CUT_PCT = 1.5
         if(VB){ eng.use_vol_band_gate=true; eng.vol_band_low_pct=0.30; eng.vol_band_high_pct=0.85; eng.cell_vol_band_mask=0x8; } }   // 4h-only fields
     eng.init();
     Stat full, h1half, h2half; int wins=0; const int N=(int)bars.size(); const int mid=N/2;
@@ -117,8 +120,10 @@ int main(int argc, char** argv){
     if(getenv("MASK"))   MASK4=strtol(getenv("MASK"),nullptr,0);
     if(getenv("VB"))     VB=atoi(getenv("VB"));
     if(getenv("MGC"))    MGC=atoi(getenv("MGC"));
+    if(getenv("LC"))     LC4=atof(getenv("LC"));
+    if(getenv("COSTX"))  COSTX=atof(getenv("COSTX"));
     auto h4=load_csv(argv[1]); auto h1=load_csv(argv[2]);
-    std::printf("[XTF4h2h-BT] real-class  H4 bars=%zu  H1 bars=%zu  spread=%.2f  IMP(4h)=%.2f  ADX(4h)=%.1f  +IBKR_comm(1.5bps/side)\n", h4.size(), h1.size(), SPREAD, IMP, ADXF);
+    std::printf("[XTF4h2h-BT] real-class  H4 bars=%zu  H1 bars=%zu  spread=%.2f  IMP(4h)=%.2f  ADX(4h)=%.1f  LC(4h)=%.2f  COSTX=%.1f  +IBKR_comm(1.5bps/side)\n", h4.size(), h1.size(), SPREAD, IMP, ADXF, LC4, COSTX);
     std::printf("===== 4h engine (on_h4_bar, 6-cell mask 0x3F) =====\n");
     if((int)h4.size()>60) run<omega::XauTrendFollow4hEngine,true>(h4, "XauTrendFollow4h");
     else std::printf("  (insufficient H4 bars)\n");

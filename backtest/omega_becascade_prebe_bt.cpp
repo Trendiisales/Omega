@@ -27,7 +27,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include "BeCascadeCompanionEngine.hpp"
-using chimera::UpJumpLadderCompanion;
+using chimera::MimicLadderCompanion;
 
 struct Bar { int64_t ts; double o,h,l,c; };
 static std::vector<std::string> split(const std::string&s){std::vector<std::string>v;std::stringstream ss(s);std::string t;while(std::getline(ss,t,','))v.push_back(t);return v;}
@@ -60,7 +60,7 @@ static double g_stagbe=20.0;
 // on=false -> current live (confirm 0, anchor off, lc150). on=true -> fix (confirm CONF, anchor on, lc0).
 static Agg run(const std::vector<Bar>& b, int W, double thr, double g, int legs, double rt,
                bool on, double conf){
-    UpJumpLadderCompanion::Config c;
+    MimicLadderCompanion::Config c;
     c.parent_tag="SELF"; c.tag="OMEGA-BC"; c.symbol="omega";
     c.det_w=W; c.det_thr=thr; c.tf_secs=g_tf; c.round_trip_bp=rt;
     c.mimic_floor=true; c.mimic_stagger=true; c.stagger_mode=1; c.stagger_be_bp=g_stagbe;
@@ -73,8 +73,8 @@ static Agg run(const std::vector<Bar>& b, int W, double thr, double g, int legs,
 
     std::vector<Clip> rows; int64_t cur=0;
     fflush(stdout); int saved=dup(1); {int dn=open("/dev/null",O_WRONLY);dup2(dn,1);close(dn);}
-    UpJumpLadderCompanion eng(c);
-    eng.set_on_clip([&](const UpJumpLadderCompanion::ClipRecord& r){ rows.push_back({cur, r.net_bp_real}); });
+    MimicLadderCompanion eng(c);
+    eng.set_on_clip([&](const MimicLadderCompanion::ClipRecord& r){ rows.push_back({cur, r.net_bp_real}); });
     for(const auto& k : b){ cur=k.ts; eng.stop_check_only(k.l,k.ts); eng.observe(true,0.0,k.c,k.ts); }
     if(!b.empty()){ cur=b.back().ts; eng.observe(false,0.0,b.back().c,b.back().ts+c.tf_secs*1000+2000); }
     fflush(stdout); dup2(saved,1); close(saved);
