@@ -73,5 +73,10 @@ long preflight(const std::string& omega_sym, bool is_long, double qty);
 // permission reject). Poll a few seconds after preflight(). Stub: true.
 bool preflight_rejected(long oid);
 
+// Live position marks (S-23a): stream last-price for a symbol through the exec
+// connection (delayed OK) / read the latest. Stubs: no-op / 0.0.
+void   ensure_mktdata(const std::string& omega_sym);
+double last_price(const std::string& omega_sym);
+
 } // namespace ibkr_exec
 } // namespace omega

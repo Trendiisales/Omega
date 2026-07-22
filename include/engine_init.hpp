@@ -3195,7 +3195,21 @@ static void init_engines(const std::string& cfg_path)
             // positions (e.g. the first real fill, BMY) were invisible to the
             // GUI registry until this source registration.
             g_open_positions.register_source("StockDipTurtle",
-                []() { return omega::stock_dipturtle_book().collect_positions(); });
+                []() {
+                    // S-23a: enrich with LIVE marks — the book is daily-close driven,
+                    // so without this the panel froze at now==entry / $0 all day.
+                    // ensure_mktdata is idempotent per symbol; delayed feed OK.
+                    auto v = omega::stock_dipturtle_book().collect_positions();
+                    for (auto& p : v) {
+                        omega::ibkr_exec::ensure_mktdata(p.symbol);
+                        const double lp = omega::ibkr_exec::last_price(p.symbol);
+                        if (lp > 0.0) {
+                            p.current = lp;
+                            p.unrealized_pnl = (lp - p.entry) * p.size;
+                        }
+                    }
+                    return v;
+                });
             printf("[OMEGA-INIT][SEED] StockDip/StockTurtle books wired: %d dip + %d turtle names (incl S-17k ext-11 dip @16bp retire -$9.7k + ext-14 turtle @16bp retire -$23k), %zu seed rows, %zu forward bars restored, %zu open entry_ts exempted from phantom-drop, $10k notional, live-11 rt 8bp retire dip -$9.5k / turtle -$8.5k, LONG-only, LIVE in mode=LIVE (S-2026-07-19t: parent 1-share/name real money) else PRE-TRADE, deploy-forward, daily-CSV-polled\n",
                    n_dip, n_tur, sdt_seeded, sdt_restored, sdt_exempt);
             fflush(stdout);

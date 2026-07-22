@@ -446,6 +446,49 @@ struct IbkrExecutionEngine : public DefaultEWrapper {
     void req_open_orders() { if (client_ && connected_.load()) client_->reqAllOpenOrders(); }
     void global_cancel()   { if (client_ && connected_.load()) client_->reqGlobalCancel(); }
 
+    // ── live position marks (S-2026-07-23a: stock books are daily-close driven,
+    // so open positions showed frozen now==entry / $0 PnL intraday; stream a
+    // last-price per open-position symbol through this exec connection) ────────
+    std::map<std::string, double> last_px_;        // omega sym -> live/delayed last
+    std::map<long, std::string>   md_req_;         // tickerId -> omega sym
+    std::map<std::string, long>   md_by_sym_;      // omega sym -> tickerId
+    long md_next_id_ = 60000;
+    void ensure_mktdata(const std::string& omega_sym) {
+        if (!client_ || !connected_.load()) return;
+        Contract c;
+        {
+            std::lock_guard<std::mutex> lk(mtx_);
+            if (md_by_sym_.count(omega_sym)) return;      // already streaming
+            auto it = resolved_.find(omega_sym);
+            if (it == resolved_.end()) return;
+            c = it->second;
+            const long tid = md_next_id_++;
+            md_req_[tid] = omega_sym; md_by_sym_[omega_sym] = tid;
+            client_->reqMarketDataType(3);                // delayed OK (falls back to live if subscribed)
+            client_->reqMktData(tid, c, "", false, false, TagValueListSPtr());
+        }
+        std::printf("[IBKR-EXEC] mktdata stream armed %s\n", omega_sym.c_str());
+        std::fflush(stdout);
+    }
+    double last_price(const std::string& omega_sym) {
+        std::lock_guard<std::mutex> lk(mtx_);
+        auto it = last_px_.find(omega_sym);
+        return it == last_px_.end() ? 0.0 : it->second;
+    }
+    void tickPrice(TickerId tickerId, TickType field, double price, const TickAttrib&) override {
+        // LAST=4, DELAYED_LAST=68, CLOSE=9 (fallback), DELAYED_CLOSE=75
+        if (price <= 0.0) return;
+        if (field == 4 || field == 68 || field == 9 || field == 75) {
+            std::lock_guard<std::mutex> lk(mtx_);
+            auto it = md_req_.find((long)tickerId);
+            if (it != md_req_.end()) {
+                // never let a CLOSE tick overwrite a fresher LAST
+                if (field == 9 || field == 75) { last_px_.emplace(it->second, price); }
+                else                            { last_px_[it->second] = price; }
+            }
+        }
+    }
+
     // Authoritative fill event -> reconcile to ledger via on_fill.
     void execDetails(int /*reqId*/, const Contract& contract, const Execution& execution) override {
         IbkrFill f;
