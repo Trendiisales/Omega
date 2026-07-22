@@ -88,7 +88,13 @@ struct OmegaConfig {
     bool   independent_symbols = true;  // true: risk/position gating is per-symbol (recommended)
     int    auto_disable_after_trades  = 10;
     bool   shadow_ustec_pilot_only    = false;  // false: multi-symbol SHADOW research; true: restrict to GOLD + USTEC pilot
-    bool   shadow_research_mode       = false;  // false: paper/live-like behavior; true: discovery mode with relaxed filters
+    bool   shadow_research_mode       = false;
+    // S-2026-07-23a LIVE SIZING ([sizing] in omega_config.ini, hot-reloaded ~2s;
+    // -1 = key absent -> code default stands). Applied with a loud
+    // [SIZING-LIVE] ... CONFIRMED line on every change.
+    double sizing_gold_lot        = -1.0;   // GoldDailyCbe parent (GLD shares / fut contracts)
+    double sizing_gold_mimic_lot  = -1.0;   // GoldDailyCbeMimic per leg
+    double sizing_stock_lot       = -1.0;   // StockDip/Turtle parents (shares)  // false: paper/live-like behavior; true: discovery mode with relaxed filters
     double ustec_pilot_size           = 0.35;   // reduced NQ pilot size vs default 1.0
     int    ustec_pilot_min_gap_sec    = 60;     // more opportunities than default 90s shadow NQ gap
     bool   ustec_pilot_require_session = true;  // keep USTEC pilot out of session-closed tape

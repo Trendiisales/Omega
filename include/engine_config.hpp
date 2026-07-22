@@ -292,6 +292,9 @@ static void load_config(const std::string& path) {
         // broker). IBKR | BLACKBULL_FIX. Default is IBKR (omega_types.hpp). Env override
         // (engine_init.hpp:5126) still wins over the ini if both are set.
         if (section == "mode"     && k=="execution_broker") g_cfg.execution_broker = v;
+        if (section == "sizing"   && k=="gold_lot")        g_cfg.sizing_gold_lot       = atof(v.c_str());
+        if (section == "sizing"   && k=="gold_mimic_lot")  g_cfg.sizing_gold_mimic_lot = atof(v.c_str());
+        if (section == "sizing"   && k=="stock_lot")       g_cfg.sizing_stock_lot      = atof(v.c_str());
         if (section == "breakout") {
             if (k=="vol_thresh_pct")        g_cfg.vol_thresh_pct        = safe_stod(v, k);
             if (k=="tp_pct")                g_cfg.tp_pct                = safe_stod(v, k);

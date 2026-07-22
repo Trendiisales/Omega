@@ -5464,6 +5464,27 @@ static void init_engines(const std::string& cfg_path)
         apply_generic_nzdusd_config(g_eng_nzdusd);
         apply_generic_usdjpy_config(g_eng_usdjpy);
         apply_generic_brent_config(g_eng_brent);
+        // S-2026-07-23a LIVE SIZING (operator: change lot sizes live + confirm —
+        // the old dynamic-sizing workflow restored). Edit [sizing] in
+        // omega_config.ini on the VPS; takes effect <=2s on NEW entries; every
+        // change prints a CONFIRMED line. Open positions keep their lot.
+        if (g_cfg.sizing_gold_lot > 0 && g_cfg.sizing_gold_lot != g_gold_daily_cbe.cfg.lot_oz) {
+            printf("[SIZING-LIVE] gold_lot %.2f -> %.2f CONFIRMED (new entries)\n",
+                   g_gold_daily_cbe.cfg.lot_oz, g_cfg.sizing_gold_lot);
+            g_gold_daily_cbe.cfg.lot_oz = g_cfg.sizing_gold_lot;
+        }
+        if (g_cfg.sizing_gold_mimic_lot > 0 && g_cfg.sizing_gold_mimic_lot != omega::gold_daily_cbe_mimic().cfg.lot_oz) {
+            printf("[SIZING-LIVE] gold_mimic_lot %.2f -> %.2f CONFIRMED (new legs)\n",
+                   omega::gold_daily_cbe_mimic().cfg.lot_oz, g_cfg.sizing_gold_mimic_lot);
+            omega::gold_daily_cbe_mimic().cfg.lot_oz = g_cfg.sizing_gold_mimic_lot;
+        }
+        static double s_last_stock_lot = -1.0;
+        if (g_cfg.sizing_stock_lot > 0 && g_cfg.sizing_stock_lot != s_last_stock_lot) {
+            omega::stock_dipturtle_book().set_lot_all(g_cfg.sizing_stock_lot);
+            printf("[SIZING-LIVE] stock_lot -> %.2f CONFIRMED (all 47 names, new entries)\n",
+                   g_cfg.sizing_stock_lot);
+            s_last_stock_lot = g_cfg.sizing_stock_lot;
+        }
         printf("[HOT-RELOAD] All engine configs refreshed\n");
         fflush(stdout);
     });

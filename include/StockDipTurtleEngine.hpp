@@ -146,6 +146,8 @@ public:
         return true;
     }
 
+    void set_lot(double l) noexcept { if (l > 0) cfg_.lot = l; }
+
     int resend_unfilled() noexcept {
         if (!pos_.active || pos_.token.empty() || !open_fn_) return 0;
         const std::string old = pos_.token;
@@ -637,6 +639,8 @@ public:
 
     // S-2026-07-22i broker-reconcile one-shot (see StockDipTurtleSym::resend_unfilled).
     int resend_unfilled_all() { std::lock_guard<std::mutex> lk(mu_); int n = 0; for (auto& s : syms_) n += s.resend_unfilled(); return n; }
+    // S-23a live sizing: applies to NEW entries only (open positions keep their lot).
+    void set_lot_all(double l) { std::lock_guard<std::mutex> lk(mu_); for (auto& s : syms_) s.set_lot(l); }
 
     // S-2026-07-23a: all active positions for the GUI registry.
     std::vector<omega::PositionSnapshot> collect_positions() {
