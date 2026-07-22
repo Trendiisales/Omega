@@ -159,6 +159,27 @@ public:
         open_fn_ = std::move(o); close_fn_ = std::move(c); gate_fn_ = std::move(g); ledger_fn_ = std::move(l);
     }
 
+    // S-2026-07-22i broker-reconcile: re-issue entry orders for OPEN legs holding a
+    // token for a KNOWN-dead order (07-22 reqGlobalCancel wiped queued PreSubmitted
+    // entries). Token-less open legs are shadow-era and stay book-only. One-shot,
+    // env-gated at the call site.
+    int resend_unfilled() noexcept {
+        if (!cfg_.live_book || !open_fn_) return 0;
+        int n = 0;
+        for (auto& L : legs_) {
+            if (!L.open || L.token.empty()) continue;
+            const std::string old = L.token;
+            L.token = open_fn_(cfg_.live_sym, L.dir > 0, cfg_.lot, L.entry);
+            std::printf("[MIMIC][RESEND] %s %s lot=%.2f old_tok=%s new_tok=%s\n",
+                        cfg_.trigger_tag.c_str(), cfg_.live_sym.c_str(), cfg_.lot, old.c_str(),
+                        L.token.empty() ? "(BLOCKED)" : L.token.c_str());
+            std::fflush(stdout);
+            if (!L.token.empty()) ++n;
+        }
+        if (n) save_open_();
+        return n;
+    }
+
     explicit GoldTrendMimicBook(Config c) : cfg_(std::move(c)) {
         const std::string s = lower_(cfg_.trigger_tag);
         if (cfg_.state_path.empty())  cfg_.state_path  = "goldmimic_" + s + "_state.txt";
@@ -689,6 +710,14 @@ public:
         std::lock_guard<std::mutex> lk(mu_);
         int n = 0;
         for (auto& b : books_) n += b.kill_all(px_of ? px_of(b.live_sym()) : 0.0, now_sec);
+        return n;
+    }
+
+    // S-2026-07-22i broker-reconcile one-shot (see GoldTrendMimicBook::resend_unfilled).
+    int resend_unfilled_all() {
+        std::lock_guard<std::mutex> lk(mu_);
+        int n = 0;
+        for (auto& b : books_) n += b.resend_unfilled();
         return n;
     }
 

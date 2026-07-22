@@ -126,6 +126,23 @@ public:
         open_fn_ = std::move(o); close_fn_ = std::move(c); gate_fn_ = std::move(g); ledger_fn_ = std::move(l);
     }
 
+    // S-2026-07-22i broker-reconcile: re-issue the entry order for an active
+    // position whose token points at a KNOWN-dead order (07-22 reqGlobalCancel
+    // wiped the queued PreSubmitted entries). Empty-token positions are paper-era
+    // rides (they send no broker close either) and are left alone. Returns 1 if
+    // an order was re-sent.
+    int resend_unfilled() noexcept {
+        if (!pos_.active || pos_.token.empty() || !open_fn_) return 0;
+        const std::string old = pos_.token;
+        pos_.token = open_fn_(cfg_.live_sym, true, cfg_.lot, pos_.epx);
+        std::printf("[SDT][RESEND] %s %s lot=%.2f old_tok=%s new_tok=%s\n",
+                    engine_tag().c_str(), cfg_.live_sym.c_str(), cfg_.lot, old.c_str(),
+                    pos_.token.empty() ? "(BLOCKED)" : pos_.token.c_str());
+        std::fflush(stdout);
+        save_live_state_();
+        return pos_.token.empty() ? 0 : 1;
+    }
+
     explicit StockDipTurtleSym(Config c) : cfg_(std::move(c)) {
         const std::string key = std::string(cfg_.family == TURTLE ? "turtle_" : "dip_") + lower_(cfg_.sym);
         if (cfg_.deploy_path.empty()) cfg_.deploy_path = "stockdipturtle_" + key + "_deploy_ts.txt";
@@ -602,6 +619,9 @@ public:
 
     size_t seed_dumps_all() { size_t n = 0; for (auto& s : syms_) n += s.seed_dump(); return n; }
     void   finalize_all() { for (auto& s : syms_) s.finalize_seed(); recompute_and_write(); }
+
+    // S-2026-07-22i broker-reconcile one-shot (see StockDipTurtleSym::resend_unfilled).
+    int resend_unfilled_all() { std::lock_guard<std::mutex> lk(mu_); int n = 0; for (auto& s : syms_) n += s.resend_unfilled(); return n; }
 
     // LIVE: one closed daily bar for `sym` (both families). Poller uses the row variant.
     void on_daily_bar(const std::string& sym, int64_t ts_sec, double close) {

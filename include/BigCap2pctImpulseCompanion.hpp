@@ -142,6 +142,33 @@ public:
         open_fn_ = std::move(o); close_fn_ = std::move(c); gate_fn_ = std::move(g); ledger_fn_ = std::move(l);
     }
 
+    // S-2026-07-22i broker-reconcile: re-issue entry orders for the parent ride and
+    // any open mimic legs holding tokens for KNOWN-dead orders (07-22 reqGlobalCancel).
+    // Token-less positions are shadow-era book rides and stay book-only.
+    int resend_unfilled() noexcept {
+        if (!open_fn_) return 0;
+        int n = 0;
+        if (in_pos_ && !tok_.empty()) {
+            const std::string old = tok_;
+            tok_ = open_fn_(cfg_.live_sym, true, cfg_.lot, entry_px_);
+            std::printf("[BC2PCT][RESEND] %s parent old_tok=%s new_tok=%s\n", cfg_.sym.c_str(),
+                        old.c_str(), tok_.empty() ? "(BLOCKED)" : tok_.c_str());
+            std::fflush(stdout);
+            if (!tok_.empty()) ++n;
+        }
+        for (auto& L : mlegs_) {
+            if (L.dead || L.pending || L.tok.empty()) continue;
+            const std::string old = L.tok;
+            L.tok = open_fn_(cfg_.live_sym, true, cfg_.lot, L.le);
+            std::printf("[BC2PCT][RESEND] %s mimic old_tok=%s new_tok=%s\n", cfg_.sym.c_str(),
+                        old.c_str(), L.tok.empty() ? "(BLOCKED)" : L.tok.c_str());
+            std::fflush(stdout);
+            if (!L.tok.empty()) ++n;
+        }
+        if (n) save_live_state_();
+        return n;
+    }
+
     explicit BigCapImpulseSym(Config c) : cfg_(std::move(c)) {
         const std::string s = lower_(cfg_.sym);
         if (cfg_.deploy_path.empty()) cfg_.deploy_path = "bigcap2pct_companion_" + s + "_deploy_ts.txt";
@@ -835,6 +862,8 @@ public:
 
     size_t seed_dumps_all() { size_t n = 0; for (auto& s : syms_) n += s.seed_dump(); return n; }
     void   finalize_all() { for (auto& s : syms_) s.finalize_seed(); recompute_and_write(); }
+    // S-2026-07-22i broker-reconcile one-shot (see BigCapImpulseSym::resend_unfilled).
+    int resend_unfilled_all() { int n = 0; for (auto& s : syms_) n += s.resend_unfilled(); return n; }
 
     void on_daily_bar(const std::string& sym, int64_t ts_sec, double close) {
         std::lock_guard<std::mutex> lk(mu_);

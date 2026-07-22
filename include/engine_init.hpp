@@ -7074,6 +7074,26 @@ static void init_engines(const std::string& cfg_path)
                 // next service restart fires another round-trip. cost_ok() gate
                 // intentionally not applied: this is a plumbing proof, not an edge
                 // trade; the ~1-tick spread + 2x commission is the accepted cost.
+                // ── [EXEC-RESEND] one-shot broker-reconcile (S-2026-07-22i) ─────────
+                // OMEGA_EXEC_RESEND_UNFILLED=1: re-issue entry orders for every book
+                // position/leg holding a token for a KNOWN-dead order. Needed after
+                // the 07-22 reqGlobalCancel wiped 19 queued PreSubmitted stock
+                // entries (certified StockDip/Turtle + mimic cells, 1-share live)
+                // while their books stayed marked in-position — without the resend a
+                // later clip close would SELL with no long behind it. One-shot per
+                // boot; REMOVE the env var right after the [EXEC-RESEND] done line.
+                if (std::getenv("OMEGA_EXEC_RESEND_UNFILLED")) {
+                    std::thread([] {
+                        std::this_thread::sleep_for(std::chrono::seconds(45)); // connect+qualify settle
+                        int n = 0;
+                        n += omega::stock_dipturtle_book().resend_unfilled_all();
+                        n += omega::stockdip_trend_mimic().resend_unfilled_all();
+                        n += omega::bigcap_impulse_book().resend_unfilled_all();
+                        std::printf("[EXEC-RESEND] done: %d entry order(s) re-sent\n", n);
+                        std::fflush(stdout);
+                    }).detach();
+                }
+
                 // ── [EXEC-CANCEL-ALL] one-shot orphan-order cleanup (S-2026-07-22i) ──
                 // OMEGA_EXEC_CANCEL_ALL=1: inventory every open order on the account
                 // ([IBKR-EXEC] OPEN-ORDER lines), reqGlobalCancel, re-inventory to
