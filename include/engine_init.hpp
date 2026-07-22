@@ -7061,6 +7061,45 @@ static void init_engines(const std::string& cfg_path)
                 // after boot) and reconnect on a mid-session drop, without a full
                 // Omega restart. Runs whether the boot connect above succeeded or not.
                 omega::ibkr_exec::start_watchdog();
+
+                // ── [EXEC-SMOKE] one-shot live round-trip (S-2026-07-22i, operator order) ──
+                // OMEGA_EXEC_SMOKE=<omega_sym> fires ONE real BUY then SELL (1 lot -> 1
+                // contract after the FUT integer floor) through the EXACT engine path
+                // (send_live_order -> ibkr_exec::place_order) to prove the live order
+                // chain end-to-end: gateway accept -> execDetails -> LEDGER-FILL ->
+                // ibkr_fills.csv. This closes the 22e P0 done-definition (broker-side
+                // fill evidence), which no organic engine signal had produced yet.
+                // Runs once per boot ONLY while the env var is set -- REMOVE the env
+                // var from AppEnvironmentExtra immediately after the test, else the
+                // next service restart fires another round-trip. cost_ok() gate
+                // intentionally not applied: this is a plumbing proof, not an edge
+                // trade; the ~1-tick spread + 2x commission is the accepted cost.
+                if (const char* smoke_sym = std::getenv("OMEGA_EXEC_SMOKE")) {
+                    std::thread([sym = std::string(smoke_sym)] {
+                        std::printf("[EXEC-SMOKE] armed sym=%s -- waiting for qualified contract\n", sym.c_str());
+                        std::fflush(stdout);
+                        for (int i = 0; i < 150 && !omega::ibkr_exec::is_resolved(sym); ++i)
+                            std::this_thread::sleep_for(std::chrono::seconds(2));
+                        if (!omega::ibkr_exec::is_resolved(sym)) {
+                            std::printf("[EXEC-SMOKE] ABORT -- %s never qualified (5min)\n", sym.c_str());
+                            std::fflush(stdout);
+                            return;
+                        }
+                        std::this_thread::sleep_for(std::chrono::seconds(10));
+                        const std::string oid = send_live_order(sym, true, 1.0, 0.0);
+                        std::printf("[EXEC-SMOKE] BUY sent clOrdId=%s\n",
+                                    oid.empty() ? "(EMPTY -- BLOCKED upstream)" : oid.c_str());
+                        std::fflush(stdout);
+                        if (oid.empty()) return;
+                        std::this_thread::sleep_for(std::chrono::seconds(60));
+                        const std::string cid = send_live_order(sym, false, 1.0, 0.0);
+                        std::printf("[EXEC-SMOKE] SELL sent clOrdId=%s -- verify BOTH fills in "
+                                    "logs\\trades\\ibkr_fills.csv + TWS statement. If SELL blocked, "
+                                    "position is LONG 1 contract -- flatten manually.\n",
+                                    cid.empty() ? "(EMPTY -- BLOCKED upstream)" : cid.c_str());
+                        std::fflush(stdout);
+                    }).detach();
+                }
             } else {
                 std::cout << "[IBKR-EXEC] execution_broker=BLACKBULL_FIX (IBKR path idle)\n";
             }
