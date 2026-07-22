@@ -1068,7 +1068,9 @@ function pollRdagent(){
         pnlCell='<span style="color:'+pcol+'">'+(pp>=0?'+':'')+'$'+fmt2(pp,0)+'</span>'
                +' <span class="d" style="font-size:9px">'+esc(p.shares)+'sh@'+fmt2(safe(p.avg_cost),2)+'</span>';
       }
-      var sty=buy?' style="background:rgba(40,160,90,0.12)"':(dim?' style="opacity:0.45"':'');
+      /* S-2026-07-22k operator: BUY/held rows were near-invisible on the dark theme --
+         stronger fill + bright left edge + bold so the traded rows pop off the ranking context. */
+      var sty=buy?' style="background:rgba(46,189,133,0.30);border-left:3px solid var(--grn);font-weight:600"':(dim?' style="opacity:0.45"':'');
       return '<tr'+sty+'><td class="num">'+esc(b.rank)+'</td><td class="l">'+esc(b.instrument||'')+
         '</td><td>'+act+'</td><td class="num">'+fmt2(safe(b.price),2)+'</td><td class="num">'+esc(b.percentile)+
         '</td><td class="num" style="color:'+col5+'">'+(c5>=0?'+':'')+fmt2(c5,1)+'%</td><td class="num" style="color:'+col20+'">'+(c20>=0?'+':'')+fmt2(c20,1)+'%</td><td class="num">'+pnlCell+'</td></tr>';
