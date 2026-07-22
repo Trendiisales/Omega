@@ -87,6 +87,19 @@ int main(int argc,char**argv){
     const int   STRUCT   = atoi(getenv("STRUCT")?getenv("STRUCT"):"0");
     const double COSTM   = atof(getenv("COST_MULT")?getenv("COST_MULT"):"1.0");
     const int   CONFIRM  = atoi(getenv("CONFIRM")?getenv("CONFIRM"):"1");
+    // ── MIMIC x2 companion (S-22i follow-up): SEPARATE INDEPENDENT book, judged
+    // STANDALONE (never vs parent ride). BE-floor foundation: legs spawn PENDING
+    // at parent entry, OPEN only when close >= trig*(1+MCONF) (BE-ENTRY, anchored
+    // le = that close), pre-arm drawdown-cancel at MLC, post-arm BE-floor + gb
+    // trail, reclip=0, flush at parent exit. Honest fills at M1 close (real tail
+    // on gap-through, no clamp). Cost = same spot side_cost, debited per clip.
+    const int    MIMIC  = atoi(getenv("MIMIC")?getenv("MIMIC"):"0");
+    const double MCONF  = atof(getenv("MCONF")?getenv("MCONF"):"0.2")/100.0;   // confirm above trig
+    const double T_ARM  = atof(getenv("T_ARM")?getenv("T_ARM"):"0.5")/100.0;
+    const double T_GB   = atof(getenv("T_GB")?getenv("T_GB"):"0.5");
+    const double W_ARM  = atof(getenv("W_ARM")?getenv("W_ARM"):"2.0")/100.0;
+    const double W_GB   = atof(getenv("W_GB")?getenv("W_GB"):"0.75");
+    const double MLC    = atof(getenv("MLC")?getenv("MLC"):"1.0")/100.0;       // pre-arm cancel
 
     // ---- load M1 tape (ts,o,h,l,c) ----
     { FILE* f=fopen(path,"r"); if(!f){ fprintf(stderr,"no tape %s\n",path); return 1; }
@@ -131,12 +144,42 @@ int main(int argc,char**argv){
     std::vector<Tr> trades; double bankR=0;
     auto book=[&](long ets,long xts,double netR){ struct tm g=*gmtime(&xts); trades.push_back({ets,xts,netR,g.tm_year+1900}); bankR+=netR; };
 
-    // cost model ($/oz legs; R-normalize at close)
-    // IBKR SPOT GOLD venue (operator 2026-07-22: "we are not using mgc"):
-    // commission 1.5bp/side (project-ibkr-cost-basis) + half of the MEASURED
-    // live spread (l2_ticks_XAUUSD 07-20/21, 824k ticks: median $0.30-0.36/oz
-    // -> $0.17/side) + $0.03/side slip. RT at $4131 ~ $1.64/oz (~16 pips).
+    // cost model ($/oz legs; R-normalize at close) — moved above the mimic
+    // lambdas that capture it. IBKR SPOT GOLD venue (operator: not MGC):
+    // 1.5bp/side comm + half measured spread $0.17 + $0.03 slip.
     auto side_cost=[&](double px){ return COSTM*(px*0.00015 + 0.17 + 0.03); };
+
+    // mimic legs + standalone mimic book (net fraction of leg notional per clip)
+    struct MLeg { bool pending=true, open=false, dead=false; double arm, gb, trig, le=0, mfe=0; long ets=0; };
+    std::vector<MLeg> mlegs;
+    struct MTr { long xts; double net; };
+    std::vector<MTr> mtr;
+    auto mbook=[&](MLeg& L, double fill, long ts, const char*){
+        const double rt_pct = (side_cost(L.le)+side_cost(fill)) / L.le;
+        mtr.push_back({ts, (fill/L.le - 1.0) - rt_pct});
+        L.dead=true; L.open=false;
+    };
+    auto step_mimics=[&](double c, long ts){
+        for(auto& L : mlegs){
+            if(L.dead) continue;
+            if(L.pending){
+                if(c >= L.trig*(1.0+MCONF)){ L.pending=false; L.open=true; L.le=c; L.mfe=0; L.ets=ts; }
+                continue;
+            }
+            const double fav=(c-L.le)/L.le;
+            if(fav>L.mfe) L.mfe=fav;
+            const bool armed = L.mfe>=L.arm;
+            if(!armed && fav<=-MLC){ mbook(L,c,ts,"MIM_LC"); continue; }         // pre-arm cancel (honest tail)
+            if(armed && fav<=0.0)  { mbook(L,c,ts,"BE_FLOOR"); continue; }        // floored (fill=close, honest)
+            if(armed && fav<=L.mfe*(1.0-L.gb)) mbook(L,c,ts,"MIM_GB");
+        }
+    };
+    auto flush_mimics=[&](double mark, long ts){
+        for(auto& L : mlegs) if(!L.dead && L.open) mbook(L,mark,ts,"FLUSH");
+        mlegs.clear();
+    };
+
+    // (side_cost defined above, before the mimic lambdas)
 
     for(size_t i=0;i<tape.size();++i){
         const M1& b=tape[i];
@@ -211,6 +254,7 @@ int main(int argc,char**argv){
                 double netoz=(pos.is_long?px-pos.entry:pos.entry-px)-side_cost(pos.entry)-side_cost(px);
                 book(pos.entry_ts,b.ts,pos.size*netoz/R);
                 pos.open=false; trail_on=false;
+                if(MIMIC) flush_mimics(px,b.ts);
             }
             // time exit at NY close (17:00 ET == tape session close)
             else if(TIMEEXIT){
@@ -220,9 +264,11 @@ int main(int argc,char**argv){
                     double netoz=(pos.is_long?px-pos.entry:pos.entry-px)-side_cost(pos.entry)-side_cost(px);
                     book(pos.entry_ts,b.ts,pos.size*netoz/R);
                     pos.open=false; trail_on=false;
+                    if(MIMIC) flush_mimics(px,b.ts);
                 }
             }
         }
+        if(MIMIC && !mlegs.empty()) step_mimics(b.c, b.ts);
 
         // ================= entry state machine =================
         if(!pos.open && !traded_today && asian_done && g.tm_hour>=8 && ema_valid && atr_valid){
@@ -248,6 +294,9 @@ int main(int argc,char**argv){
                     double R=entry-sl; if(R<=0) continue;
                     pos={true,true,entry,sl,R,1.0,b.c,false,false,b.ts,atr_prev};
                     trail_on=false; trail_lvl=0; traded_today=true;
+                    if(MIMIC){ mlegs.clear();
+                        mlegs.push_back({true,false,false,T_ARM,T_GB,entry});
+                        mlegs.push_back({true,false,false,W_ARM,W_GB,entry}); }
                 }
             } else {
                 if(prev_day_close>=ema_prev) continue;
@@ -268,7 +317,8 @@ int main(int argc,char**argv){
     if(pos.open){ const M1&b=tape.back();
         double px=b.c, R=pos.r_dist;
         double netoz=(pos.is_long?px-pos.entry:pos.entry-px)-side_cost(pos.entry)-side_cost(px);
-        book(pos.entry_ts,b.ts,pos.size*netoz/R); pos.open=false; }
+        book(pos.entry_ts,b.ts,pos.size*netoz/R); pos.open=false;
+        if(MIMIC) flush_mimics(px,b.ts); }
 
     // ---- report ----
     auto agg=[&](long t0,long t1,const char*tag){
@@ -289,5 +339,23 @@ int main(int argc,char**argv){
     // WF halves by trade count midpoint of the tape span
     agg(1640995200L,1712000000L,"WF-H1(22-24.3)");
     agg(1712000000L,4102444800L,"WF-H2(24.3-26)");
+    if(MIMIC){
+        auto magg=[&](long t0,long t1,const char*tag){
+            double net=0,gw=0,gl=0,peak=0,dd=0,run=0; int n=0,w=0;
+            for(auto&t:mtr){ if(t.xts<t0||t.xts>=t1) continue; n++; net+=t.net;
+                if(t.net>0){w++;gw+=t.net;} else gl-=t.net;
+                run+=t.net; if(run>peak)peak=run; if(peak-run>dd)dd=peak-run; }
+            printf("  [MIMIC]%-11s n=%4d net%%=%+8.2f PF=%5.2f WR=%3.0f%% maxDD=%6.2f%%\n",
+                   tag,n,net*100.0,gl>0?gw/gl:(gw>0?99.0:0.0),n?100.0*w/n:0.0,dd*100.0);
+        };
+        printf("[MIMIC x2 STANDALONE] conf=%.2f%% T(arm %.2f/gb %.2f) W(arm %.2f/gb %.2f) lc=%.2f%%\n",
+               MCONF*100,T_ARM*100,T_GB,W_ARM*100,W_GB,MLC*100);
+        magg(0,4102444800L,"ALL");
+        magg(1640995200L,1672531200L,"2022bear");
+        magg(1672531200L,1704067200L,"2023chop");
+        magg(1704067200L,4102444800L,"24-26bull");
+        magg(1640995200L,1712000000L,"WF-H1");
+        magg(1712000000L,4102444800L,"WF-H2");
+    }
     return 0;
 }

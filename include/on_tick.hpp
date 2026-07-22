@@ -72,9 +72,10 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             const int n_sl  = omega::stockmover_ladder_book().kill_all(now);
             const int n_bi  = omega::bigcap_impulse_book().kill_all(now);
             const int n_gd  = g_gold_daily_cbe.kill_all(px_of("XAUUSD"), now);   // S-22i GoldDailyCbe
+            const int n_gdm = omega::gold_daily_cbe_mimic().kill_all(px_of("XAUUSD"), now); // S-22i mimic x2
             printf("[KILL-ALL] book families flattened: gm=%d sdm=%d sdt=%d fl=%d il=%d "
-                   "sl=%d bi=%d gd=%d (booked closes + disarmed pendings)\n",
-                   n_gm, n_sdm, n_sdt, n_fl, n_il, n_sl, n_bi, n_gd);
+                   "sl=%d bi=%d gd=%d gdm=%d (booked closes + disarmed pendings)\n",
+                   n_gm, n_sdm, n_sdt, n_fl, n_il, n_sl, n_bi, n_gd, n_gdm);
         }
         printf("[KILL-ALL] manual panic flatten on trading thread -- %d position(s) "
                "flattened (opposing MKT) + engine slots cleared\n", n_flat);

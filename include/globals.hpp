@@ -770,6 +770,7 @@ static omega::GoldBothWaysShortTfEngine g_gold_don_10m;     // DON 10m 30/35 sto
 // 2x-cost+, plateau (backtest/GOLD_DAILY_CBE_FINDINGS_2026-07-22.md). Spot venue
 // XAUUSD.S (CMDTY), NOT MGC. Config in engine_init.hpp; ticks from on_tick_gold.
 #include "GoldDailyCbeEngine.hpp"
+#include "GoldDailyCbeMimic.hpp"   // S-22i x2 companion (singleton accessor omega::gold_daily_cbe_mimic())
 static omega::GoldDailyCbeEngine g_gold_daily_cbe;
 
 // S-2026-07-08c: MgcSlowDonchian30m -- gold deep-dive candidate #1 (Study 7,

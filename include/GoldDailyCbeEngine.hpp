@@ -117,6 +117,13 @@ public:
 
     bool position_open() const { return pos_.active; }
 
+    // ── companion event broadcast (S-22i mimic x2) ──────────────────────────
+    // Fire-and-forget hooks; the parent's decisions are NEVER affected by the
+    // companion (feedback-companion-independent-engine). Wired in engine_init.
+    std::function<void(double, int64_t)> on_open_hook;    // parent entry px, ts
+    std::function<void(double, int64_t)> on_m1_hook;      // M1 close, ts
+    std::function<void(double, int64_t)> on_close_hook;   // parent exit px, ts
+
     // ── Boot backfill (operator order 2026-07-22: "it goes live now, why wait
     // for asian") — reconstruct TODAY's Asian range + post-08:00 break/retrace
     // state from on-box intraday files instead of waiting to observe a full
@@ -212,6 +219,7 @@ public:
                        cfg.lot_oz * pos_.size_frac, pos_.entry_ts, now_sec, "MANUAL_KILL_ALL");
         pos_ = Pos{};
         save_state_();
+        if (on_close_hook) on_close_hook(fill, now_sec);
         return 1;
     }
 
@@ -325,6 +333,7 @@ private:
 
         manage_(h, l, ts_sec);
         maybe_enter_(h, l, c, ts_sec, gu.tm_hour);
+        if (on_m1_hook) on_m1_hook(c, ts_sec);
     }
 
     void trail_ratchet_(double day_close) {
@@ -368,6 +377,7 @@ private:
             std::fflush(stdout);
             pos_ = Pos{};
             save_state_();
+            if (on_close_hook) on_close_hook(px, ts_sec);
         }
     }
 
@@ -405,6 +415,7 @@ private:
                     c, sl, atr_prev_, rng, tok.empty() ? "(book-only)" : tok.c_str());
         std::fflush(stdout);
         save_state_();
+        if (on_open_hook) on_open_hook(c, ts_sec);
     }
 
     // ---- persistence ----

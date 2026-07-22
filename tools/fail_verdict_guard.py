@@ -64,6 +64,10 @@ KNOWN_NONGLOBAL_SHAPES = [
      "GoldDailyCbe local ref (auto& gd = g_gold_daily_cbe, engine_init S-22i block); "
      "resolves to global g_gold_daily_cbe -- CERTIFIED PASS engine "
      "(backtest/GOLD_DAILY_CBE_FINDINGS_2026-07-22.md), no FAIL verdict exists for it"),
+    (re.compile(r'^gdm\.cfg$'),
+     "GoldDailyCbeMimic local ref (auto& gdm = omega::gold_daily_cbe_mimic(), engine_init "
+     "S-22i block); x2 companion CERTIFIED PASS standalone (same findings doc, MIMIC=1 "
+     "grid), no FAIL verdict exists for it"),
 ]
 
 def find_brace_span(text, open_idx):

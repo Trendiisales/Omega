@@ -1947,6 +1947,48 @@ static void init_engines(const std::string& cfg_path)
                    "LIVE 1oz SPOT XAUUSD.S (certified all-3-regimes+ 2x-cost+ plateau, S-2026-07-22i), deploy-forward\n",
                    gdrows);
             fflush(stdout);
+
+            // ── GoldDailyCbe MIMIC x2 companion (operator "go", S-22i) ────────────
+            //   SEPARATE INDEPENDENT engine on the parent's events, judged STANDALONE
+            //   (never vs the parent ride). Certified standalone (gold_daily_cbe_bt
+            //   MIMIC=1, GOLD_DAILY_CBE_FINDINGS_2026-07-22.md): conf0.2/T0.5-gb0.5/
+            //   W2.0-gb0.75/lc1.0 -> PF 3.29 net +70%, all-3-regimes+, WF 2.22/4.09,
+            //   2x-cost 3.08, arm/gb neighbors robust; lc0.5 FRAGILE (PF 1.31,
+            //   bear-negative) -> lc stays 1.0. be_floor_on_open foundation.
+            {
+                auto& gdm = omega::gold_daily_cbe_mimic();
+                gdm.cfg.enabled   = true;
+                gdm.cfg.live_book = true;
+                gdm.cfg.lot_oz    = 1.0;
+                gdm.set_exec(
+                    /* open   */ [](const std::string& sym, bool is_long, double lots, double px) -> std::string {
+                        return send_live_order(sym, is_long, lots, px);
+                    },
+                    /* close  */ [](const std::string& sym, bool orig_is_long, double lots, double px, const std::string& token) {
+                        send_live_order(sym, !orig_is_long, lots, px, token);
+                    },
+                    /* gate   */ [](const std::string& sym, double tp_dist_pts, double lots) -> bool {
+                        return ExecutionCostGuard::is_viable(sym.c_str(), 0.34, tp_dist_pts, lots, 1.5);
+                    },
+                    /* ledger */ [](const std::string& engine, const std::string& sym, bool is_long,
+                                    double entry_px, double exit_px, double lots,
+                                    int64_t entry_ts, int64_t exit_ts, const char* reason) {
+                        omega::TradeRecord tr;
+                        tr.engine = engine; tr.symbol = sym; tr.side = is_long ? "LONG" : "SHORT";
+                        tr.entryPrice = entry_px; tr.exitPrice = exit_px; tr.size = lots;
+                        tr.entryTs = entry_ts; tr.exitTs = exit_ts; tr.exitReason = reason;
+                        tr.pnl = (is_long ? (exit_px - entry_px) : (entry_px - exit_px)) * lots;
+                        handle_closed_trade(tr);
+                    });
+                gdm.load_state();
+                gd.on_open_hook  = [](double px, int64_t ts) { omega::gold_daily_cbe_mimic().on_parent_open(px, ts); };
+                gd.on_m1_hook    = [](double c,  int64_t ts) { omega::gold_daily_cbe_mimic().on_m1_close(c, ts); };
+                gd.on_close_hook = [](double px, int64_t ts) { omega::gold_daily_cbe_mimic().on_parent_close(px, ts); };
+                printf("[OMEGA-INIT][SEED] GoldDailyCbeMimic x2 wired: T(arm0.5/gb0.5) + W(arm2.0/gb0.75), "
+                       "BE-ENTRY conf0.2%% anchored, lc1.0 pre-arm cancel, reclip=0, flush-at-parent-exit, "
+                       "LIVE 1oz/leg SPOT XAUUSD.S (certified standalone PF3.29 all-3-regimes+ 2x-cost+, S-2026-07-22i)\n");
+                fflush(stdout);
+            }
         }
         {
             // USTEC_4h_ZMR book REMOVED here S-2026-07-14 (intrabar FAIL, see verdict above).
