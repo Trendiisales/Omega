@@ -6374,8 +6374,11 @@ static void init_engines(const std::string& cfg_path)
         //   2022 cross-validation PENDING -> [STALE-NOTE FIXED S-2026-07-22c: went LIVE S-07-01] NAS100 instance first.
         g_idx_bear_short_nas.symbol      = "NAS100";
         g_idx_bear_short_nas.engine_name = "IndexBearShort";
-        g_idx_bear_short_nas.shadow_mode = false;     // S-2026-07-01: LIVE on IBKR 4002 paper (operator all-engines cutover overrides prove-on-shadow note)
-        g_idx_bear_short_nas.enabled     = true;   // SHIPPING DON24 all-weather (real engine): 2022 bear PF1.26 +1061 both-halves+, 2024-26 bull PF1.07 +514. [STALE-NOTE FIXED S-2026-07-22c: LIVE since S-07-01, "Shadow" removed]. Manifest IdxBearShortNas. Full history (DON48 vindication, the within-session disable/revert, the DON48->24 bull-bleed fix, all figures) on the DON line below + memory feedback-drive-real-engine-not-port.
+        g_idx_bear_short_nas.shadow_mode = false;
+        g_idx_bear_short_nas.enabled     = false;  // CULLED S-2026-07-22i (operator: "get rid of anything marginal"):
+                                                   // bear PF1.26 / bull PF1.07 = marginal both regimes under the
+                                                   // live-only bar. Was DON24 all-weather; full history on the DON
+                                                   // line below. Revival = fresh cert clearing PF>=1.3 both regimes.
         g_idx_bear_short_nas.COST_PTS    = 2.0;      // NAS100 RT pts
         g_idx_bear_short_nas.lot         = 1.0;
         g_idx_bear_short_nas.USE_RISKOFF_GATE = false;  // price-structure gate is the validated one; flip on once VIX/credit feed trusted
@@ -6405,9 +6408,9 @@ static void init_engines(const std::string& cfg_path)
             }
             return v;
         });
-        printf("[OMEGA-INIT] IndexBearShort NAS100: shadow=true enabled=%d sustained-bear-gate "
+        printf("[OMEGA-INIT] IndexBearShort NAS100: shadow=%d enabled=%d sustained-bear-gate "
                "Donchian24-breakdown FIXED-2R-TP SHORT-only (bad-day engine)\n",
-               (int)g_idx_bear_short_nas.enabled);
+               (int)g_idx_bear_short_nas.shadow_mode, (int)g_idx_bear_short_nas.enabled);   // S-22i: print the REAL flag (literal "shadow=true" lied)
 
         // ── IndexBearShort (US500 instance — same class) ──────────────────────
         // 2026-06-22 ADDED + WIRED. The prior 2026-06-12 instance was removed (only a
