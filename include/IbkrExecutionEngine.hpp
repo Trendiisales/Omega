@@ -132,11 +132,18 @@ struct IbkrExecutionEngine : public DefaultEWrapper {
         // Micro gold (10oz) for the small-notional mimic books (S-2026-07-14 operator
         // sizing: 1 MGC). Distinct omega sym kept for per-book routing/attribution.
         add("XAUUSD.M",{"MGC",    "FUT",  "COMEX",    "USD", 1.0});
-        add("US500.F", {"MES",    "FUT",  "CME",      "USD", 1.0});
+        // ── INDEX = IBKR CFDs (S-2026-07-22j, operator: "you can trade these on
+        // mini/CFD" — micro-futures margin walls the account: MNQ NZ$11k, MES
+        // NZ$5.8k vs CFD ~5% notional: IBUST100 ~US$1.5k, IBUS500 ~$380,
+        // IBUS30 ~$2.6k). Fractional qty OK (no FUT floor). NOTE: CFDs carry
+        // overnight financing (~bench+1.5%/yr on notional) — multi-day holds
+        // pay it; certs re-checked at that cost before size-up. USTEC.F kept
+        // on MNQ futures for anything explicitly futures-routed.
+        add("US500.F", {"IBUS500", "CFD",  "SMART",    "USD", 1.0});
         add("USTEC.F", {"MNQ",    "FUT",  "CME",      "USD", 1.0});
-        add("NAS100",  {"MNQ",    "FUT",  "CME",      "USD", 1.0});
-        add("DJ30.F",  {"MYM",    "FUT",  "CBOT",     "USD", 1.0});
-        add("GER40",   {"DAX",    "FUT",  "EUREX",    "EUR", 1.0});
+        add("NAS100",  {"IBUST100","CFD",  "SMART",    "USD", 1.0});
+        add("DJ30.F",  {"IBUS30", "CFD",  "SMART",    "USD", 1.0});
+        add("GER40",   {"IBDE40", "CFD",  "SMART",    "EUR", 1.0});
         add("ESTX50",  {"ESTX50", "FUT",  "EUREX",    "EUR", 1.0});
         add("UK100",   {"Z",      "FUT",  "ICEEU",    "GBP", 1.0});
         // FX spot (IDEALPRO): base/quote split handled in base_contract().
