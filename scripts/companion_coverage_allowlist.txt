@@ -28,15 +28,24 @@
 #     the gate was introduced; burn down opportunistically) ---
 # AudusdSydneyOpen / EurusdLondonOpen / NzdusdAsianOpen / UsdjpyAsianOpen: REMOVED
 #   S-2026-07-21c Phase 3 purge -- dead FX-open engines deleted (never dispatched).
-GbpusdLondonOpen    MAIN-DEFAULTS-COVER, certification owed (session open engine, fixed TP/SL own manage)
-EMACrossGold        MAIN-DEFAULTS-COVER, certification owed
-GoldOrbRetrace      MAIN-DEFAULTS-COVER, certification owed (intraday ORB, fixed TP own manage)
-GoldOrbRetraceLDN   MAIN-DEFAULTS-COVER, certification owed (intraday ORB, fixed TP own manage)
-H1SwingGold         MAIN-DEFAULTS-COVER, certification owed
-MicroScalperGold    MAIN-DEFAULTS-COVER, certification owed (scalper, seconds-to-minutes holds)
-MidScalperGold      MAIN-DEFAULTS-COVER, certification owed (scalper, minutes holds)
+#
+# INERT category (S-2026-07-22d): tag belongs to an engine that CANNOT open a
+# live position (tombstoned / enabled=false / shadow-pinned and force-disabled
+# at boot by [LIVE-ONLY-GATE]). Zero giveback exposure -> zero certification
+# debt. The audit counts these silently and MUST NOT print their names
+# (operator hands-off rule: tombstoned/dead engines are never surfaced).
+# RE-ENABLING any of these engines REQUIRES removing its INERT prefix here so
+# the coverage debt resurfaces -- the audit warns on a stale INERT entry only
+# if you delete the line entirely while the tag still exists.
+GbpusdLondonOpen    INERT (shadow-pinned -> [LIVE-ONLY-GATE] force-disabled; was: MAIN-DEFAULTS-COVER cert owed)
+EMACrossGold        INERT (enabled=false hard cull S-2026-07-22c; was: MAIN-DEFAULTS-COVER cert owed)
+GoldOrbRetrace      INERT (tombstoned, enabled=false; was: MAIN-DEFAULTS-COVER cert owed)
+GoldOrbRetraceLDN   INERT (tombstoned, enabled=false; was: MAIN-DEFAULTS-COVER cert owed)
+H1SwingGold         INERT (enabled=false dormant; was: MAIN-DEFAULTS-COVER cert owed)
+MicroScalperGold    INERT (shadow-pinned S37-Z -> [LIVE-ONLY-GATE] force-disabled; was: MAIN-DEFAULTS-COVER cert owed)
+MidScalperGold      INERT (shadow-pinned -> [LIVE-ONLY-GATE] force-disabled; was: MAIN-DEFAULTS-COVER cert owed)
 # XauThreeBar30m: REMOVED from allowlist S-2026-07-17u -- dedicated CERTIFIED floored
 #   book xau_threebar30m_clip wired (confirm5/trail3/retrig5, gap-reclip, +$536 PF136,
 #   backtest/XAU_THREEBAR30M_FLOORED_CLIP_FINDINGS_2026-07-17.md); main-book cover was
 #   certified DEAD on this parent (-$400.41 PF0.63, arm never latched in 4.3yr).
-XauusdFvg           MAIN-DEFAULTS-COVER, certification owed
+XauusdFvg           INERT (shadow-pinned -> [LIVE-ONLY-GATE] force-disabled; PF0.50 fail-class; was: MAIN-DEFAULTS-COVER cert owed)

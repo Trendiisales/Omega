@@ -54,7 +54,7 @@ allow_reason() {   # $1 = tag -> reason text or ""
     awk -v t="$1" '!/^[[:space:]]*(#|$)/ { if ($1 == t) { $1=""; sub(/^[[:space:]]*/,""); print; exit } }' "$ALLOW"
 }
 
-fails=0; owed=0; covered=0
+fails=0; owed=0; covered=0; inert=0
 for tag in $TAGS; do
     hit=""
     while IFS= read -r tok; do
@@ -68,6 +68,14 @@ for tag in $TAGS; do
     fi
     reason=$(allow_reason "$tag")
     if [ -n "$reason" ]; then
+        case "$reason" in
+            INERT*)
+                # Engine cannot open live positions (tombstoned / enabled=false /
+                # LIVE-ONLY-GATE force-disabled). Counted silently -- dead engine
+                # names are NEVER printed (operator hands-off rule, S-2026-07-22d).
+                inert=$((inert+1))
+                continue;;
+        esac
         owed=$((owed+1))
         echo "[COMPANION-COVERAGE] OWED  $tag -- $reason"
     else
@@ -93,6 +101,6 @@ while IFS= read -r line; do
     fi
 done < "$ALLOW"
 
-echo "[COMPANION-COVERAGE] tags=$(echo "$TAGS" | wc -l | tr -d ' ') covered=$covered owed=$owed fail=$fails"
+echo "[COMPANION-COVERAGE] tags=$(echo "$TAGS" | wc -l | tr -d ' ') covered=$covered owed=$owed inert=$inert fail=$fails"
 [ "$fails" -eq 0 ] || exit 1
 exit 0
