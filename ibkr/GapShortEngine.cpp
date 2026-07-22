@@ -24,6 +24,7 @@
 #include <cmath>
 #include <fstream>
 #include <unordered_set>
+#include <filesystem>
 #include "RiskManager.hpp"
 
 struct Cfg {
@@ -144,7 +145,7 @@ int main(int argc,char**argv){
     for(int i=1;i<argc;i++){ if(!strcmp(argv[i],"--cover"))cover=true;
         else if(!strcmp(argv[i],"--no-locate"))noLocate=true;
         else if(!strcmp(argv[i],"--float")&&i+1<argc)fcache=argv[++i]; else port=atoi(argv[i]); }
-    system("mkdir -p data/gapshort 2>/dev/null");
+    { std::error_code ec; std::filesystem::create_directories("data/gapshort", ec); } // not system("mkdir -p") -- POSIX flags fail on Windows cmd, dir never created, ledger rows silently lost
     GapShortEngine e(cover);
     if(noLocate) e.setRequireLocate(false);
     if(fcache) e.loadFloatCache(fcache);

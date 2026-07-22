@@ -18,6 +18,7 @@
 #include <ctime>
 #include <cmath>
 #include <fstream>
+#include <filesystem>
 
 struct Cfg { double GAP_MIN=75,PX_LO=3,PX_HI=20,STOP=1.0; bool PAPER_ONLY=true; };
 static std::string iso_utc(){ time_t t=time(nullptr); struct tm* g=gmtime(&t); char b[24]; strftime(b,sizeof(b),"%Y-%m-%dT%H:%M:%SZ",g); return std::string(b); }
@@ -40,9 +41,13 @@ class GapShortDaily : public DefaultEWrapper {
     }
 public:
     GapShortDaily(){ cli_=std::make_unique<EClientSocket>(this,&sig_);
-        system("mkdir -p data/gapshort 2>/dev/null");
+        // std::filesystem, not system("mkdir -p ...") -- POSIX mkdir flags fail on
+        // Windows cmd, dir never created, ofstream append open fails => every ledger
+        // row silently lost (found 2026-07-23: first live session wrote nothing)
+        std::error_code ec; std::filesystem::create_directories("data/gapshort", ec);
         bool isnew = !std::ifstream("data/gapshort/daily_ledger.csv").good();
         led_.open("data/gapshort/daily_ledger.csv", std::ios::app);
+        if(!led_) printf("[DAILY][FATAL-LEDGER] data/gapshort/daily_ledger.csv open FAILED -- forward record lost, fix before trusting this session\n");
         if(isnew && led_) led_<<"ts_utc,event,symbol,side,gap_pct,price,stop,shares,notional,mode,note\n";
     }
     bool connect(const char*h,int p,int id){ if(!cli_->eConnect(h,p,id,false))return false; rd_=std::make_unique<EReader>(cli_.get(),&sig_); rd_->start(); return true; }

@@ -51,6 +51,7 @@
 #include <map>
 #include <deque>
 #include <memory>
+#include <filesystem>
 #include "RiskManager.hpp"
 
 struct Cfg {
@@ -229,7 +230,7 @@ int main(int argc,char**argv){
         else if(!strcmp(argv[i],"--gate")&&i+1<argc)gate=atof(argv[++i]);
         else if(!strcmp(argv[i],"--trail")&&i+1<argc)trail=atof(argv[++i]);
         else port=atoi(argv[i]); }
-    system("mkdir -p data/bigcapmomo 2>/dev/null");
+    { std::error_code ec; std::filesystem::create_directories("data/bigcapmomo", ec); } // not system("mkdir -p") -- POSIX flags fail on Windows cmd, dir never created, ledger rows silently lost
     BigCapMomoEngine e;
     e.set(gate,trail,live);
     if(!e.connect("127.0.0.1",port,86)){ printf("connect failed\n"); return 1; }
