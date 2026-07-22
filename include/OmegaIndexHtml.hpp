@@ -76,7 +76,7 @@ a{color:var(--blu);text-decoration:none}
 .flashg{animation:flashG 1.4s ease-out}
 #prtip{position:fixed;display:none;z-index:50;pointer-events:none;background:rgba(14,20,27,.96);border:1px solid var(--bd2);border-radius:5px;padding:6px 9px;font-size:11px;line-height:1.55;box-shadow:0 8px 24px rgba(0,0,0,.55)}
 #prc{cursor:crosshair}
-@media(max-width:1180px){.deskmain,.topgrid{grid-template-columns:1fr !important}}
+@media(max-width:1180px){.deskmain{grid-template-columns:1fr !important}}
 @media(max-width:980px){.g2,.g3,.deskmain{grid-template-columns:1fr !important}}
 </style>
 </head>
@@ -143,12 +143,18 @@ a{color:var(--blu);text-decoration:none}
      overflow wraps to row 2. No fixed split, nothing off-screen. -->
 <div id="ticker" style="display:flex;flex-wrap:wrap;border:1px solid var(--bd);border-radius:6px;margin-top:8px;background:var(--pan)"></div>
 
+<!-- ═══ WHOLE-DESK TWO-COLUMN LAYOUT (S-2026-07-22h, operator: "gaping space" screenshot) ═══
+     The old .topgrid row (chart | engine ledger) and the .compcols row below it were SEPARATE
+     grid rows: after S-22g moved HEAT+TRADES out, the right topgrid cell held only the short
+     ENGINE LEDGER while the row stretched to the chart's height — a chart-sized void. Fix is
+     structural, not spacer tuning: ONE .compcols flex holding two continuously-flowing .cstack
+     columns, so panels always pack upward and no cross-row barrier can strand empty space.
+     LEFT  = LIVE TRADES → PREDICTIVE RANGES → CRYPTO MIMIC → BIGCAP HI52 → ENGINE HEAT → LAST 15
+     RIGHT = ENGINE LEDGER → STOCK MOVERS → STOCK BASKET → INDEX LADDER → FX LADDER -->
+<div class="compcols" style="margin-top:8px">
+<div class="cstack">
+
 <!-- ═══ LIVE OPEN TRADES (always visible) ═══ -->
-<!-- S-2026-07-08c operator resize: the four top strips at HALF WIDTH, two columns:
-     [live trades + predictive ranges] | [engine ledger + engine heat]. Collapses to
-     one column under 1180px. -->
-<div class="topgrid" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:start;margin-top:8px">
-<div class="tcol" style="min-width:0">
 <div class="pan" id="ltpan">
   <div style="display:flex;align-items:baseline;gap:10px">
     <span class="lbl">LIVE OPEN TRADES</span>
@@ -163,14 +169,14 @@ a{color:var(--blu);text-decoration:none}
 
 <!-- ═══ PREDICTIVE RANGES ═══ -->
 <div class="pan" style="margin-top:0">
-  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+)OMEGAD0"
+R"OMEGAD1(  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
     <span class="lbl">PREDICTIVE RANGES</span>
     <span class="lbl" style="color:var(--t3)">stepped · non-repainting</span>
     <span id="prinfo" class="lbl num"></span>
     <span style="margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <span id="prlast" class="num" style="font-size:13px;color:var(--w)"></span>
-)OMEGAD0"
-R"OMEGAD1(      <span id="prtrend" class="chip" style="background:var(--pan2)"></span>
+      <span id="prtrend" class="chip" style="background:var(--pan2)"></span>
       <span id="prsyms" style="display:flex;gap:4px"></span>
       <span id="prtfs" style="display:flex;gap:4px"></span>
     </span>
@@ -188,35 +194,9 @@ R"OMEGAD1(      <span id="prtrend" class="chip" style="background:var(--pan2)"><
      deskmain now single-column: the price chart spans full width. ═══ -->
 
 </div><!-- /deskmain -->
-</div><!-- /tcol left -->
-<div class="tcol" style="min-width:0">
 
-<!-- ═══ ENGINE LEDGER (running totals). PROMOTION TRACKER removed 2026-07-06 (operator: useless). ═══ -->
-<div class="grid" style="grid-template-columns:1fr">
-  <div class="pan">
-    <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:5px">
-      <span class="lbl">ENGINE LEDGER — running total, ALL TIME (what makes / loses money)</span>
-      <span id="ledgern" class="lbl" style="margin-left:auto"></span>
-    </div>
-    <div style="max-height:200px;overflow-y:auto">
-      <table id="ledger"><tr><td class="l d">loading…</td></tr></table>
-    </div>
-  </div>
-</div>
-
-<!-- ENGINE HEAT + LAST 15 TRADES relocated S-2026-07-22g (operator screenshot ask): moved from
-     this topgrid right column into the left cstack, directly under BIGCAP HI52 — fills the big
-     left-column void under that panel. Single #heat / #alltrades instances, no duplicates. -->
-</div><!-- /tcol right -->
-</div><!-- /topgrid -->
-
-<!-- ═══ COMPANIONS ROW: crypto | gold side-by-side (was stacked → halves vertical space) ═══ -->
-<div class="compcols">
-
-<!-- LEFT column stack (S-2026-07-10 operator): CRYPTO + INDEX COMPANIONS + LAST 15 TRADES kept
-     together so the trade log fills the void under INDEX COMPANIONS instead of stranding at the
-     bottom. -->
-<div class="cstack">
+<!-- ENGINE LEDGER moved to the TOP of the RIGHT cstack (S-2026-07-22h) — the left column
+     continues directly below with CRYPTO MIMIC → BIGCAP HI52 → ENGINE HEAT → LAST 15 TRADES. -->
 
 <!-- ═══ CRYPTO MIMIC BOOKS — LIVE (real Binance holds only) ═══ S-2026-07-19i rebuild.
      The S-2026-07-19g panel (removed above-comment history) rendered window._cc, the
@@ -285,9 +265,23 @@ R"OMEGAD1(      <span id="prtrend" class="chip" style="background:var(--pan2)"><
 
 </div><!-- /left column cstack -->
 
-<!-- ═══ STOCK MOVERS — BIGCAP day-mover MIMIC LADDER books (no-floor · pre-trade, additive)
-     + stacked underneath (2026-07-08, operator): 4 retired BE-floor banners + DOM L2 ═══ -->
+<!-- ═══ RIGHT column cstack (S-2026-07-22h): ENGINE LEDGER + ladders/stock books stack ═══ -->
 <div class="cstack">
+
+<!-- ═══ ENGINE LEDGER (running totals) — moved here S-2026-07-22h from the old lone topgrid
+     right cell (its row-height mismatch vs the chart column was THE gaping-void bug).
+     PROMOTION TRACKER removed 2026-07-06 (operator: useless). ═══ -->
+<div class="pan">
+  <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:5px">
+    <span class="lbl">ENGINE LEDGER — running total, ALL TIME (what makes / loses money)</span>
+    <span id="ledgern" class="lbl" style="margin-left:auto"></span>
+  </div>
+  <div style="max-height:200px;overflow-y:auto">
+    <table id="ledger"><tr><td class="l d">loading…</td></tr></table>
+  </div>
+</div>
+
+<!-- ═══ STOCK MOVERS — BIGCAP day-mover MIMIC LADDER books (no-floor · pre-trade, additive) ═══ -->
 <div class="pan">
   <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px">
     <span class="lbl">STOCK MOVERS — BIGCAP mimic LADDER (no-floor) · +3% day → next-close entry · TIGHT a0.5/s2 + WIDE a8/g50 + ladder cap5 · LOSS_CUT 15 · BT +7,044% PF1.58 all-6 (native C++ · pre-trade · REAL fills · never vs-WIDE)</span>
@@ -342,7 +336,7 @@ R"OMEGAD1(      <span id="prtrend" class="chip" style="background:var(--pan2)"><
      out of the .compcols masonry so it stops reflowing/resizing. -->
 
 
-</div><!-- /companions row -->
+</div><!-- /compcols (whole-desk two-column layout, S-2026-07-22h) -->
 
 <!-- ═══ RETIRED COMPANIONS strip + OPS STRIP (DOM) removed 2026-07-08 (operator): the 4 retired
      BE-floor banners + DOM — XAUUSD L2 moved into the stock-movers cstack above. ═══ -->
@@ -382,9 +376,9 @@ function tweenNum(id,val,fmtFn){var e=el(id);if(!e)return;
  if(prev===val)return;
  _tw[id]=val;var st={v:prev};
  gsap.to(st,{v:val,duration:0.6,ease:'power2.out',overwrite:true,
+  onUpdate:function(){e.textContent=fmtFn(st.v);},
 )OMEGAD1"
-R"OMEGAD2(  onUpdate:function(){e.textContent=fmtFn(st.v);},
-  onComplete:function(){e.textContent=fmtFn(val);}});}
+R"OMEGAD2(  onComplete:function(){e.textContent=fmtFn(val);}});}
 function flashPan(id){var p=el(id);if(!p)return;p.classList.remove('flashg');void p.offsetWidth;p.classList.add('flashg');}
 
 /* ── clock ── */
@@ -553,9 +547,9 @@ function pollFires(){var now=Date.now();
   else if(bankWhy.length)almRing('companion clip banked: '+bankWhy.join(', '),'win',winBell);}
  /* S-18ak (operator: "there was no sound"): a fire that happens BEFORE page load was baselined
     SILENTLY — reload after a fire never rang. One-shot announce at load when books are already
+    TRADING, so opening the desk mid-trade is audible + logged. */
 )OMEGAD2"
-R"OMEGAD3(    TRADING, so opening the desk mid-trade is audible + logged. */
- else{var la=Object.keys(loadArmed);
+R"OMEGAD3( else{var la=Object.keys(loadArmed);
   if(la.length)almRing('TRADING at page load: '+la.map(function(s){return s+' ×'+loadArmed[s];}).join(', '),'open',entryBell);}
  window._compBase=false;}
 setInterval(pollFires,5000);
@@ -729,10 +723,10 @@ function drawProx(){var best=ccProx();var has={};
    r.style.width='0%';r.style.background='var(--t2)';return;}
   var dollar='<span style="font-weight:700;color:'+(mp>=0?'#39ff14':'var(--redB)')+'">$'+(mp>=0?'+':'&minus;')+fmt2(Math.abs(mp),2)+'</span>';
   if(b&&b.open){
-)OMEGAD3"
-R"OMEGAD4(   if(bx){bx.style.outline='1px solid var(--amb)';bx.style.outlineOffset='-1px';
+   if(bx){bx.style.outline='1px solid var(--amb)';bx.style.outlineOffset='-1px';
     bx.style.background='rgba(240,180,41,.08)';}
-   pe.innerHTML=dollar+' <span style="color:var(--t2)">WIN</span>';
+)OMEGAD3"
+R"OMEGAD4(   pe.innerHTML=dollar+' <span style="color:var(--t2)">WIN</span>';
    r.style.width='100%';r.style.background='var(--grn)';return;}
   /* real hold, no self-detect open/trading state (legacy pre-narrowing mark-to-market) */
   pe.innerHTML=dollar;
@@ -911,9 +905,9 @@ function render(J){lastJ=J;
     +'<td class="num d">'+lots(t.size)+'</td>'
     +'<td class="num">'+fmt2(t.entry)+'</td><td class="num d">'+fmt2(t.current)+'</td>'
     +'<td class="num '+(safe(t.unrealized_pnl)>=0?'g':'r')+'">'+fmt$(safe(t.unrealized_pnl))+'</td></tr>'+cr;}).join('');
+   el('lt').innerHTML='<tr><th class="l">sym</th><th class="l">engine</th><th>side</th><th>lots</th><th>entry</th><th>last</th><th>unreal</th></tr>'+rows2;
 )OMEGAD4"
-R"OMEGAD5(   el('lt').innerHTML='<tr><th class="l">sym</th><th class="l">engine</th><th>side</th><th>lots</th><th>entry</th><th>last</th><th>unreal</th></tr>'+rows2;
-   el('ltcount').textContent=REGPOS.length+' open · from registry (feed quiet — prices stale)';
+R"OMEGAD5(   el('ltcount').textContent=REGPOS.length+' open · from registry (feed quiet — prices stale)';
    el('ltpnl').innerHTML='';/* companion paper suffix removed S-2026-07-22e (dead stall book) */}
   else{el('lt').innerHTML='<tr><td class="l d">FLAT — no open positions</td></tr>';el('ltpnl').textContent='';el('ltcount').textContent='';}}
  else{el('ltcount').textContent=lts.length+' open';
@@ -1073,12 +1067,12 @@ function pollRdagent(){
     /* S-2026-07-15e (operator): the flat 23-row ranking read as "we trade ALL of these,
        including the red ones". Only action==='BUY' rows are ever bought (execute_basket
        filters on it); everything else is model-ranking CONTEXT. Partition: held/BUY rows
-)OMEGAD5"
-R"OMEGAD6(       on top, explicit NOT-TRADED divider, context rows dimmed below. */
+       on top, explicit NOT-TRADED divider, context rows dimmed below. */
     var mkRow=function(b,dim){
       var buy=b.action==='BUY';
       var act=buy?'<span class="g">BUY</span>':'<span class="d">—</span>';
-      var c5=safe(b.ret_5d)*100, c20=safe(b.ret_20d)*100;
+)OMEGAD5"
+R"OMEGAD6(      var c5=safe(b.ret_5d)*100, c20=safe(b.ret_20d)*100;
       var col5=c5>0?'var(--grn)':'var(--red)', col20=c20>0?'var(--grn)':'var(--red)';
       var p=posBy[b.instrument], pnlCell='<span class="d">—</span>';
       if(p&&p.shares){
@@ -1266,11 +1260,11 @@ function renderCompanionOpenTrades(pfx, open, trades, pxPrec){
    h+='<tr><td class="l">'+esc(o.flavor)+'</td><td class="l">'+esc(o.dir)+'</td><td class="l">'+esc(o.tier)+'</td>'
      +'<td class="num">'+fmt2(safe(o.entry),pxPrec)+'</td><td class="num">'+fmt2(safe(o.cur),pxPrec)+'</td>'
      +'<td class="num">'+fmt2(safe(o.wm),pxPrec)+'</td>'
-)OMEGAD6"
-R"OMEGAD7(     +'<td class="num" style="color:'+(u>0?'var(--grn)':(u<0?'var(--red)':'var(--t2)'))+'">'+fmtc$(u)+'</td></tr>';});
+     +'<td class="num" style="color:'+(u>0?'var(--grn)':(u<0?'var(--red)':'var(--t2)'))+'">'+fmtc$(u)+'</td></tr>';});
   ot.innerHTML=h; ow.style.display='';
  } else { ot.innerHTML=''; ow.style.display='none'; }
- var tw=el(pfx+'tradeswrap'), tt=el(pfx+'trades');
+)OMEGAD6"
+R"OMEGAD7( var tw=el(pfx+'tradeswrap'), tt=el(pfx+'trades');
  if(trades&&trades.length){
   var th='<tr><td class="l lbl">leg</td><td class="l lbl">dir</td><td class="lbl">tier</td><td class="lbl">entry</td>'
         +'<td class="lbl">exit</td><td class="lbl">$</td><td class="l lbl">reason</td><td class="l lbl">closed</td></tr>';
@@ -1439,12 +1433,12 @@ function parseShadow(txt){
  /* HEADER-DRIVEN parse of omega_shadow.csv. The 06-12 rewrite hardcoded a
     12-column layout that never matched the real 41-column file (col 0 is
     trade_id, not ts) -> parseInt('0') falsy -> EVERY row skipped -> all
-)OMEGAD7"
-R"OMEGAD8(    analytics showed "$0 / no pre-trade closes". Map columns by header name. */
+    analytics showed "$0 / no pre-trade closes". Map columns by header name. */
  var out=[];var ls=txt.split('\n');if(ls.length<2)return out;
  var hdr=ls[0].split(','),ix={};
  for(var h=0;h<hdr.length;h++)ix[hdr[h].trim()]=h;
- function need(n){return ix[n]!==undefined;}
+)OMEGAD7"
+R"OMEGAD8( function need(n){return ix[n]!==undefined;}
  if(!need('exit_ts_unix')||!need('symbol')||!need('engine')||!need('net_pnl'))return out;
  function unq(v){v=(v||'').trim();return v[0]==='"'?v.slice(1,-1):v;}
  for(var i=1;i<ls.length;i++){var L=ls[i];if(!L)continue;var f=L.split(',');
@@ -1586,10 +1580,10 @@ function drawLedger(){var t=el('ledger');/* S-19b/19c: crypto companion PAPER ba
    +'<td class="l d">'+esc(e.sym)+'</td><td class="num d">'+e.n+'</td>'
    +'<td class="num d">'+Math.round(100*e.w/e.n)+'%</td>'
    +'<td class="num '+c+'">'+fmt$(e.pnl)+'</td>'
-)OMEGAD8"
-R"OMEGAD9(   +'<td style="width:90px"><span class="bar" style="display:block"><i style="width:'+w+'%;background:'+(e.pnl>=0?'var(--grn)':'var(--red)')+'"></i></span></td>'
+   +'<td style="width:90px"><span class="bar" style="display:block"><i style="width:'+w+'%;background:'+(e.pnl>=0?'var(--grn)':'var(--red)')+'"></i></span></td>'
    +'<td class="num '+(e.pnl>=0?'g':'r')+'">'+fmt$(e.pnl/e.n)+'/t</td></tr>';}).join('');/* companion sub-rows + clip rows removed S-22e (dead stall book) */
- t.innerHTML='<tr><th class="l">engine</th><th class="l">sym</th><th>n</th><th>WR</th><th>net</th><th></th><th>avg</th></tr>'+rows;
+)OMEGAD8"
+R"OMEGAD9( t.innerHTML='<tr><th class="l">engine</th><th class="l">sym</th><th>n</th><th>WR</th><th>net</th><th></th><th>avg</th></tr>'+rows;
  var net=0;ks.forEach(function(k){net+=by[k].pnl;});
  var tot=net+smc+flc+ilc;   /* live LADDER books only -- dead-book terms removed S-22e; cc (crypto PAPER) EXCLUDED S-18w */
  el('ledgern').textContent=ks.length+' engines · net '+fmt$(net)
@@ -1755,25 +1749,16 @@ function prBtns(){
 prBtns();
 var PRMK=[],PRMOUSE=null,PRHOVER=null;
 function drawPR(){var cv=el("prc");
- /* S-2026-07-10: DYNAMIC chart height — measure the RIGHT topgrid column (ENGINE LEDGER+HEAT;
-)OMEGAD9"
-R"OMEGAD10(    DOM/OBI panel removed S-2026-07-22) and size the chart to fill the LEFT column so there is no
-    gap below it. Recomputed every draw. Fallback 300 if measurement fails. */
+ /* S-2026-07-22h: unified two-column layout — the topgrid the old dynamic-height code measured
+    is gone; both columns flow continuously so there is nothing to "fill against". Fixed 300. */
  var H=300;
- try{var tg=document.querySelector('.topgrid');
-   if(tg&&tg.children.length>1){
-     var rightH=tg.children[1].offsetHeight;
-     var lt=el('ltpan');var ltH=lt?lt.offsetHeight:0;
-     var pan=cv.parentElement;var nonCanvas=pan.offsetHeight-cv.offsetHeight;
-     var want=Math.round(rightH-ltH-nonCanvas-8);
-     if(want>160&&want<620)H=want;
-   }}catch(e){}
  var ctx=prep(cv,H);
  window._prDrawT=performance.now();
  var W=cv.clientWidth;ctx.clearRect(0,0,W,H);ctx.font='10px IBM Plex Mono';
  PRMK=[];window._prNewest=0;
  var ds=PRD&&PRD.datasets&&PRD.datasets[PRSYM]&&PRD.datasets[PRSYM][PRTF];
- if(!ds||!ds.bars||ds.bars.length<10){ctx.fillStyle='#6B7785';
+)OMEGAD9"
+R"OMEGAD10( if(!ds||!ds.bars||ds.bars.length<10){ctx.fillStyle='#6B7785';
   ctx.fillText('no range data yet — waiting for '+PRSYM+' '+PRTF+' bars (written every 60s by the engine)',10,20);
   el('prinfo').textContent='';el('prlast').textContent='';el('prtrend').textContent='';return;}
  var bars=ds.bars.slice(-Math.max(60,Math.min(ds.bars.length,Math.floor((W-70)/5))));
@@ -1964,8 +1949,7 @@ function prTip(m,cx,cy){var tip=el('prtip');
  tip.style.left=Math.min(window.innerWidth-tw2-8,cx+14)+'px';
  tip.style.top=(cy-th2-12<0?cy+18:cy-th2-12)+'px';}
 (function(){var cvp=el('prc');
-)OMEGAD10"
-R"OMEGAD11( cvp.addEventListener('mousemove',function(e){var rc=cvp.getBoundingClientRect();
+ cvp.addEventListener('mousemove',function(e){var rc=cvp.getBoundingClientRect();
   PRMOUSE={x:e.clientX-rc.left,y:e.clientY-rc.top};
   var hit=null,best=160;
   PRMK.forEach(function(m){var dx=m.x-PRMOUSE.x,dy=m.y-PRMOUSE.y,d2=dx*dx+dy*dy;
@@ -1979,7 +1963,8 @@ R"OMEGAD11( cvp.addEventListener('mousemove',function(e){var rc=cvp.getBoundingC
  if(performance.now()-(window._prDrawT||0)<33)return;
  if(PRMOUSE||(window._prNewest&&(Date.now()/1000-window._prNewest)<600))drawPR();})();
 
-function redrawAll(){drawEquity();drawHeat();drawMM();drawTOD();drawPromo();updDayPnl();drawPR();drawHist();drawLedger();}
+)OMEGAD10"
+R"OMEGAD11(function redrawAll(){drawEquity();drawHeat();drawMM();drawTOD();drawPromo();updDayPnl();drawPR();drawHist();drawLedger();}
 function loadCsv(){fetch('/api/shadow_csv').then(function(r){return r.text();}).then(function(t){
  ROWS=parseShadow(t);el('csvinfo').textContent=ROWS.length+' pre-trade closes loaded';
  fillSymSel();redrawAll();}).catch(function(){el('csvinfo').textContent='pre-trade csv unavailable';});}

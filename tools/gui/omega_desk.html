@@ -70,7 +70,7 @@ a{color:var(--blu);text-decoration:none}
 .flashg{animation:flashG 1.4s ease-out}
 #prtip{position:fixed;display:none;z-index:50;pointer-events:none;background:rgba(14,20,27,.96);border:1px solid var(--bd2);border-radius:5px;padding:6px 9px;font-size:11px;line-height:1.55;box-shadow:0 8px 24px rgba(0,0,0,.55)}
 #prc{cursor:crosshair}
-@media(max-width:1180px){.deskmain,.topgrid{grid-template-columns:1fr !important}}
+@media(max-width:1180px){.deskmain{grid-template-columns:1fr !important}}
 @media(max-width:980px){.g2,.g3,.deskmain{grid-template-columns:1fr !important}}
 </style>
 </head>
@@ -137,12 +137,18 @@ a{color:var(--blu);text-decoration:none}
      overflow wraps to row 2. No fixed split, nothing off-screen. -->
 <div id="ticker" style="display:flex;flex-wrap:wrap;border:1px solid var(--bd);border-radius:6px;margin-top:8px;background:var(--pan)"></div>
 
+<!-- ═══ WHOLE-DESK TWO-COLUMN LAYOUT (S-2026-07-22h, operator: "gaping space" screenshot) ═══
+     The old .topgrid row (chart | engine ledger) and the .compcols row below it were SEPARATE
+     grid rows: after S-22g moved HEAT+TRADES out, the right topgrid cell held only the short
+     ENGINE LEDGER while the row stretched to the chart's height — a chart-sized void. Fix is
+     structural, not spacer tuning: ONE .compcols flex holding two continuously-flowing .cstack
+     columns, so panels always pack upward and no cross-row barrier can strand empty space.
+     LEFT  = LIVE TRADES → PREDICTIVE RANGES → CRYPTO MIMIC → BIGCAP HI52 → ENGINE HEAT → LAST 15
+     RIGHT = ENGINE LEDGER → STOCK MOVERS → STOCK BASKET → INDEX LADDER → FX LADDER -->
+<div class="compcols" style="margin-top:8px">
+<div class="cstack">
+
 <!-- ═══ LIVE OPEN TRADES (always visible) ═══ -->
-<!-- S-2026-07-08c operator resize: the four top strips at HALF WIDTH, two columns:
-     [live trades + predictive ranges] | [engine ledger + engine heat]. Collapses to
-     one column under 1180px. -->
-<div class="topgrid" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:start;margin-top:8px">
-<div class="tcol" style="min-width:0">
 <div class="pan" id="ltpan">
   <div style="display:flex;align-items:baseline;gap:10px">
     <span class="lbl">LIVE OPEN TRADES</span>
@@ -181,35 +187,9 @@ a{color:var(--blu);text-decoration:none}
      deskmain now single-column: the price chart spans full width. ═══ -->
 
 </div><!-- /deskmain -->
-</div><!-- /tcol left -->
-<div class="tcol" style="min-width:0">
 
-<!-- ═══ ENGINE LEDGER (running totals). PROMOTION TRACKER removed 2026-07-06 (operator: useless). ═══ -->
-<div class="grid" style="grid-template-columns:1fr">
-  <div class="pan">
-    <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:5px">
-      <span class="lbl">ENGINE LEDGER — running total, ALL TIME (what makes / loses money)</span>
-      <span id="ledgern" class="lbl" style="margin-left:auto"></span>
-    </div>
-    <div style="max-height:200px;overflow-y:auto">
-      <table id="ledger"><tr><td class="l d">loading…</td></tr></table>
-    </div>
-  </div>
-</div>
-
-<!-- ENGINE HEAT + LAST 15 TRADES relocated S-2026-07-22g (operator screenshot ask): moved from
-     this topgrid right column into the left cstack, directly under BIGCAP HI52 — fills the big
-     left-column void under that panel. Single #heat / #alltrades instances, no duplicates. -->
-</div><!-- /tcol right -->
-</div><!-- /topgrid -->
-
-<!-- ═══ COMPANIONS ROW: crypto | gold side-by-side (was stacked → halves vertical space) ═══ -->
-<div class="compcols">
-
-<!-- LEFT column stack (S-2026-07-10 operator): CRYPTO + INDEX COMPANIONS + LAST 15 TRADES kept
-     together so the trade log fills the void under INDEX COMPANIONS instead of stranding at the
-     bottom. -->
-<div class="cstack">
+<!-- ENGINE LEDGER moved to the TOP of the RIGHT cstack (S-2026-07-22h) — the left column
+     continues directly below with CRYPTO MIMIC → BIGCAP HI52 → ENGINE HEAT → LAST 15 TRADES. -->
 
 <!-- ═══ CRYPTO MIMIC BOOKS — LIVE (real Binance holds only) ═══ S-2026-07-19i rebuild.
      The S-2026-07-19g panel (removed above-comment history) rendered window._cc, the
@@ -278,9 +258,23 @@ a{color:var(--blu);text-decoration:none}
 
 </div><!-- /left column cstack -->
 
-<!-- ═══ STOCK MOVERS — BIGCAP day-mover MIMIC LADDER books (no-floor · pre-trade, additive)
-     + stacked underneath (2026-07-08, operator): 4 retired BE-floor banners + DOM L2 ═══ -->
+<!-- ═══ RIGHT column cstack (S-2026-07-22h): ENGINE LEDGER + ladders/stock books stack ═══ -->
 <div class="cstack">
+
+<!-- ═══ ENGINE LEDGER (running totals) — moved here S-2026-07-22h from the old lone topgrid
+     right cell (its row-height mismatch vs the chart column was THE gaping-void bug).
+     PROMOTION TRACKER removed 2026-07-06 (operator: useless). ═══ -->
+<div class="pan">
+  <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:5px">
+    <span class="lbl">ENGINE LEDGER — running total, ALL TIME (what makes / loses money)</span>
+    <span id="ledgern" class="lbl" style="margin-left:auto"></span>
+  </div>
+  <div style="max-height:200px;overflow-y:auto">
+    <table id="ledger"><tr><td class="l d">loading…</td></tr></table>
+  </div>
+</div>
+
+<!-- ═══ STOCK MOVERS — BIGCAP day-mover MIMIC LADDER books (no-floor · pre-trade, additive) ═══ -->
 <div class="pan">
   <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px">
     <span class="lbl">STOCK MOVERS — BIGCAP mimic LADDER (no-floor) · +3% day → next-close entry · TIGHT a0.5/s2 + WIDE a8/g50 + ladder cap5 · LOSS_CUT 15 · BT +7,044% PF1.58 all-6 (native C++ · pre-trade · REAL fills · never vs-WIDE)</span>
@@ -335,7 +329,7 @@ a{color:var(--blu);text-decoration:none}
      out of the .compcols masonry so it stops reflowing/resizing. -->
 
 
-</div><!-- /companions row -->
+</div><!-- /compcols (whole-desk two-column layout, S-2026-07-22h) -->
 
 <!-- ═══ RETIRED COMPANIONS strip + OPS STRIP (DOM) removed 2026-07-08 (operator): the 4 retired
      BE-floor banners + DOM — XAUUSD L2 moved into the stock-movers cstack above. ═══ -->
@@ -1740,18 +1734,9 @@ function prBtns(){
 prBtns();
 var PRMK=[],PRMOUSE=null,PRHOVER=null;
 function drawPR(){var cv=el("prc");
- /* S-2026-07-10: DYNAMIC chart height — measure the RIGHT topgrid column (ENGINE LEDGER+HEAT;
-    DOM/OBI panel removed S-2026-07-22) and size the chart to fill the LEFT column so there is no
-    gap below it. Recomputed every draw. Fallback 300 if measurement fails. */
+ /* S-2026-07-22h: unified two-column layout — the topgrid the old dynamic-height code measured
+    is gone; both columns flow continuously so there is nothing to "fill against". Fixed 300. */
  var H=300;
- try{var tg=document.querySelector('.topgrid');
-   if(tg&&tg.children.length>1){
-     var rightH=tg.children[1].offsetHeight;
-     var lt=el('ltpan');var ltH=lt?lt.offsetHeight:0;
-     var pan=cv.parentElement;var nonCanvas=pan.offsetHeight-cv.offsetHeight;
-     var want=Math.round(rightH-ltH-nonCanvas-8);
-     if(want>160&&want<620)H=want;
-   }}catch(e){}
  var ctx=prep(cv,H);
  window._prDrawT=performance.now();
  var W=cv.clientWidth;ctx.clearRect(0,0,W,H);ctx.font='10px IBM Plex Mono';
