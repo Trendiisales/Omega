@@ -47,6 +47,7 @@ void cancel_all_orders() { eng().global_cancel(); }
 long preflight(const std::string& omega_sym, bool is_long, double qty) {
     return eng().preflight(omega_sym, is_long, qty);
 }
+bool preflight_rejected(long oid) { return eng().preflight_rejected(oid); }
 
 } // namespace ibkr_exec
 } // namespace omega
@@ -67,6 +68,7 @@ bool is_resolved(const std::string&) { return false; }
 void list_open_orders() {}
 void cancel_all_orders() {}
 long preflight(const std::string&, bool, double) { return -1; }
+bool preflight_rejected(long) { return true; }
 } // namespace ibkr_exec
 } // namespace omega
 

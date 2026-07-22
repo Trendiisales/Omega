@@ -7316,11 +7316,22 @@ static void init_engines(const std::string& cfg_path)
                         // prints 460 within 30 min instead of at the next signal).
                         for (;;) {
                             std::this_thread::sleep_for(std::chrono::minutes(30));
-                            std::printf("[GOLD-PROBE] 30-min recheck: spot permission + MGC funding\n");
+                            if (g_gold_daily_cbe.use_mgc.load()) {
+                                // switched — keep a slow heartbeat probe as a capability watchdog
+                                omega::ibkr_exec::preflight("XAUUSD.M", true, 1.0);
+                                continue;
+                            }
+                            std::printf("[GOLD-PROBE] 30-min recheck: MGC margin (GLD->MGC auto-switch armed)\n");
                             std::fflush(stdout);
-                            omega::ibkr_exec::preflight("XAUUSD.S", true, 1.0);
-                            std::this_thread::sleep_for(std::chrono::seconds(3));
-                            omega::ibkr_exec::preflight("XAUUSD.M", true, 1.0);
+                            const long poid = omega::ibkr_exec::preflight("XAUUSD.M", true, 1.0);
+                            std::this_thread::sleep_for(std::chrono::seconds(8));
+                            if (poid >= 0 && !omega::ibkr_exec::preflight_rejected(poid)) {
+                                g_gold_daily_cbe.use_mgc.store(true);
+                                std::printf("[GOLD-VENUE] *** MGC MARGIN CLEARED -- GoldDailyCbe SWITCHED GLD -> MGC "
+                                            "(1 contract = 10 oz, 23h session; operator standing order S-22j). "
+                                            "Open GLD position, if any, finishes its ride on GLD. ***\n");
+                                std::fflush(stdout);
+                            }
                         }
                     }).detach();
                 }

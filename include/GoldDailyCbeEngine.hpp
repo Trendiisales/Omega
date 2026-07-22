@@ -32,6 +32,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdint>
+#include <atomic>
 #include <deque>
 #include <fstream>
 #include <functional>
@@ -57,11 +58,22 @@ public:
         bool        atr_band      = true;    // ATR14 within P10-P90 of trailing 120d
         std::string state_path    = "golddailycbe_live.txt";
         std::string dump_path     = "golddailycbe_daily.csv";
+        // S-22j GLD->MGC auto-switch (operator: "keep gld until the 5k lands then
+        // switch to mgc"): when the GOLD-PROBE sees an MGC whatIf clear margin,
+        // it flips use_mgc — NEW entries route mgc_sym/mgc_lot (1 contract = 10 oz,
+        // 23h session, no ETF-hours gap). An OPEN GLD position finishes its ride
+        // on GLD (token-matched close). Flag is atomic; string members are never
+        // mutated after boot.
+        std::string mgc_sym       = "XAUUSD.M";
+        double      mgc_lot       = 1.0;
         // boot Asian-range backfill sources (VPS-relative; missing = fallback)
         std::string l2_prefix     = "logs/l2_ticks_XAUUSD_";
         std::string h4_csv_path   = "logs/gold_d1_trend_h4.csv";
     };
     Config cfg;
+    std::atomic<bool> use_mgc{false};          // flipped by the GOLD-PROBE on margin fit
+    const std::string& eff_sym() const { return use_mgc.load() ? cfg.mgc_sym : cfg.live_sym; }
+    double eff_lot() const { return use_mgc.load() ? cfg.mgc_lot : cfg.lot_oz; }
 
     using OpenFn   = std::function<std::string(const std::string&, bool, double, double)>;
     using CloseFn  = std::function<void(const std::string&, bool, double, double, const std::string&)>;
@@ -213,10 +225,11 @@ public:
         if (!pos_.active) return 0;
         const double fill = px > 0.0 ? px : (m1_c_ > 0.0 ? m1_c_ : pos_.entry);
         if (!pos_.token.empty() && close_fn_)
-            close_fn_(cfg.live_sym, true, cfg.lot_oz * pos_.size_frac, fill, pos_.token);
+            close_fn_(pos_.sym.empty() ? cfg.live_sym : pos_.sym, true,
+                      (pos_.lot > 0 ? pos_.lot : cfg.lot_oz) * pos_.size_frac, fill, pos_.token);
         if (ledger_fn_)
-            ledger_fn_(cfg.engine_tag, cfg.live_sym, true, pos_.entry, fill,
-                       cfg.lot_oz * pos_.size_frac, pos_.entry_ts, now_sec, "MANUAL_KILL_ALL");
+            ledger_fn_(cfg.engine_tag, pos_.sym.empty() ? cfg.live_sym : pos_.sym, true, pos_.entry, fill,
+                       (pos_.lot > 0 ? pos_.lot : cfg.lot_oz) * pos_.size_frac, pos_.entry_ts, now_sec, "MANUAL_KILL_ALL");
         pos_ = Pos{};
         save_state_();
         if (on_close_hook) on_close_hook(fill, now_sec);
@@ -262,6 +275,7 @@ private:
         double size_frac = 1.0;                  // 1.0 -> 0.5 after partial
         bool partial = false; double peak_close = 0, trail = 0; bool trail_on = false;
         int64_t entry_ts = 0; double atr_e = 0; std::string token;
+        std::string sym; double lot = 0;         // venue captured AT OPEN (GLD vs MGC switch)
     } pos_;
 
     OpenFn open_fn_; CloseFn close_fn_; GateFn gate_fn_; LedgerFn ledger_fn_;
@@ -351,10 +365,10 @@ private:
         if (!pos_.partial && h - pos_.entry >= R * cfg.partial_r) {
             const double px = pos_.entry + R * cfg.partial_r;
             if (!pos_.token.empty() && close_fn_)
-                close_fn_(cfg.live_sym, true, cfg.lot_oz * 0.5, px, pos_.token);
+                close_fn_(pos_.sym, true, pos_.lot * 0.5, px, pos_.token);
             if (ledger_fn_)
-                ledger_fn_(cfg.engine_tag, cfg.live_sym, true, pos_.entry, px,
-                           cfg.lot_oz * 0.5, pos_.entry_ts, ts_sec, "PARTIAL_1R");
+                ledger_fn_(cfg.engine_tag, pos_.sym, true, pos_.entry, px,
+                           pos_.lot * 0.5, pos_.entry_ts, ts_sec, "PARTIAL_1R");
             pos_.partial = true; pos_.size_frac = 0.5; pos_.trail_on = true;
             pos_.peak_close = px;
             pos_.trail = pos_.entry - cfg.trail_mult * pos_.atr_e;
@@ -367,10 +381,10 @@ private:
         if (l <= stop) {
             const double px = stop;   // worse-of gap handled by real fill reconciliation
             if (!pos_.token.empty() && close_fn_)
-                close_fn_(cfg.live_sym, true, cfg.lot_oz * pos_.size_frac, px, pos_.token);
+                close_fn_(pos_.sym, true, pos_.lot * pos_.size_frac, px, pos_.token);
             if (ledger_fn_)
-                ledger_fn_(cfg.engine_tag, cfg.live_sym, true, pos_.entry, px,
-                           cfg.lot_oz * pos_.size_frac, pos_.entry_ts, ts_sec,
+                ledger_fn_(cfg.engine_tag, pos_.sym, true, pos_.entry, px,
+                           pos_.lot * pos_.size_frac, pos_.entry_ts, ts_sec,
                            pos_.trail_on ? "TRAIL_STOP" : "SL_HIT");
             std::printf("[GOLD-CBE][CLOSE] %s @%.2f entry=%.2f\n",
                         pos_.trail_on ? "TRAIL_STOP" : "SL_HIT", px, pos_.entry);
@@ -398,19 +412,22 @@ private:
         const double R  = c - sl;
         if (R <= 0) return;
         traded_today_ = true;
+        const std::string vsym = eff_sym();
+        const double      vlot = eff_lot();
         std::string tok;
         if (cfg.live_book && open_fn_) {
-            if (gate_fn_ && !gate_fn_(cfg.live_sym, R, cfg.lot_oz)) {
+            if (gate_fn_ && !gate_fn_(vsym, R, vlot)) {
                 std::printf("[GOLD-CBE][GATE] entry blocked by cost gate @%.2f\n", c);
                 std::fflush(stdout);
                 return;
             }
-            tok = open_fn_(cfg.live_sym, true, cfg.lot_oz, c);
+            tok = open_fn_(vsym, true, vlot, c);
         }
         pos_.active = true; pos_.entry = c; pos_.sl = sl; pos_.rdist = R;
         pos_.size_frac = 1.0; pos_.partial = false; pos_.trail_on = false;
         pos_.peak_close = c; pos_.trail = 0; pos_.entry_ts = ts_sec;
         pos_.atr_e = atr_prev_; pos_.token = tok;
+        pos_.sym = vsym; pos_.lot = vlot;
         std::printf("[GOLD-CBE][OPEN] LONG @%.2f sl=%.2f (1.75xATR %.2f) rng=%.2f tok=%s\n",
                     c, sl, atr_prev_, rng, tok.empty() ? "(book-only)" : tok.c_str());
         std::fflush(stdout);
@@ -430,7 +447,8 @@ private:
             << pos_.rdist << " " << pos_.size_frac << " " << (pos_.partial ? 1 : 0) << " "
             << (pos_.trail_on ? 1 : 0) << " " << pos_.peak_close << " " << pos_.trail << " "
             << (long long)pos_.entry_ts << " " << pos_.atr_e << " "
-            << (pos_.token.empty() ? "-" : pos_.token) << "\n"; }
+            << (pos_.token.empty() ? "-" : pos_.token) << " "
+            << (pos_.sym.empty() ? "-" : pos_.sym) << " " << pos_.lot << "\n"; }
 #if defined(_WIN32)
         std::remove(cfg.state_path.c_str());
 #endif
@@ -444,6 +462,8 @@ private:
               >> pos_.peak_close >> pos_.trail >> ets >> pos_.atr_e >> tok) {
             pos_.active = (act != 0); pos_.partial = (pa != 0); pos_.trail_on = (tr != 0);
             pos_.entry_ts = (int64_t)ets; pos_.token = (tok == "-") ? std::string() : tok;
+            std::string vs; double vl;
+            if (f >> vs >> vl) { pos_.sym = (vs == "-") ? std::string() : vs; pos_.lot = vl; }
         }
     }
 };

@@ -69,5 +69,9 @@ void cancel_all_orders();
 // commission) or the broker error per symbol; NOTHING executes. Stub: -1.
 long preflight(const std::string& omega_sym, bool is_long, double qty);
 
+// True if the given preflight oid was answered with err 201/460 (margin or
+// permission reject). Poll a few seconds after preflight(). Stub: true.
+bool preflight_rejected(long oid);
+
 } // namespace ibkr_exec
 } // namespace omega

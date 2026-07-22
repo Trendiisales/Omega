@@ -476,7 +476,22 @@ struct IbkrExecutionEngine : public DefaultEWrapper {
         std::fflush(stdout);
     }
 
-    void error(int /*id*/, int code, const std::string& msg, const std::string& /*adv*/) override {
+    // S-2026-07-22j: per-oid reject tracking so the GOLD-PROBE can distinguish a
+    // clean whatIf (margin fits, permission ok) from one followed by err 201/460.
+    std::mutex rej_mtx_;
+    std::map<long, bool> rejected_oids_;
+    bool preflight_rejected(long oid) {
+        std::lock_guard<std::mutex> lk(rej_mtx_);
+        auto it = rejected_oids_.find(oid);
+        return it != rejected_oids_.end() && it->second;
+    }
+
+    void error(int id, int code, const std::string& msg, const std::string& /*adv*/) override {
+        if (code == 201 || code == 460 || code == 10289) {
+            std::lock_guard<std::mutex> lk(rej_mtx_);
+            rejected_oids_[(long)id] = true;
+            if (rejected_oids_.size() > 512) rejected_oids_.erase(rejected_oids_.begin());
+        }
         // Hard socket-level failures mean the connection is dead: mark it so
         // place_order blocks and the watchdog reconnects. (1100 = upstream IB
         // link only, socket still alive -- deliberately NOT treated as a drop.)
