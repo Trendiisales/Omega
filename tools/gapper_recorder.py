@@ -3,10 +3,23 @@
 # their 1-min bars to recent_gappers.csv + gapper_minute.csv. Same feed the
 # GapShort engine trades. Run after US close. Grows the backtest set over time.
 # Scheduled: OmegaGapperRecorder (weekdays 22:00 server-local). 2026-06-16.
+#
+# S-2026-07-23a INTRADAY SNAPSHOT MODE (operator order): `--snapshot` runs the
+# SAME scan intraday and appends the list AS SEEN AT THAT MOMENT to
+# recent_gappers_intraday.csv (date,snap_utc,ticker,last,gapPct-at-snap).
+# WHY: the EOD run selects names that FINISHED as top gainers -- end-of-day
+# lookahead that poisoned the 2026-07-23 gapper-long re-cert (buying these
+# names' opens "made" +9.66%/trade = selection artifact, not edge). The
+# intraday file is the honest point-in-time universe; EOD minute-bar pull
+# covers the UNION of both lists so snapshot names get bars too.
+# Schedule: OmegaGapperSnap task, 14:00 UTC weekdays (10:00 ET).
 import sys, os, csv, datetime as dt
 from ib_async import IB, Stock, ScannerSubscription
-PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 4002
+SNAPSHOT = '--snapshot' in sys.argv
+argv = [a for a in sys.argv if a != '--snapshot']
+PORT = int(argv[1]) if len(argv) > 1 else 4002
 GAP='C:/Omega/tools/recent_gappers.csv'; MIN='C:/Omega/data/gapper_minute.csv'
+SNAP='C:/Omega/tools/recent_gappers_intraday.csv'
 today = dt.date.today().isoformat()
 def keys(path):
     s=set()
@@ -30,6 +43,38 @@ for s in scan:
     except Exception: pass
 syms=syms[:50]
 print(f'[rec] scan -> {len(syms)} names', flush=True)
+
+if SNAPSHOT:
+    # point-in-time capture: list + last price per name, NOTHING selected on outcome
+    snap_utc = dt.datetime.utcnow().strftime('%H:%M')
+    rows=[]
+    for sym in syms:
+        try:
+            c=Stock(sym,'SMART','USD'); ib.qualifyContracts(c)
+            d=ib.reqHistoricalData(c,'','2 D','1 day','TRADES',useRTH=False,formatDate=1)
+            last=d[-1].close if d else 0.0
+            pc=d[-2].close if len(d)>=2 else 0.0
+            gp=(last-pc)/pc*100 if pc>0 else 0.0
+            rows.append([today,snap_utc,sym,f'{last:.4f}',f'{gp:.2f}'])
+        except Exception as e:
+            print(f'[snap] {sym} ERR {e}', flush=True)
+    isnew=(not os.path.exists(SNAP)) or os.path.getsize(SNAP)==0
+    with open(SNAP,'a',newline='') as f:
+        w=csv.writer(f)
+        if isnew: w.writerow(['date','snap_utc','ticker','last','gapPct'])
+        w.writerows(rows)
+    print(f'[snap] {today} {snap_utc}Z: {len(rows)} names -> {SNAP}', flush=True)
+    ib.disconnect(); sys.exit(0)
+
+# EOD run: extend the minute-bar universe with today's intraday-snapshot names
+# so honest point-in-time entries can be backtested with full bars.
+if os.path.exists(SNAP):
+    with open(SNAP, newline='') as f:
+        r=csv.reader(f); next(r, None)
+        for row in r:
+            if len(row)>=3 and row[0]==today and row[2] not in syms:
+                syms.append(row[2])
+    print(f'[rec] union with intraday snapshot -> {len(syms)} names', flush=True)
 new_gap=[]; new_min=[]
 for sym in syms:
     try:
