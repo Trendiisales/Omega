@@ -41,6 +41,19 @@ $ErrorActionPreference = 'Continue'
 # restart" incident (bridge flaps every 2 min, feeds churn, desk sees it as down).
 # MGC's only consumer (MgcFastDon) was retired 2026-07-17f (8b83b77a). Keep this
 # list in sync with the bridge --symbols or the watchdog kills the healthy bridge.
+#
+# 2026-07-22: SWITCHED FROM L2 DEPTH -> L1 TOP-OF-BOOK for the freshness check.
+# Root cause of a multi-hour gold-price outage: this watchdog keyed on
+# ibkr_l2_XAUUSD_<date>.csv (L2 DEPTH), but gold L2 depth was RETIRED 2026-07-10
+# (OmegaIndexHtml: "gold L2 depth feed retired ... gold_bids/gold_asks/l2_gold no
+# longer consumed") and XAU depth no longer establishes reliably (NQ/YM take the
+# 3 depth slots; XAU depth request returns nothing). So the L2 file went MISSING
+# every day => the watchdog (MISSING = restart-fixable, NO backoff) killed the
+# HEALTHY bridge every 2 min -- and that kill also drops the L1 XAUUSD *price*
+# feed the desk/telemetry actually needs (gold tile). The price feed is L1
+# (ibkr_l1_XAUUSD_<date>.csv), which writes fine. Guard THAT instead: it is the
+# real gold-price health signal + a genuine bridge death still stalls it.
+$L1Check  = $true      # true = watch ibkr_l1_ (top-of-book price); false = ibkr_l2_ (depth)
 $Symbols  = @('XAUUSD')
 $Dir      = 'C:\Omega\logs\ibkr_l2'
 $StaleSec = 180        # CSV must be touched within this many seconds
@@ -84,8 +97,9 @@ $problems = @()
 $hasRestartFixable = $false   # STALE or MISSING -> the bridge/connection died, restart IS the fix
 $hasEmpty          = $false   # header-only -> upstream subscription/session issue, restart won't help
 
+$prefix = if ($L1Check) { "ibkr_l1_" } else { "ibkr_l2_" }
 foreach ($s in $Symbols) {
-    $path = Join-Path $Dir ("ibkr_l2_" + $s + "_" + $today + ".csv")
+    $path = Join-Path $Dir ($prefix + $s + "_" + $today + ".csv")
     if (-not (Test-Path $path)) {
         $problems += "MISSING $s : $path does not exist"
         $hasRestartFixable = $true
