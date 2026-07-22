@@ -34,6 +34,7 @@
 #include "EReaderOSSignal.h"
 #include "Contract.h"
 #include "Order.h"
+#include "OrderState.h"   // S-22i: openOrder override reads st.status (fwd-decl only in EWrapper.h)
 #include "Execution.h"
 
 #include "IbkrExec.hpp"   // omega::IbkrFill (shared, TWS-free)
@@ -360,6 +361,25 @@ struct IbkrExecutionEngine : public DefaultEWrapper {
                     DecimalFunctions::decimalToDouble(remaining), avgFillPrice);
         std::fflush(stdout);
     }
+
+    // ---- open-order inventory + global cancel (S-2026-07-22i: 7 orphan
+    // PreSubmitted orders found on the live account during the EXEC-SMOKE
+    // margin reject -- they reserve commodities margin; operator ordered
+    // identify + delete via API) ----
+    void openOrder(OrderId orderId, const Contract& c, const Order& o,
+                   const OrderState& st) override {
+        std::printf("[IBKR-EXEC] OPEN-ORDER oid=%ld %s %s %s qty=%.2f type=%s lmt=%.2f aux=%.2f status=%s\n",
+                    (long)orderId, o.action.c_str(), c.symbol.c_str(), c.secType.c_str(),
+                    DecimalFunctions::decimalToDouble(o.totalQuantity),
+                    o.orderType.c_str(), o.lmtPrice, o.auxPrice, st.status.c_str());
+        std::fflush(stdout);
+    }
+    void openOrderEnd() override {
+        std::printf("[IBKR-EXEC] OPEN-ORDER-END (inventory complete)\n");
+        std::fflush(stdout);
+    }
+    void req_open_orders() { if (client_ && connected_.load()) client_->reqAllOpenOrders(); }
+    void global_cancel()   { if (client_ && connected_.load()) client_->reqGlobalCancel(); }
 
     // Authoritative fill event -> reconcile to ledger via on_fill.
     void execDetails(int /*reqId*/, const Contract& contract, const Execution& execution) override {

@@ -7074,6 +7074,26 @@ static void init_engines(const std::string& cfg_path)
                 // next service restart fires another round-trip. cost_ok() gate
                 // intentionally not applied: this is a plumbing proof, not an edge
                 // trade; the ~1-tick spread + 2x commission is the accepted cost.
+                // ── [EXEC-CANCEL-ALL] one-shot orphan-order cleanup (S-2026-07-22i) ──
+                // OMEGA_EXEC_CANCEL_ALL=1: inventory every open order on the account
+                // ([IBKR-EXEC] OPEN-ORDER lines), reqGlobalCancel, re-inventory to
+                // prove empty. Ordered by the operator after 7 orphan PreSubmitted
+                // orders were found reserving commodities margin (EXEC-SMOKE err 201).
+                // One-shot per boot; REMOVE the env var right after use.
+                if (std::getenv("OMEGA_EXEC_CANCEL_ALL")) {
+                    std::thread([] {
+                        std::this_thread::sleep_for(std::chrono::seconds(30)); // connect+qualify settle
+                        std::printf("[EXEC-CANCEL-ALL] inventory BEFORE:\n"); std::fflush(stdout);
+                        omega::ibkr_exec::list_open_orders();
+                        std::this_thread::sleep_for(std::chrono::seconds(10));
+                        std::printf("[EXEC-CANCEL-ALL] issuing reqGlobalCancel\n"); std::fflush(stdout);
+                        omega::ibkr_exec::cancel_all_orders();
+                        std::this_thread::sleep_for(std::chrono::seconds(15));
+                        std::printf("[EXEC-CANCEL-ALL] inventory AFTER (expect none):\n"); std::fflush(stdout);
+                        omega::ibkr_exec::list_open_orders();
+                    }).detach();
+                }
+
                 if (const char* smoke_sym = std::getenv("OMEGA_EXEC_SMOKE")) {
                     std::thread([sym = std::string(smoke_sym)] {
                         std::printf("[EXEC-SMOKE] armed sym=%s -- waiting for qualified contract\n", sym.c_str());

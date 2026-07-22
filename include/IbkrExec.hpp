@@ -57,5 +57,13 @@ long place_order(const std::string& omega_sym, bool is_long, double qty,
 // Used by [EXEC-SMOKE] to wait for qualification before firing. Stub: false.
 bool is_resolved(const std::string& omega_sym);
 
+// Print every open order on the account ([IBKR-EXEC] OPEN-ORDER lines), then
+// OPEN-ORDER-END. Stub: no-op.
+void list_open_orders();
+
+// reqGlobalCancel -- cancels ALL open orders on the account (every client id).
+// Operator-ordered orphan-order cleanup only. Stub: no-op.
+void cancel_all_orders();
+
 } // namespace ibkr_exec
 } // namespace omega

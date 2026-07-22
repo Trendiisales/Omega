@@ -42,6 +42,9 @@ bool is_resolved(const std::string& omega_sym) {
     return eng().is_resolved(omega_sym);
 }
 
+void list_open_orders()  { eng().req_open_orders(); }
+void cancel_all_orders() { eng().global_cancel(); }
+
 } // namespace ibkr_exec
 } // namespace omega
 
@@ -58,6 +61,8 @@ void disconnect() {}
 void start_watchdog() {}
 long place_order(const std::string&, bool, double, const std::string&, double) { return -1; }
 bool is_resolved(const std::string&) { return false; }
+void list_open_orders() {}
+void cancel_all_orders() {}
 } // namespace ibkr_exec
 } // namespace omega
 
