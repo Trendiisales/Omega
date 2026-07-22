@@ -110,10 +110,11 @@ KNOWN_UNREFRESHED = {
     "spy_close_hist.csv":     "owned by OmegaMacroRegime nightly VPS task (tools/fetch_macro_regime.py "
                               "full-rewrites it, S-2026-07-17k BigCapHi52 gate); engine FREEZES (holds "
                               "members, blocks rebals) when stale >6d -- graceful, never liquidates",
-    "warmup_XAUUSD_D1.csv":   "static 2015-2026 daily HISTORY for GoldDailyCbe EMA200/ATR warmup "
-                              "(S-2026-07-22i); forward dailies are self-recorded by the engine's own "
-                              "golddailycbe_daily.csv dump (deploy-forward), so the seed never needs a "
-                              "nightly refresh -- staleness is by-design and self-healing",
+    "warmup_XAUUSD_D1_OHLC.csv": "static 2015-2026 daily OHLC HISTORY for GoldDailyCbe EMA200/ATR "
+                              "warmup (S-2026-07-22i; own file -- the shared warmup_XAUUSD_D1.csv is "
+                              "ms-ts flat-close + nightly-refreshed for CalendarTom/GoldTsmomD1V2); "
+                              "forward dailies self-recorded by the engine's golddailycbe_daily.csv "
+                              "dump (deploy-forward), so staleness is by-design and self-healing",
 }
 
 def refreshed_filenames(repo):

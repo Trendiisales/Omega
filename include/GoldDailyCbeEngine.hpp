@@ -24,9 +24,10 @@
 //
 // FEED: on_tick_gold() XAUUSD mid ticks -> internal M1 aggregation (backtest
 //   parity: all decisions on M1 closes; day roll at 17:00 ET DST-correct).
-// SEED: phase1/signal_discovery/warmup_XAUUSD_D1.csv (2015-2026 dailies for
-//   EMA200/ATR14/ATR-band warmup) + own live daily dump appended forward
-//   (deploy-forward; seed is static history, forward bars self-recorded).
+// SEED: phase1/signal_discovery/warmup_XAUUSD_D1_OHLC.csv (2015-2026 real-OHLC
+//   dailies, ts SECONDS, for EMA200/ATR14/ATR-band warmup — own file; the shared
+//   warmup_XAUUSD_D1.csv is a different ms-ts flat-close format) + own live daily
+//   dump appended forward (deploy-forward; forward bars self-recorded).
 #include <algorithm>
 #include <cmath>
 #include <cstdio>

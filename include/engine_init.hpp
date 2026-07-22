@@ -1932,7 +1932,10 @@ static void init_engines(const std::string& cfg_path)
                     tr.pnl = (is_long ? (exit_px - entry_px) : (entry_px - exit_px)) * lots;
                     handle_closed_trade(tr);
                 });
-            const size_t gdrows = gd.seed_daily_csv(omega::resolve_seed_path("phase1/signal_discovery/warmup_XAUUSD_D1.csv"));
+            // OWN OHLC seed (real H/L for true-range ATR; ts SECONDS) — deliberately NOT
+            // the shared warmup_XAUUSD_D1.csv (ms-ts flat-close file, nightly-refreshed,
+            // consumed by CalendarTom + GoldTsmomD1V2; S-22i briefly clobbered it — reverted).
+            const size_t gdrows = gd.seed_daily_csv(omega::resolve_seed_path("phase1/signal_discovery/warmup_XAUUSD_D1_OHLC.csv"));
             g_engine_heartbeat.register_engine("GoldDailyCBE", gd.cfg.enabled, 1800, 0, 24);
             printf("[OMEGA-INIT][SEED] GoldDailyCbe wired: %zu D1 warmup bars (EMA200/ATR14/band), "
                    "Asian break-retrace-confirm LONG, SL1.75xATR + 50%%@1R + 2.0xATR D1 trail, no-BE-ratchet, "
