@@ -107,7 +107,7 @@ public:
         double retire_usd    = -9500.0;  // AUTO-RETIREMENT bar (family default set at wiring)
         double rt_cost_bp    = 8.0;      // validated RT cost debit (bp of entry)
         double notional      = 10000.0;  // $ per position; USD = return * notional
-        double lot           = 1.0;      // order-path lot
+        double lot           = 2.0;      // order-path lot (S-2026-07-22j operator: stocks weighted over FX; was 1-share)
         std::string deploy_path;         // persisted deploy-forward anchor
         std::string bars_path;           // persisted LIVE forward daily bars
         std::string live_path;           // persisted OPEN position state

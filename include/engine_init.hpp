@@ -3021,7 +3021,7 @@ static void init_engines(const std::string& cfg_path)
                         // BE beats riding to -lc for a mean-reverter). pre_arm_be_pct now inert (be-floor precedes).
                         c.be_entry_pct = 0.08; c.no_prebe_loss = true;
                         c.rt_cost_bp = 8.0; c.notional = 10000.0; c.bull_only = false;
-                        c.live_book = true; c.lot = 1.0;   // S-2026-07-19t LIVE: real money, 1-share/leg (min live unit; cost gate + buying power cap fills)
+                        c.live_book = true; c.lot = 2.0;   // S-2026-07-22j operator allocation ("more money to stocks than fx"): 2 shares/leg (was 1-share min S-19t); cost gate + buying-power cap still bound fills
                         c.state_path  = std::string("stockdipmimic_stockdipmimt_") + nm + "_state.txt";
                         c.closed_path = std::string("stockdipmimic_stockdipmimt_") + nm + "_closed.csv";
                         sdm.add(std::move(c)); }
@@ -3032,7 +3032,7 @@ static void init_engines(const std::string& cfg_path)
                         c.pre_arm_be_pct = 1.5;                   // half-of-arm: pre-arm winner reversal -> BE exit
                         c.be_entry_pct = 0.08; c.no_prebe_loss = true;
                         c.rt_cost_bp = 8.0; c.notional = 10000.0; c.bull_only = false;
-                        c.live_book = true; c.lot = 1.0;   // S-2026-07-19t LIVE: real money, 1-share/leg (min live unit; cost gate + buying power cap fills)
+                        c.live_book = true; c.lot = 2.0;   // S-2026-07-22j operator allocation ("more money to stocks than fx"): 2 shares/leg (was 1-share min S-19t); cost gate + buying-power cap still bound fills
                         c.state_path  = std::string("stockdipmimic_stockdipmimw_") + nm + "_state.txt";
                         c.closed_path = std::string("stockdipmimic_stockdipmimw_") + nm + "_closed.csv";
                         sdm.add(std::move(c)); }
@@ -3048,7 +3048,7 @@ static void init_engines(const std::string& cfg_path)
                         c.pre_arm_be_pct = 0.75;                  // half-of-arm
                         c.be_entry_pct = 0.08; c.no_prebe_loss = true;
                         c.rt_cost_bp = 8.0; c.notional = 10000.0; c.bull_only = false;
-                        c.live_book = true; c.lot = 1.0;   // S-2026-07-19t LIVE: real money, 1-share/leg (min live unit; cost gate + buying power cap fills)
+                        c.live_book = true; c.lot = 2.0;   // S-2026-07-22j operator allocation ("more money to stocks than fx"): 2 shares/leg (was 1-share min S-19t); cost gate + buying-power cap still bound fills
                         c.state_path  = std::string("stockdipmimic_stockdipmimx_") + nm + "_state.txt";
                         c.closed_path = std::string("stockdipmimic_stockdipmimx_") + nm + "_closed.csv";
                         sdm.add(std::move(c)); }
@@ -3059,7 +3059,7 @@ static void init_engines(const std::string& cfg_path)
                         c.pre_arm_be_pct = 1.25;                  // half-of-arm
                         c.be_entry_pct = 0.08; c.no_prebe_loss = true;
                         c.rt_cost_bp = 8.0; c.notional = 10000.0; c.bull_only = false;
-                        c.live_book = true; c.lot = 1.0;   // S-2026-07-19t LIVE: real money, 1-share/leg (min live unit; cost gate + buying power cap fills)
+                        c.live_book = true; c.lot = 2.0;   // S-2026-07-22j operator allocation ("more money to stocks than fx"): 2 shares/leg (was 1-share min S-19t); cost gate + buying-power cap still bound fills
                         c.state_path  = std::string("stockdipmimic_stockdipmimy_") + nm + "_state.txt";
                         c.closed_path = std::string("stockdipmimic_stockdipmimy_") + nm + "_closed.csv";
                         sdm.add(std::move(c)); }
@@ -3082,7 +3082,7 @@ static void init_engines(const std::string& cfg_path)
                         c.legs = {{"", 0.50}};
                         c.arm_pct = 1.5; c.lc_pct = 1.5; c.cap_bars = 10; c.pre_arm_be_pct = 0.75;
                         c.be_entry_pct = 0.08; c.no_prebe_loss = true; c.rt_cost_bp = 8.0; c.notional = 10000.0; c.bull_only = true;
-                        c.live_book = true; c.lot = 1.0;   // S-2026-07-19t LIVE: real money, 1-share/leg (min live unit; cost gate + buying power cap fills)
+                        c.live_book = true; c.lot = 2.0;   // S-2026-07-22j operator allocation ("more money to stocks than fx"): 2 shares/leg (was 1-share min S-19t); cost gate + buying-power cap still bound fills
                         c.state_path  = std::string("stockturtlemimic_stockturtlemima_") + nm + "_state.txt";
                         c.closed_path = std::string("stockturtlemimic_stockturtlemima_") + nm + "_closed.csv";
                         sdm.add(std::move(c)); }
@@ -3091,7 +3091,7 @@ static void init_engines(const std::string& cfg_path)
                         c.legs = {{"", 0.50}};
                         c.arm_pct = 2.0; c.lc_pct = 2.0; c.cap_bars = 10; c.pre_arm_be_pct = 1.0;
                         c.be_entry_pct = 0.08; c.no_prebe_loss = true; c.rt_cost_bp = 8.0; c.notional = 10000.0; c.bull_only = true;
-                        c.live_book = true; c.lot = 1.0;   // S-2026-07-19t LIVE: real money, 1-share/leg (min live unit; cost gate + buying power cap fills)
+                        c.live_book = true; c.lot = 2.0;   // S-2026-07-22j operator allocation ("more money to stocks than fx"): 2 shares/leg (was 1-share min S-19t); cost gate + buying-power cap still bound fills
                         c.state_path  = std::string("stockturtlemimic_stockturtlemimb_") + nm + "_state.txt";
                         c.closed_path = std::string("stockturtlemimic_stockturtlemimb_") + nm + "_closed.csv";
                         sdm.add(std::move(c)); }
@@ -3100,7 +3100,7 @@ static void init_engines(const std::string& cfg_path)
                         c.legs = {{"", 0.40}};
                         c.arm_pct = 2.5; c.lc_pct = 2.5; c.cap_bars = 10; c.pre_arm_be_pct = 1.25;
                         c.be_entry_pct = 0.08; c.no_prebe_loss = true; c.rt_cost_bp = 8.0; c.notional = 10000.0; c.bull_only = true;
-                        c.live_book = true; c.lot = 1.0;   // S-2026-07-19t LIVE: real money, 1-share/leg (min live unit; cost gate + buying power cap fills)
+                        c.live_book = true; c.lot = 2.0;   // S-2026-07-22j operator allocation ("more money to stocks than fx"): 2 shares/leg (was 1-share min S-19t); cost gate + buying-power cap still bound fills
                         c.state_path  = std::string("stockturtlemimic_stockturtlemimc_") + nm + "_state.txt";
                         c.closed_path = std::string("stockturtlemimic_stockturtlemimc_") + nm + "_closed.csv";
                         sdm.add(std::move(c)); }
@@ -3109,7 +3109,7 @@ static void init_engines(const std::string& cfg_path)
                         c.legs = {{"", 0.40}};
                         c.arm_pct = 3.5; c.lc_pct = 3.5; c.cap_bars = 10; c.pre_arm_be_pct = 1.75;
                         c.be_entry_pct = 0.08; c.no_prebe_loss = true; c.rt_cost_bp = 8.0; c.notional = 10000.0; c.bull_only = true;
-                        c.live_book = true; c.lot = 1.0;   // S-2026-07-19t LIVE: real money, 1-share/leg (min live unit; cost gate + buying power cap fills)
+                        c.live_book = true; c.lot = 2.0;   // S-2026-07-22j operator allocation ("more money to stocks than fx"): 2 shares/leg (was 1-share min S-19t); cost gate + buying-power cap still bound fills
                         c.state_path  = std::string("stockturtlemimic_stockturtlemimd_") + nm + "_state.txt";
                         c.closed_path = std::string("stockturtlemimic_stockturtlemimd_") + nm + "_closed.csv";
                         sdm.add(std::move(c)); }
