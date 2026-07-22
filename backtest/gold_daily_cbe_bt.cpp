@@ -147,7 +147,10 @@ int main(int argc,char**argv){
     // cost model ($/oz legs; R-normalize at close) — moved above the mimic
     // lambdas that capture it. IBKR SPOT GOLD venue (operator: not MGC):
     // 1.5bp/side comm + half measured spread $0.17 + $0.03 slip.
-    auto side_cost=[&](double px){ return COSTM*(px*0.00015 + 0.17 + 0.03); };
+    auto side_cost=[&](double px){
+        // IBKR spot gold REAL schedule: 1.5bp/side with US$2.00 MINIMUM per order
+        // (the minimum dominates at 1-oz size) + measured half-spread + slip.
+        return COSTM*(std::max(2.0, px*0.00015) + 0.17 + 0.03); };
 
     // mimic legs + standalone mimic book (net fraction of leg notional per clip)
     struct MLeg { bool pending=true, open=false, dead=false; double arm, gb, trig, le=0, mfe=0; long ets=0; };
