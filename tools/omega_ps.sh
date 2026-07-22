@@ -10,9 +10,17 @@
 #   cmd quote-stripping (base64 is quote-free) and charset mangling (UTF-16LE).
 #
 # Usage:
-#   bash tools/omega_ps.sh script.ps1        # run a local .ps1 on omega-new
-#   echo 'Get-Date' | bash tools/omega_ps.sh -   # run stdin
+#   bash tools/omega_ps.sh script.ps1        # run a local .ps1 on omega-new (SAFEST for backslash paths)
+#   printf '%s\n' 'Get-Date' | bash tools/omega_ps.sh -   # run stdin
+#   bash tools/omega_ps.sh - <<'PS' ... PS    # heredoc (quoted delim = literal)
 #   HOST=omega-new bash tools/omega_ps.sh -  # HOST override (omega-new default; dead box blocked)
+#
+# DO NOT `echo '...\...' | omega_ps.sh` — the shell's echo interprets C escapes
+# (\b \t \c \n ...) and CORRUPTS Windows paths BEFORE this script sees them
+# (C:\IBC\config.ini -> \c truncates the whole command; C:\Omega\bracket-bot ->
+# \b = backspace). This encoder is byte-clean; the damage is upstream in echo.
+# Feed via a .ps1 file, a quoted heredoc, or printf '%s\n' (data arg = no escapes).
+# A PreToolUse guard (~/.claude/hooks/block-echo-backslash-omega-ps.sh) blocks it.
 set -euo pipefail
 HOST="${HOST:-omega-new}"
 case "$HOST" in

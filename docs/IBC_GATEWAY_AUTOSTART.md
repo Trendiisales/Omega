@@ -240,17 +240,39 @@ blocked auto-login.
 
 ## 8. Migration to LIVE account
 
+**STATUS: LIVE since 2026-07-19 00:05 UTC.** Account `U23757894` confirmed
+via `C:\IBC\Logs\IBC-*.txt` (`Login has completed` + `U23757894 Trader
+Workstation Configuration` dialog, U-prefix = live not `DU`=paper). Same
+IbLoginId/IbPassword as paper -- IBKR's server maps the login to
+live-or-paper based on the requested trading mode, no separate live
+credentials needed (the handoff doc's "need live creds" assumption was
+wrong).
+
 Two things change for live:
 - `TradingMode=live` in `config.ini`
 - Bridge `--port 4001` (was 4002 for paper) and Omega FIX session port.
 
+**Gotcha (bit us 2026-07-19): `C:\IBC\StartGateway.bat` has its own
+`set TRADING_MODE=paper` line that OVERRIDES `config.ini`'s `TradingMode`
+key.** Editing config.ini alone silently does nothing -- IBC logs
+`Setting Trading mode = paper` at login regardless. Must edit BOTH files:
+`config.ini` (`TradingMode=live`) AND `StartGateway.bat`
+(`set TRADING_MODE=live`). Backups left as `*.bak_20260719_paper` in
+`C:\IBC\`.
+
 Update both atomically. The bridge task already pulls from
 `register_omega_ibkr_bridge.ps1`; change `$Port = 4002` to `$Port = 4001`
 in that script, re-run as Administrator, then re-run
-`register_ibkr_l2_watchdog.ps1`. Live also forces real 2FA -- either tie
-IB Key approval to a separate auto-acknowledge gateway (not officially
-supported) or accept that Sunday restart requires one mobile-app click
-per week.
+`register_ibkr_l2_watchdog.ps1`. Live also forces real 2FA (IB Key mobile
+push, confirmed 2026-07-19 -- took 158s, exceeded the config's implicit
+warning threshold but completed before the 60s post-2FA exit timer).
+**Unresolved as of 2026-07-19: `AutoRestartTime=03:00` daily unattended
+restart will hit the same 2FA push with nobody there to approve it at
+3am** -- `TWOFA_TIMEOUT_ACTION=exit` means IBC just exits cleanly and the
+5-min watchdog loop retries against a dead login screen until a human
+approves. Either tie IB Key approval to a separate auto-acknowledge
+gateway (not officially supported), move `AutoRestartTime` to a time
+someone's awake, or accept manual approval each occurrence.
 
 ---
 

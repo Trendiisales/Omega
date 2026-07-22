@@ -35,6 +35,11 @@
 STATE=/tmp/ibkr_login_watch.state
 LOG=/tmp/ibkr_login_watch.log
 LOCK=/tmp/ibkr_login_watch.lock
+# MAINTENANCE SUPPRESS (2026-07-21): when the operator has DELIBERATELY taken the Omega desk
+# down (service Stopped+Disabled, Gateway intentionally on paper 4002), the 4001-down /
+# PORT-FLIP / LOGIN-REQUIRED alarms are FALSE positives and spam every 15 min. Touch the flag
+# to silence; REMOVE it (rm ~/.omega_ibkr_watch_off) to re-arm the watch when going live again.
+[ -f "$HOME/.omega_ibkr_watch_off" ] && exit 0
 # S-2026-07-20o: 6h -> 15min. The 2026-07-19 23:48Z LOGIN-REQUIRED banner fired once and
 # was missed; the gateway sat 2FA-blocked 14 min (exec + IBKR L1 feed dead) until the
 # operator noticed the STALE chart himself. A dead exec path is live-money exposure —

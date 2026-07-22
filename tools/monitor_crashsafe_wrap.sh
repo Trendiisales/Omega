@@ -30,6 +30,12 @@
 #   -q  output regex that MUST be present or the monitor is BROKEN (e.g. '^RESULT:')
 # Exit code: passes the monitor's exit code through (99 if crash-by-marker with rc=0).
 set -u
+# MAINTENANCE SUPPRESS (2026-07-21): when the operator has DELIBERATELY parked the desk
+# (Omega service Stopped+Disabled / Gateway on paper / crypto box stopped), EVERY monitor
+# routed through this wrapper (protection, feeds, feedpath, staleness, health, update-guard,
+# crypto-staleness) reports RED on the intended-down state and spams notifications. This flag
+# silences ALL of them at once. Re-arm when going live again: rm ~/.omega_desk_maintenance
+[ -f "$HOME/.omega_desk_maintenance" ] && exit 0
 NAME="" LOG="" KNOWN="" REDC="" TITLE="" MSG="" REQRE="" REDRE=""
 while [ $# -gt 0 ]; do
   case "$1" in
