@@ -1911,7 +1911,7 @@ static void init_engines(const std::string& cfg_path)
             auto& gd = g_gold_daily_cbe;
             gd.cfg.enabled   = true;
             gd.cfg.live_book = true;
-            gd.cfg.lot_oz    = 1.0;
+            gd.cfg.lot_oz    = 11.0;  // S-22j GLD-proxy: 11 shares ~= certified 1-oz notional (~$4.2k), RT ~5.3bp
             gd.set_exec(
                 /* open   */ [](const std::string& sym, bool is_long, double lots, double px) -> std::string {
                     return send_live_order(sym, is_long, lots, px);
@@ -1959,7 +1959,7 @@ static void init_engines(const std::string& cfg_path)
                 auto& gdm = omega::gold_daily_cbe_mimic();
                 gdm.cfg.enabled   = true;
                 gdm.cfg.live_book = true;
-                gdm.cfg.lot_oz    = 1.0;
+                gdm.cfg.lot_oz    = 5.0;   // S-22j GLD-proxy: 5 shares/leg (~$1.9k), RT ~11bp = certified cost basis
                 gdm.set_exec(
                     /* open   */ [](const std::string& sym, bool is_long, double lots, double px) -> std::string {
                         return send_live_order(sym, is_long, lots, px);

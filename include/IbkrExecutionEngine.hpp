@@ -124,11 +124,13 @@ struct IbkrExecutionEngine : public DefaultEWrapper {
             spec_[om] = s; ibkr_to_omega_[s.ibkr_symbol] = om;
         };
         add("XAUUSD",  {"MGC",    "FUT",  "COMEX",    "USD", 1.0});
-        // SPOT gold (London bullion, CMDTY/SMART, fractional-oz OK — no FUT/STK
-        // integer floor, no futures margin). S-2026-07-22i for GoldDailyCbe
-        // (operator: "we are not using mgc" — commodities-segment margin blocks
-        // MGC at this account size). Qualification failure = orders BLOCKED loud.
-        add("XAUUSD.S",{"XAUUSD", "CMDTY","SMART",    "USD", 1.0});
+        // GOLD = GLD ETF (S-2026-07-22j FINAL: London spot XAUUSD is HARD-BANNED
+        // for Australian residents — IBKR product restriction, same class as
+        // CFDs; err-460 was permanent, not propagation). GLD under the proven
+        // stocks permission tracks gold ~1:1; ~11 shares = the certified 1-oz
+        // notional at RT ~5.3bp (cheaper than spot would have been). MGC futures
+        // remain the upgrade path once funding covers the margin (probed 30-min).
+        add("XAUUSD.S",{"GLD",    "STK",  "SMART",    "USD", 1.0, "ARCA"});
         // Micro gold (10oz) for the small-notional mimic books (S-2026-07-14 operator
         // sizing: 1 MGC). Distinct omega sym kept for per-book routing/attribution.
         add("XAUUSD.M",{"MGC",    "FUT",  "COMEX",    "USD", 1.0});
