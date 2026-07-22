@@ -81,8 +81,14 @@ if violations:
     print("\n  A tombstone overrides any AUDITED_CONFIGS row -- a fresh EDGE row does NOT unblock it.")
 
 if dead_uncovered:
-    print(f"\n  [warn] AUDITED_CONFIGS verdict=DEAD not in TOMBSTONES.tsv (add if it has a live global): "
-          + ", ".join(dead_uncovered))
+    # Operator hard rule (2026-07-22): dead-engine NAMES are never printed in routine
+    # output — counts only. Names available only behind an explicit opt-in flag.
+    if "--list-dead" in sys.argv:
+        print(f"\n  [warn] AUDITED_CONFIGS verdict=DEAD not in TOMBSTONES.tsv (add if it has a live global): "
+              + ", ".join(dead_uncovered))
+    else:
+        print(f"\n  [warn] {len(dead_uncovered)} AUDITED_CONFIGS verdict=DEAD row(s) not in TOMBSTONES.tsv "
+              f"(bookkeeping only; names suppressed -- rerun with --list-dead if acting on it)")
 
 if not violations:
     print("  CLEAN -- no tombstoned engine is enabled.")

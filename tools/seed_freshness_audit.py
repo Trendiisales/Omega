@@ -300,8 +300,14 @@ def main():
         print(f"  [SEED-STALE] {rel}  last bar {d}  = {age:.0f}d old (> {thr}d)  -> ENGINE BOOTS BLIND, gate may misfire")
     for rel, age, thr, d in sorted(snapshot_lag, key=lambda r:-r[1]):
         print(f"  [snapshot-lag] {rel}  {age:.0f}d (> {thr}d) -- Mac git snapshot of a nightly-VPS-refreshed seed; VPS copy is the load-bearing one. Re-collate: scp from omega-new + commit.")
-    for rel, age, thr, d in sorted(skipped, key=lambda r:-r[1]):
-        print(f"  [skipped-disabled] {rel}  {age:.0f}d old -- engine disabled, seed unread, harmless")
+    # Operator hard rule (2026-07-22): disabled-engine artifacts are never itemized in
+    # routine output -- count only ("--list-disabled" opts back into names).
+    if skipped:
+        if "--list-disabled" in sys.argv:
+            for rel, age, thr, d in sorted(skipped, key=lambda r:-r[1]):
+                print(f"  [skipped-disabled] {rel}  {age:.0f}d old -- engine disabled, seed unread, harmless")
+        else:
+            print(f"  [skipped-disabled] {len(skipped)} disabled-engine seed(s) -- unread, harmless (names suppressed; --list-disabled to itemize)")
     for rel in missing:
         print(f"  [SEED-MISSING] {rel}  (referenced in code, not found / unreadable)")
     for rel, rows in req_missing:

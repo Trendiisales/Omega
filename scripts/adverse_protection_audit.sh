@@ -67,7 +67,8 @@ for h in include/*Engine.hpp include/*Engines.hpp include/*Stack.hpp; do
   base="$(basename "$h" .hpp)"
   if grep -q "$TAG" "$h"; then ok=$((ok+1)); continue; fi
   if is_legacy "$base"; then
-    echo "LEGACY (backfill owed): $h — grandfathered, no ADVERSE-PROTECTION: verdict yet."
+    # Operator hard rule (2026-07-22): legacy/dead engine names are never printed
+    # in routine output — the summary line carries the count.
     warns=$((warns+1)); continue                 # grandfathered — backfill owed
   fi
   echo "VIOLATION: $h opens a position but has no '$TAG' verdict and is not grandfathered."
