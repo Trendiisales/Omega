@@ -642,10 +642,13 @@ def main() -> int:
         else:
             rec("PASS", "SYMBOL-COV", "%s: all %d slots present in pushed desk state" % (label, len(mac_slots)))
     # 3c/3d/3e wired rosters (engine_init.hpp) -> endpoints
+    # bigcap-ladder row REMOVED S-2026-07-23h: that book was retired to `#if 0` S-2026-07-16l
+    # (never traded) but parse_name_array reads BIGCAP_LAD regardless of preprocessor state,
+    # so once its leftover state file went empty (07-21) the check false-FAILed forever —
+    # same dead-book-artifact class as the feeds_selftest [vps-stock] false RED fixed S-23h.
     for label, wired, served, field, key in (
             ("fx-ladder", parse_cfg_array(einit, r"static const FLCfg FL\[\]\s*=\s*\{"), served_fx, "pairs", "pair"),
             ("idx-ladder", parse_cfg_array(einit, r"static const ILCfg IL\[\]\s*=\s*\{"), served_ix, "pairs", "pair"),
-            ("bigcap-ladder", parse_name_array(einit, "BIGCAP_LAD"), served_sl, "names", "sym"),
             ("bigcap-2pct", parse_name_array(einit, "BC2_UNIV"), served_b2, "names", "sym")):
         if not wired:
             rec("WARN", "SYMBOL-COV", "%s: could not parse wired roster from engine_init.hpp (source drifted?)" % label)
