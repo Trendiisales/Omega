@@ -3207,6 +3207,15 @@ static void init_engines(const std::string& cfg_path)
                             p.current = lp;
                             p.unrealized_pnl = (lp - p.entry) * p.size;
                         }
+                        // S-23a held-truth: daily books stamp entry_ts with the BAR DATE
+                        // (midnight) -> "held 2326m" nonsense. Use the broker order rec's
+                        // ts (fill time once acked) when a real token exists.
+                        if (!p.token.empty()) {
+                            std::lock_guard<std::mutex> lk(g_live_orders_mtx);
+                            auto it = g_live_orders.find(p.token);
+                            if (it != g_live_orders.end() && it->second.ts > 0)
+                                p.entry_ts = it->second.ts;
+                        }
                     }
                     return v;
                 });
@@ -7246,7 +7255,8 @@ static void init_engines(const std::string& cfg_path)
                     {
                         std::lock_guard<std::mutex> lk(g_live_orders_mtx);
                         auto it = g_live_orders.find(clOrdId);
-                        if (it != g_live_orders.end()) it->second.acked = true;
+                        if (it != g_live_orders.end()) { it->second.acked = true;
+                            it->second.ts = nowSec(); }   // S-23a: rec.ts becomes FILL time (held-display truth)
                     }
                     {
                         static std::mutex fills_mtx;

@@ -79,6 +79,7 @@ struct PositionSnapshot
     int64_t     entry_ts       = 0;     // epoch seconds of entry (0 = unknown)
     double      tp             = 0.0;   // take-profit price (0 = none)
     double      sl             = 0.0;   // stop-loss price (0 = none)
+    std::string token;                  // S-23a: broker clOrdId (fill-time lookup); "" = book-only
 };
 
 class OpenPositionRegistry

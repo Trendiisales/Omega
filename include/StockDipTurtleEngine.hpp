@@ -142,6 +142,7 @@ public:
         o.current = c_.empty() ? pos_.epx : c_.back();
         o.unrealized_pnl = (o.current - pos_.epx) * cfg_.lot;
         o.entry_ts = pos_.entry_ts; o.sl = 0.0; o.tp = 0.0;
+        o.token = pos_.token;           // lets the display use the real FILL time for held
         return true;
     }
 
