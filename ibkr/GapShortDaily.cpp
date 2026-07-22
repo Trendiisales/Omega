@@ -96,15 +96,24 @@ public:
     void positionEnd() override { cli_->cancelPositions(); }
     void error(int,int code,const std::string& m,const std::string&) override { if(code!=2104&&code!=2106&&code!=2158&&code!=2150&&code!=200&&code!=162) printf("[DAILY] err %d %s\n",code,m.c_str()); }
     void set_paper_only(bool p){ cfg_.PAPER_ONLY=p; }
+    // S-2026-07-23a proving-size: operator minimum-first rule — the hardcoded
+    // $50k RiskManager sized $4k/trade with a 100% stop. --equity=N rescales
+    // every cap (risk 8%, name cap 10%, daily kill 12%) to the chosen base.
+    void set_equity(double v){ if(v>0) risk_ = RiskManager(v); }
     bool entered() const { return entered_; }
     bool killed()  const { return killed_; }
 };
 
 int main(int argc,char**argv){ setvbuf(stdout,nullptr,_IONBF,0);
-    int port=4002; bool send_orders=false;
-    for(int i=1;i<argc;i++){ if(!strcmp(argv[i],"--orders")) send_orders=true; else port=atoi(argv[i]); }
-    // --orders: actually submit (on the DU paper account = live rehearsal). default = log-only.
-    GapShortDaily e; e.set_paper_only(!send_orders);
+    int port=4002; bool send_orders=false; double equity=50000.0;
+    for(int i=1;i<argc;i++){
+        if(!strcmp(argv[i],"--orders")) send_orders=true;
+        else if(!strncmp(argv[i],"--equity=",9)) equity=atof(argv[i]+9);
+        else port=atoi(argv[i]);
+    }
+    // --orders: actually submit. default = log-only. --equity=N = proving-size base
+    // (S-23a operator minimum-first: 2500 -> ~$200/trade, worst stop-out ~-$200).
+    GapShortDaily e; e.set_paper_only(!send_orders); e.set_equity(equity);
     printf("[DAILY] orders=%s (account gate is IB paper DU; --orders flips submission)\n", send_orders?"ON":"LOG-ONLY");
     if(!e.connect("127.0.0.1",port,86)){printf("connect failed\n");return 1;}
     printf("[DAILY] up. open=0935 close=1555 ET (current %d)\n",et_hhmm());
