@@ -7013,6 +7013,51 @@ static void init_engines(const std::string& cfg_path)
         std::cout << "[OMEGA-MODE] SHADOW -- exact live simulation (orders paper only, all risk gates active)\n";
     }
 
+    // ── [PAPER-PURGE] S-2026-07-22j (operator order: "fixed/verified or deleted") ──
+    // The S-22c conversion flipped FLAGS, not ROUTING: none of the swept Class-1
+    // engines' classes contain an order-send path (send_live_order / set_exec) —
+    // their "LIVE" state was structurally paper. Until an engine is REWIRED with
+    // real exec routing + re-certified, it does not run AT ALL. Force-disable the
+    // ENTIRE sweep here, before the LIVE-ONLY gate counts them. The only engines
+    // left running are the proven real-order books outside this list: StockDip/
+    // StockTurtle + mimic cells, FX/INDEX ladders, GoldDailyCbe + mimic x2, gold
+    // mimic registry (its live cells currently paused). Revival path per engine:
+    // exec wire + call-site activation in the SAME commit + cert -> re-enable.
+    {
+        int purged = 0;
+        auto purge = [&](const char* nm, bool& en) {
+            if (en) { en = false; ++purged;
+                std::printf("[PAPER-PURGE] %s force-disabled (no real order path)\n", nm); }
+        };
+        #define OMEGA_PP(e) purge(#e, e.enabled)
+        OMEGA_PP(g_connors_nas);      OMEGA_PP(g_connors_ger);
+        OMEGA_PP(g_dj30_turtle_d1);   OMEGA_PP(g_spx_turtle_d1);  OMEGA_PP(g_nas_turtle_d1);
+        OMEGA_PP(g_idx_bear_short_nas); OMEGA_PP(g_idx_bear_short_sp);
+        OMEGA_PP(g_xau_tf_d1);        OMEGA_PP(g_xau_tf_1h);      OMEGA_PP(g_xau_tf_2h);
+        OMEGA_PP(g_xau_tf_4h);        OMEGA_PP(g_rider_4h);       OMEGA_PP(g_rider_d1);
+        OMEGA_PP(g_xau_threebar_30m); OMEGA_PP(g_xau_sess_nypm);  OMEGA_PP(g_gold_volbrk_m30);
+        OMEGA_PP(g_gold_don_10m);     OMEGA_PP(g_gold_don_h1);    OMEGA_PP(g_gold_kelt_m30);
+        OMEGA_PP(g_gold_tfbw_1040);   OMEGA_PP(g_gold_tfbw_20100);
+        OMEGA_PP(g_gold_tsmom_d1);    OMEGA_PP(g_gold_campaign_d1); OMEGA_PP(g_gold_bull_trend);
+        OMEGA_PP(g_gold_panic_bounce); OMEGA_PP(g_h1_swing_gold);  OMEGA_PP(g_nas_bbrev_long_h1);
+        OMEGA_PP(g_xau_swing_break_d1); OMEGA_PP(g_iswing_sp);     OMEGA_PP(g_iswing_nq);
+        OMEGA_PP(g_monday_nas);       OMEGA_PP(g_ema_cross);
+        OMEGA_PP(g_tom_us500);  OMEGA_PP(g_tom_ustec); OMEGA_PP(g_tom_ger40);
+        OMEGA_PP(g_tom_dj30);   OMEGA_PP(g_tom_uk100); OMEGA_PP(g_tom_xau);
+        OMEGA_PP(g_idx_seas_us500); OMEGA_PP(g_idx_seas_ustec); OMEGA_PP(g_idx_seas_ger40);
+        OMEGA_PP(g_idx_seas_dj30);  OMEGA_PP(g_idx_seas_uk100); OMEGA_PP(g_idx_seas_estx50);
+        OMEGA_PP(g_idx_fomc_us500); OMEGA_PP(g_idx_fomc_ustec); OMEGA_PP(g_idx_fomc_dj30);
+        OMEGA_PP(g_ibs_nas);   OMEGA_PP(g_streak_nas); OMEGA_PP(g_dbl_nas);
+        OMEGA_PP(g_streak_spx); OMEGA_PP(g_dbl_spx);   OMEGA_PP(g_rsi3_nas);
+        OMEGA_PP(g_ibs_spx);   OMEGA_PP(g_rsi2_spx);   OMEGA_PP(g_ibs_dj);
+        OMEGA_PP(g_rsi2_dj);   OMEGA_PP(g_dbl_dj);
+        OMEGA_PP(g_xs_mom_long); OMEGA_PP(g_xs_mom_ls); OMEGA_PP(g_xs_mr_ls);
+        OMEGA_PP(g_imacro_sp); OMEGA_PP(g_imacro_nq); OMEGA_PP(g_imacro_nas); OMEGA_PP(g_imacro_us30);
+        #undef OMEGA_PP
+        std::printf("[PAPER-PURGE] %d flag-only 'live' engine(s) force-disabled -- rewire+recert to revive\n", purged);
+        std::fflush(stdout);
+    }
+
     // ── [LIVE-ONLY-GATE] S-2026-07-22c (operator live-only mandate) ──────────────
     // DONE-definition check #4: every engine is LIVE (enabled + shadow_mode=false)
     // or CULLED (enabled=false). An enabled engine still in shadow_mode is a
@@ -7022,6 +7067,8 @@ static void init_engines(const std::string& cfg_path)
     // g_gold_stack (shared regime-signal infra, certify-or-cull owed),
     // g_regime_adaptor + guards (infra, open no positions), tombstoned engines
     // (all enabled=false). protection/boot monitors watch for "0 VIOLATION".
+    // NOTE S-22j: runs AFTER [PAPER-PURGE] -- lo_live now counts only engines
+    // with a real order path.
     {
         int lo_live = 0, lo_off = 0, lo_viol = 0;
         auto lo_chk = [&](const char* nm, bool en, bool sh, bool* force_off) {
