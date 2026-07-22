@@ -132,16 +132,23 @@ struct IbkrExecutionEngine : public DefaultEWrapper {
         // Micro gold (10oz) for the small-notional mimic books (S-2026-07-14 operator
         // sizing: 1 MGC). Distinct omega sym kept for per-book routing/attribution.
         add("XAUUSD.M",{"MGC",    "FUT",  "COMEX",    "USD", 1.0});
-        // ── INDEX = micro FUTURES (S-2026-07-22j FINAL: the CFD detour is DEAD —
-        // operator's Trading Permissions page shows NO CFD asset class at all;
-        // IBKR Australia accounts are ineligible, cannot even request it).
-        // Micro margins (broker-signed preflight): MYM ~NZ$2.9k = tradable NOW;
-        // MES ~NZ$5.8k = after the +NZ$5k lands; MNQ ~NZ$11k = needs more.
-        // Excess signals reject LOUDLY (err-201) until funded — never silent.
-        add("US500.F", {"MES",    "FUT",  "CME",      "USD", 1.0});
+        // ── INDEX = ETF PROXIES (S-2026-07-22j FINAL-2, operator: "u can trade
+        // smaller amounts on indices — fix this, we need to trade those engines").
+        // IBKR-AU: CFDs don't exist for the entity; micro futures margin-wall the
+        // account (MNQ NZ$11k / MES 5.8k, broker-signed). The small-size vehicle
+        // the account CAN trade under its (proven-VIABLE) stocks permission:
+        //   NAS100 -> QQQ (~$560/share)   US500.F -> SPY (~$630/share)
+        //   DJ30.F -> DIA (~$430/share)   — 1-share granularity, ~$150-300 margin.
+        // Same underlying the engines certified on (tracking corr ~1). PROXY-SCALE
+        // NOTE: engines signal in INDEX points; broker fills come back in ETF $ —
+        // ledger broker_fill_px columns show ETF scale (cosmetic seam, real cash
+        // truth = ibkr_fills.csv + statement; revisit-lot-sizes standing item).
+        // USTEC.F stays MNQ futures (explicit futures routing only). GER40 has no
+        // AU-tradable small vehicle -> stays DAX FUT (rejects until funded).
+        add("US500.F", {"SPY",    "STK",  "SMART",    "USD", 1.0, "ARCA"});
         add("USTEC.F", {"MNQ",    "FUT",  "CME",      "USD", 1.0});
-        add("NAS100",  {"MNQ",    "FUT",  "CME",      "USD", 1.0});
-        add("DJ30.F",  {"MYM",    "FUT",  "CBOT",     "USD", 1.0});
+        add("NAS100",  {"QQQ",    "STK",  "SMART",    "USD", 1.0, "NASDAQ"});
+        add("DJ30.F",  {"DIA",    "STK",  "SMART",    "USD", 1.0, "ARCA"});
         add("GER40",   {"DAX",    "FUT",  "EUREX",    "EUR", 1.0});
         add("ESTX50",  {"ESTX50", "FUT",  "EUREX",    "EUR", 1.0});
         add("UK100",   {"Z",      "FUT",  "ICEEU",    "GBP", 1.0});
