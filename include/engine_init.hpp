@@ -1936,6 +1936,11 @@ static void init_engines(const std::string& cfg_path)
             // the shared warmup_XAUUSD_D1.csv (ms-ts flat-close file, nightly-refreshed,
             // consumed by CalendarTom + GoldTsmomD1V2; S-22i briefly clobbered it — reverted).
             const size_t gdrows = gd.seed_daily_csv(omega::resolve_seed_path("phase1/signal_discovery/warmup_XAUUSD_D1_OHLC.csv"));
+            // Go-live-now (operator 2026-07-22): reconstruct TODAY's Asian range +
+            // break/retrace state from on-box intraday files — no waiting for the
+            // next fully-observed 00-08 UTC session. Prints [GOLD-CBE][ASIAN-BACKFILL].
+            gd.backfill_asian_today((int64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count());
             g_engine_heartbeat.register_engine("GoldDailyCBE", gd.cfg.enabled, 1800, 0, 24);
             printf("[OMEGA-INIT][SEED] GoldDailyCbe wired: %zu D1 warmup bars (EMA200/ATR14/band), "
                    "Asian break-retrace-confirm LONG, SL1.75xATR + 50%%@1R + 2.0xATR D1 trail, no-BE-ratchet, "

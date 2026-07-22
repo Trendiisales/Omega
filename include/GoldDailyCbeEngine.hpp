@@ -57,6 +57,9 @@ public:
         bool        atr_band      = true;    // ATR14 within P10-P90 of trailing 120d
         std::string state_path    = "golddailycbe_live.txt";
         std::string dump_path     = "golddailycbe_daily.csv";
+        // boot Asian-range backfill sources (VPS-relative; missing = fallback)
+        std::string l2_prefix     = "logs/l2_ticks_XAUUSD_";
+        std::string h4_csv_path   = "logs/gold_d1_trend_h4.csv";
     };
     Config cfg;
 
@@ -113,6 +116,89 @@ public:
     }
 
     bool position_open() const { return pos_.active; }
+
+    // ── Boot backfill (operator order 2026-07-22: "it goes live now, why wait
+    // for asian") — reconstruct TODAY's Asian range + post-08:00 break/retrace
+    // state from on-box intraday files instead of waiting to observe a full
+    // 00-08 UTC session live. Best-effort sources (VPS cwd C:\Omega):
+    //   1. logs/l2_ticks_XAUUSD_<YYYY-MM-DD>.csv  header ts_ms,mid,bid,ask,...
+    //   2. logs/gold_d1_trend_h4.csv              ts_ms,o,h,l,c (4h bars; the
+    //      00:00 UTC bar patches any tick-file gap back to midnight)
+    // NEVER enters or books during backfill — only the range + break/retrace
+    // flags; entries fire on live M1 confirm closes after it. Missing files =
+    // graceful fallback to live observation (Mac/backtest TUs unaffected).
+    void backfill_asian_today(int64_t now_ms) {
+        if (!cfg.enabled) return;
+        const int64_t now_s = now_ms / 1000;
+        struct tm gu; utc_tm_(now_s, gu);
+        const int64_t day0 = now_s - (gu.tm_hour * 3600 + gu.tm_min * 60 + gu.tm_sec);
+        const int64_t a_end = day0 + 8 * 3600;
+        const long udk = (long)(gu.tm_year + 1900) * 10000 + (gu.tm_mon + 1) * 100 + gu.tm_mday;
+        double hi = 0.0, lo = 0.0; int64_t earliest = 0;
+        bool h4_00 = false;
+        // (2) H4 bars: 00:00 (+ forming 04:00) bar of today
+        {
+            std::ifstream f(cfg.h4_csv_path);
+            std::string ln;
+            while (f.is_open() && std::getline(f, ln)) {
+                long long ts; double o, h, l, c;
+                if (std::sscanf(ln.c_str(), "%lld,%lf,%lf,%lf,%lf", &ts, &o, &h, &l, &c) != 5) continue;
+                const int64_t s = ts >= 100000000000LL ? ts / 1000 : ts;
+                if (s == day0 || s == day0 + 4 * 3600) {
+                    if (hi == 0.0 || h > hi) hi = std::max(hi, h);
+                    if (lo == 0.0 || l < lo) lo = (lo == 0.0) ? l : std::min(lo, l);
+                    if (s == day0) h4_00 = true;
+                }
+            }
+        }
+        // (1) tick file: range inside [00:00,08:00) + break/retrace replay after
+        char datebuf[16];
+        std::snprintf(datebuf, sizeof datebuf, "%04d-%02d-%02d",
+                      gu.tm_year + 1900, gu.tm_mon + 1, gu.tm_mday);
+        const std::string tick_path = cfg.l2_prefix + datebuf + ".csv";
+        std::vector<double> post;                     // post-08:00 mids for state replay
+        {
+            std::ifstream f(tick_path);
+            std::string ln; bool hdr = true;
+            while (f.is_open() && std::getline(f, ln)) {
+                if (hdr) { hdr = false; if (!ln.empty() && (ln[0] < '0' || ln[0] > '9')) continue; }
+                long long ts; double mid;
+                if (std::sscanf(ln.c_str(), "%lld,%lf", &ts, &mid) != 2 || mid <= 0.0) continue;
+                const int64_t s = ts >= 100000000000LL ? ts / 1000 : ts;
+                if (s < day0 || s > now_s) continue;
+                if (s < a_end) {
+                    if (earliest == 0 || s < earliest) earliest = s;
+                    if (hi == 0.0 || mid > hi) hi = std::max(hi, mid);
+                    if (lo == 0.0 || mid < lo) lo = (lo == 0.0) ? mid : std::min(lo, mid);
+                } else {
+                    post.push_back(mid);
+                }
+            }
+        }
+        if (hi <= 0.0 || lo <= 0.0 || hi <= lo) {
+            std::printf("[GOLD-CBE][ASIAN-BACKFILL] no usable intraday data (%s / %s) -- live observation fallback\n",
+                        tick_path.c_str(), cfg.h4_csv_path.c_str());
+            std::fflush(stdout);
+            return;
+        }
+        const bool full = h4_00 || (earliest > 0 && earliest <= day0 + 1800);
+        asian_day_ = udk; a_h_ = hi; a_l_ = lo; a_live_ = true;
+        a_seen_open_ = full;
+        a_done_ = (now_s >= a_end);
+        a_full_ = a_done_ ? full : false;             // pre-08:00 boot: flags finalize live
+        broke_ = retraced_ = false;
+        // replay post-Asian mids through the break/retrace flags only
+        const double rng = a_h_ - a_l_;
+        for (double m : post) {
+            if (!broke_) { if (m > a_h_) broke_ = true; }
+            else if (!retraced_) { if (m <= a_h_ - cfg.retrace_frac * rng) retraced_ = true; }
+        }
+        std::printf("[GOLD-CBE][ASIAN-BACKFILL] day=%ld range %.2f-%.2f (%.2f) full=%d done=%d "
+                    "broke=%d retraced=%d (ticks_from=%lld h4_00=%d post_mids=%zu)\n",
+                    udk, a_l_, a_h_, rng, (int)full, (int)a_done_, (int)broke_, (int)retraced_,
+                    (long long)earliest, (int)h4_00, post.size());
+        std::fflush(stdout);
+    }
 
     // KILL-ALL panic closer (on_tick.hpp fan-out): force-close the open position
     // through the normal close/ledger path at the live mid (0 = last M1 close).
