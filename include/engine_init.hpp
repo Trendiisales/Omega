@@ -3301,8 +3301,16 @@ static void init_engines(const std::string& cfg_path)
                         g_engine_heartbeat.pulse("DualMom");
                     }
                 }).detach();
+                // HONEST CERT RESTATEMENT (S-2026-07-23 edge-search reproduction): the 1.86/21.5
+                // figure came from GROSS-EXPOSURE vol scaling, a mechanism this engine does NOT
+                // implement (whole-share lots -> name-count keff scaling, the documented deviation
+                // in DualMomentumEngine.hpp). The engine's ACTUAL mechanism backtests Sharpe ~1.66
+                // mdd ~29.9 -- still beats the gated-EW45 control (1.34/24.4), so LIVE stands, but
+                // never quote 1.86/21.5 as this engine's cert. Candidate upgrade needing its own
+                // cert: K5/rel63/rebal10 + gross-scaling overlay = 1.90/21.0/2022 -6.1.
                 printf("[OMEGA-INIT][SEED] DualMomentum wired: K8/rel63/abs251/rebal10 SPY-200 cash gate, "
-                       "stop20/name + volTgt25 (cert Sharpe 1.86 mdd 21.5), LIVE 1 share/name, deploy-forward\n");
+                       "stop20/name + volTgt25-keff (cert Sharpe 1.66 mdd 29.9 name-count mechanism; ctrl 1.34), "
+                       "LIVE 1 share/name, deploy-forward\n");
                 fflush(stdout);
             }
 

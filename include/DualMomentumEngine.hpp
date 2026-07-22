@@ -69,12 +69,20 @@ public:
 
     // SPY regime (fed by engine_init from spy_close_hist.csv rows; same feed as Hi52)
     void push_spy_close(double c) {
+        std::lock_guard<std::mutex> lk(mu_);   // ladder gates read spy_ cross-thread (spy_bull)
         spy_.push_back(c); if (spy_.size() > 260) spy_.pop_front();
     }
     bool gate_on() const {
         if (spy_.size() < 200) return false;               // fail-CLOSED: no regime = cash
         double s = 0; for (size_t i = spy_.size() - 200; i < spy_.size(); ++i) s += spy_[i];
         return spy_.back() > s / 200.0;
+    }
+    // Locked cross-thread view of the SPY>200DMA regime for OTHER engines (index-ladder
+    // bull gates, S-2026-07-23 reconfig). gate_on() itself stays unlocked because step_
+    // calls it while already holding mu_ (non-recursive mutex). Fail-CLOSED like gate_on.
+    bool spy_bull() {
+        std::lock_guard<std::mutex> lk(mu_);
+        return gate_on();
     }
 
     // history seed: push closes only, no trading; call finalize_seed() after.

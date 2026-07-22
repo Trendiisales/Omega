@@ -23,8 +23,12 @@ standalone PF 3.03 available only under operator bear-waiver).
   `THR3% next-close, TIGHT a0.5/s2, WIDE a8/g70, cap5, reclip5, LC off, GATE own-name>200SMA AND vol20<=vol100, 8bp`
   → n=839, +1328%, PF 1.74, DD 132, MAR 10.0, 2022 +83, 2× PF 1.68. Frontier: gate saves 86% DD for 76% net.
   NOTE: resurrecting this engine reverses an explicit operator kill (S-16l) — needs operator word.
-- **US500 ladder**: two-tier — DD-min `W24/2.0 g70 dma200-gate + BE-floor` PF 1.77 DD 16.4 2×PF 1.56 ALL-6;
-  max-net ungated g70 (PF 1.38, 2× PF 1.27 <1.3). 2022 was its BEST year ungated (+77) — gate is PF/DD improver.
+- **US500 ladder**: two-tier — DD-min `W24/2.0 **g50**+BE-floor dma200-gate` PF 1.77 DD 16.4 2×PF 1.56 ALL-6
+  (CORRECTED S-23: the "g70" label was wrong — the certified harness row ran g50+floor; keep70 vs keep50 is
+  inert ±0.7 net per the C++ parity cert); max-net ungated g70 (PF 1.38, 2× PF 1.27 <1.3). 2022 was its BEST
+  year ungated (+77) — gate is PF/DD improver.
+  C++ PARITY (ladder_reconfig_parity_2026-07-23.cpp): live-arch config (be0.08/pend4, weekend layers ON,
+  + dma200 gate + gb0.50) ALL-6 PASS at PF 1.52 / DD 19.9 / 2022 +4.2 / 2× 1.35 — the shippable truth.
 - **GER40 ladder**: keep bull regime gate (load-bearing; volcalm does NOT rescue bear file −31%). Upgrade:
   `+volcalm+BE-floor` in-bull → PF 14.6, DD 3.4, MAR 14.0. Thin (n=86, 7-month file) — provisional.
 - **GBPUSD ladder**: thr0.75 NO-SHIP as DD-optimized (H2 +1.8 ceiling). Migrate to `W48/thr1.0 g70 cap5 no-gate`
@@ -45,6 +49,22 @@ standalone PF 3.03 available only under operator bear-waiver).
   2022 +5.3 (gated subset), WF +42.7/+37.4, 2× PF 1.73. Confirm depth is THE lever (6bp→PF1.24; 1%→PF1.88).
   200DMA >> rvol gates here (OPPOSITE of 3% family). Wiring needs: new gate fn + config at engine_init ~L2315
   (FxMimicLadderCompanion NAS100 cell) + faithful C++ parity cert (pend_bars→≈W semantics differ from live pend4).
+
+## C++ PARITY CERTS (S-23, backtest/ladder_reconfig_parity_2026-07-23.cpp — real FxLadderPair; n-parity EXACT on all 4)
+- **NAS100: STRUCTURAL DIVERGENCE.** The python-certified architecture (pre-arm floor STOP at epx·(1+RT)
+  + tight-leg OFF) does not exist in FxLadderPair — pre-arm losers ride to window flush (DD 33 vs 14).
+  As-wireable C++ truth: ndx200/no-weekend variant PF 1.49 all-6 PASS; with live weekend layers PF 1.39 and
+  date-split WF-H2 flips negative. Capturing PF 1.88 needs a pre-arm-floor-stop engine config (operator call).
+- **US500: PASS** — wire target = live-arch PF 1.52 row above.
+- **GBPUSD: PASS at python-parity (PF 2.14)**; live-arch overlay (be0.08/pend4/wknd) = +15.2%/PF 1.62 — the
+  honest expectation if migrated config-only onto the live cell. rt is 2.0bp (doc's 2.4 was wrong).
+- **GER40: PASS** (PF 12.5 parity; weekend layers cut to 7.5 — still stellar; volcalm = vol24<=vol240 on H1,
+  NOT the bigcap vol20/vol100 variant). 7-month file — provisional stands.
+- **Weekend Layer2+3 degrade every one of these H1 cells** (python certs never included them). They are the
+  operator's Apr-2025 tariff-gap risk cap — re-check explicitly before any wire that keeps them.
+- DualMom cert restated (edge-search reproduction): live keff mechanism = Sharpe 1.66/mdd 29.9 (NOT 1.86/21.5,
+  which was gross-exposure scaling the engine doesn't run); still beats ctrl 1.34. K5+gross-overlay = 1.90/21.0
+  candidate, needs cert + engine mechanism change.
 
 ## Cross-family lever truths
 - LOSS_CUT inert on every daily/laddered cell (gap-through) — keep only as backstop.
