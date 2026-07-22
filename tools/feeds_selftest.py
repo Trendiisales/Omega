@@ -503,6 +503,71 @@ def vps_gapshort_ledger_health() -> tuple[str, str]:
     return ("PASS", f"task {state}, last fire {last_min/60:.1f}h ago, ledger write {led_min/60:.1f}h ago")
 
 
+def vps_position_parity() -> tuple[str, str]:
+    """ONE `ssh omega-new` call. ENGINE-STATE <-> BROKER position parity for the
+    stock books. Built S-2026-07-23 (operator: 'why did you not find this
+    automatically') after a session had to hand-reconcile the BMY StockTurtle
+    position across live.txt / state.json / ibkr_fills.csv -- a human (or AI)
+    eyeball was the reconciliation layer, the exact class banned by
+    feedback-content-parity-not-just-plumbing. Compares:
+      engine-claimed opens: stockdipturtle_*_live.txt (act==1) + dualmom_live.txt
+      broker net shares:    logs/trades/ibkr_fills.csv (BOT-SLD per symbol, STK only)
+    RED on either direction: engine manages a position the broker doesn't hold
+    (phantom -- exit will 'fire' on nothing) or the broker holds shares no engine
+    manages (orphan -- nothing will ever exit it). Caveat: fills history begins
+    2026-07-22 (first real fill); symbols with '.' (CMDTY/FX aliases) excluded."""
+    ps = (
+        r"foreach($f in Get-ChildItem 'C:\Omega\stockdipturtle_*_live.txt' -ErrorAction SilentlyContinue){"
+        r"$c=(Get-Content $f.FullName -Raw -ErrorAction SilentlyContinue);"
+        r"if($c){Write-Output ('SDT'+[char]9+$f.Name+[char]9+$c.Trim())}};"
+        r"if(Test-Path 'C:\Omega\dualmom_live.txt'){foreach($l in Get-Content 'C:\Omega\dualmom_live.txt'){"
+        r"Write-Output ('DM'+[char]9+$l)}};"
+        r"if(Test-Path 'C:\Omega\logs\trades\ibkr_fills.csv'){foreach($l in Get-Content 'C:\Omega\logs\trades\ibkr_fills.csv'){"
+        r"Write-Output ('FILL'+[char]9+$l)}}"
+    )
+    try:
+        r = subprocess.run(["ssh", VPS_HOST, "powershell", "-NoProfile", "-Command", ps],
+                           capture_output=True, text=True, timeout=45)
+    except (OSError, subprocess.SubprocessError):
+        return ("RED", f"ssh {VPS_HOST} failed -- position parity UNVERIFIABLE")
+    engine_open: dict[str, str] = {}      # SYM -> which engine claims it
+    fills_net: dict[str, int] = {}        # SYM -> net shares from fills
+    saw_fills_file = False
+    for ln in r.stdout.splitlines():
+        parts = ln.split("\t")
+        if parts[0] == "SDT" and len(parts) >= 3:
+            m = re.match(r"stockdipturtle_(dip|turtle)_([a-z0-9]+)_live\.txt", parts[1].strip(), re.I)
+            toks = parts[2].split()
+            if m and toks and toks[0] == "1":
+                engine_open[m.group(2).upper()] = f"Stock{'Dip' if m.group(1).lower()=='dip' else 'Turtle'}"
+        elif parts[0] == "DM" and len(parts) >= 2:
+            toks = parts[1].split()
+            if len(toks) == 4 and not toks[0].isdigit():   # "SYM entry entry_ts token"
+                engine_open[toks[0].upper()] = "DualMom"
+        elif parts[0] == "FILL" and len(parts) >= 2:
+            saw_fills_file = True
+            cols = parts[1].split(",")
+            if len(cols) >= 9 and cols[0] != "ts_unix":
+                sym, side, qty = cols[4].strip().upper(), cols[6].strip().upper(), cols[7].strip()
+                if "." in sym or not qty.isdigit():
+                    continue
+                fills_net[sym] = fills_net.get(sym, 0) + (int(qty) if side == "BOT" else -int(qty))
+    if not saw_fills_file:
+        return ("RED", "ibkr_fills.csv missing on VPS -- broker side UNVERIFIABLE")
+    phantom = [f"{s}({e})" for s, e in sorted(engine_open.items()) if fills_net.get(s, 0) <= 0]
+    orphan = [s for s, n in sorted(fills_net.items()) if n > 0 and s not in engine_open]
+    if phantom or orphan:
+        bits = []
+        if phantom:
+            bits.append(f"engine-open but broker-flat (PHANTOM, exit fires on nothing): {','.join(phantom)}")
+        if orphan:
+            bits.append(f"broker-held but NO engine manages (ORPHAN, nothing exits it): {','.join(orphan)}")
+        return ("RED", "; ".join(bits))
+    n_open = len(engine_open)
+    return ("PASS", f"{n_open} engine-open position(s) == broker fills net "
+                    f"({', '.join(f'{s}:{engine_open[s]}' for s in sorted(engine_open)) or 'none open'})")
+
+
 def vps_stock_book_health() -> tuple[str, str]:
     """ONE `ssh omega-new` call. CONTENT-based (not mtime) integrity of the stock
     daily-close book. Catches the two silent failures the mtime manifest CANNOT and
@@ -912,6 +977,11 @@ def main() -> int:
     if gapled_row[0] != "PASS":
         live_red += 1
 
+    # ── Engine<->broker position parity (S-2026-07-23: no more eyeball reconcile) ──
+    pospar_row = vps_position_parity()
+    if pospar_row[0] != "PASS":
+        live_red += 1
+
     if not quiet:
         verdict = "RED — LIVE FEED STALE" if live_red else ("AMBER — research stale" if res_red else "GREEN — all feeds fresh")
         mark = {"GREEN": "GREEN", "AMBER": "AMBER", "RED": "RED"}
@@ -934,6 +1004,7 @@ def main() -> int:
             print(f"  {wstat:7} [vps-wdog ] {wname:24} {wdetail}")
         print(f"  {drift_row[0]:7} [vps-drift] {'deploy_hash_drift':24} {drift_row[1]}")
         print(f"  {gapled_row[0]:7} [vps-gapled] {'gapshort_fwd_ledger':23} {gapled_row[1]}")
+        print(f"  {pospar_row[0]:7} [vps-pospar] {'engine_broker_parity':23} {pospar_row[1]}")
         if live_red:
             print("  -> A LIVE feed is stale: fix the feeder BEFORE trusting any signal/telemetry.")
         elif res_red:
