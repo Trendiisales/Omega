@@ -43,6 +43,12 @@ public:
     using ClipFn = std::function<void(const std::string&, double, double, double, double,
                                       int64_t, int64_t, const std::string&)>;
 
+    // S-2026-07-22c CULL master (operator live-only order): the whole registry's cert
+    // (nNeg=0, omega_becascade_prebe_bt) PRE-DATES the S-20z honest-fill fix 58a478e2 —
+    // uncertified-honest = cull. false in engine_init ⇒ on_bar inert, zero clips book.
+    // Revival = honest worse-of re-cert PASS per cell.
+    bool enabled = true;
+
     void set_clip_fn(ClipFn f) { clip_fn_ = std::move(f); }
 
     // Build one cell. W=det window (bars), thr=mimic fraction, rt=RT cost bp,
@@ -104,6 +110,7 @@ public:
     // Per-bar drive (H1 or daily — the cell's tf_secs governs bar bucketing).
     // ts_sec = bar-close epoch seconds; the engine wants ms.
     void on_bar(const std::string& live_sym, int64_t ts_sec, double /*h*/, double l, double c) noexcept {
+        if (!enabled) return;   // S-2026-07-22c culled via engine_init
         auto it = cells_.find(live_sym);
         if (it == cells_.end() || !it->second) return;
         const int64_t ts_ms = ts_sec * 1000;

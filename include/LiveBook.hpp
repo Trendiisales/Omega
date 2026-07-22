@@ -49,7 +49,12 @@ inline bool livebook_is_validated(const std::string& tag) {
         "CalendarTom",          // CalendarTom  EDGE turn-of-month, STRONGER in 2022 bear (index+XAU)
         "NasTurtleD1_US500.F",  // SpxTurtleD1  EDGE 10yr daily, 2022 bear +92, both WF halves+
         "NasTurtleD1_DJ30.F",   // Dj30TurtleD1 EDGE 10yr daily, 2022 bear +63, both WF halves+
-        "ConnorsRSI2",          // ConnorsNas   EDGE PF4.17 (REGIME_GATE=1 asym bear-veto), 2022 bear PF3.01 +1842 n8 POSITIVE, both WF halves+ (2.91/5.09), 2x-cost robust; SMA200 self-gate sits out bears
+        "ConnorsRSI2",          // ConnorsNas + ConnorsGer (prefix match)  EDGE PF4.17 NAS / PF1.38 GER both-WF+, 2022 bear positive both; SMA200 self-gate sits out bears
+        // S-2026-07-22c live-only promotion (operator: certified-live, rest culled):
+        "GoldTsmomD1V2",        // EDGE PF1.96-2.09 both-regime, 2022 short +117pt (never bull-gate its shorts)
+        "GoldCampaignD1Anch",   // EDGE PF2.02@14bp z+3.22 pooled n=60 5-era, additivity proven
+        "XAU_4h_DonchN20",      // SurvivorPortfolio cell  EDGE (survivor_gated_bt PF1.70, bear-2022 PF1.90+)
+        "USTEC_4h_ZMR",         // SurvivorPortfolio cell  EDGE (same cert; freed by RSI_N7 cull n36->84 +$9,352)
     };
     for (auto e : kEdge) if (livebook_tag_match(tag, e)) return true;
     return false;

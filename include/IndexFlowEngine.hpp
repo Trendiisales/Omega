@@ -556,6 +556,10 @@ public:
     //   Default 0.07 = ~5.2pt cut at US500@7400 entry. Set to 0.0 to disable.
     double LOSS_CUT_PCT  = 0.07;
 
+    // S-2026-07-22c CULL toggle (operator live-only order): PF0.15 −$112 live shadow;
+    // the audit verdict said DISABLE. Set false in engine_init ⇒ on_tick inert.
+    bool enabled = true;
+
     explicit IndexFlowEngine(const char* symbol) {
         if      (strcmp(symbol, "US500.F") == 0) cfg_ = IDX_CFG_SP;
         else if (strcmp(symbol, "USTEC.F") == 0) cfg_ = IDX_CFG_NQ;
@@ -631,6 +635,7 @@ public:
     IndexFlowSignal on_tick(const std::string& sym, double bid, double ask,
                             double l2_imb, CloseCb on_close,
                             bool can_enter = true) noexcept {
+        if (!enabled) return {};   // S-2026-07-22c culled via engine_init
         if (bid <= 0.0 || ask <= 0.0 || bid >= ask) {
             ++debug_stats.ret_invalid_data;  // PATH-A-DEBUG-2026-05-08
             return {};
@@ -999,6 +1004,10 @@ public:
     double BE_ARM_PCT    = 0.05;
     double BE_BUFFER_PCT = 0.02;
 
+    // S-2026-07-22c CULL toggle (operator live-only order): no backtest cert exists
+    // for the crash-fade. Set false in engine_init ⇒ on_tick inert.
+    bool enabled = true;
+
     explicit IndexMacroCrashEngine(const char* symbol) {
         if      (strcmp(symbol, "US500.F") == 0) cfg_ = IDX_CFG_SP;
         else if (strcmp(symbol, "USTEC.F") == 0) cfg_ = IDX_CFG_NQ;
@@ -1060,6 +1069,7 @@ public:
     void on_tick(double bid, double ask, double atr, double drift,
                  double vol_ratio, bool trend_regime, CloseCb on_close,
                  bool can_enter = true) noexcept {
+        if (!enabled) return;   // S-2026-07-22c culled via engine_init
         if (bid <= 0.0 || ask <= 0.0) return;
         const double mid    = (bid + ask) * 0.5;
         const double spread = ask - bid;

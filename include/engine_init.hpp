@@ -111,7 +111,13 @@ static void init_engines(const std::string& cfg_path)
     //   `engine.shadow_mode = false;` line elsewhere in this function;
     //   reverting this line to `(g_cfg.mode != "LIVE")` would re-arm ALL
     //   engines that use kShadowDefault and is the wrong unit of change.
-    const bool kShadowDefault = true;
+    // S-2026-07-22c kShadowDefault DELETED (operator live-only order, DONE-definition
+    // check #1): shadow-as-default is abolished. Every engine now carries an EXPLICIT
+    // state: shadow_mode=false + enabled=true (LIVE, certified) or enabled=false
+    // (culled). The [LIVE-ONLY-GATE] sweep at the end of init_engines() enforces it
+    // structurally at every boot. [history: was `const bool kShadowDefault = true;`,
+    // the 2026-05-08 DEEPSTRIKE defensive whitelist — right call then, superseded by
+    // the certified-live-or-culled ruling.]
 
     // ── ISSUE-5 newly-stamped engines: follow kShadowDefault ─────────────
     // Engines with no prior explicit shadow_mode wiring in engine_init.hpp.
@@ -119,7 +125,9 @@ static void init_engines(const std::string& cfg_path)
     // Class A (stamped 2026-04-21):
     // 41-cell walk-forward sweep showed no edge on 9 days of XAUUSD tick data.
     // See globals.hpp tombstone comment for full details.
-    g_ema_cross.shadow_mode    = kShadowDefault;  // EMACrossEngine
+    g_ema_cross.shadow_mode    = true;  // EMACrossEngine — CULLED (S37d PF0.85 -$74 DISABLE verdict)
+    g_ema_cross.enabled        = false; // S-2026-07-22c hard cull (operator live-only order): field added
+                                        // so the paper dispatch actually stops (was shadow-running forever)
     // ── S37d 2026-05-26: EMERGENCY ENGINE CULL based on 14d shadow audit ──
     // 73 bug-polluted rows removed (held<0 or >7d, |pnl|>$1000) before audit.
     // 43 FORCE_CLOSE rows also excluded (shutdown phantoms, not real edge).
@@ -163,7 +171,7 @@ static void init_engines(const std::string& cfg_path)
     // against it is re-fitting the same dead signal.
     // 11-day/3.4M tick sweep showed no edge. See globals.hpp tombstone.
     // 96-cell walk-forward sweep. See globals.hpp tombstone comment.
-    g_candle_flow.shadow_mode  = kShadowDefault;  // CandleFlowEngine -- restored 2026-04-29 with audit-tightened gates, shadow only
+    g_candle_flow.shadow_mode  = true;  // CandleFlowEngine — CULLED-dormant (S37d PF0.69 -$1077 DISABLE verdict; class lacks .enabled, shadow pin = inert)
     // S11 P3b (2026-05-07): IndexHybridBracket (4 instances) culled.
     //   Original S8 shadow_mode=true pin (RR-asymmetric bleed analysis from
     //   2026-05-06 NAS100 tape) preserved in commit ba5f0e9 (S10 P3a) and
@@ -199,10 +207,21 @@ static void init_engines(const std::string& cfg_path)
     g_iflow_nq.LOSS_CUT_PCT   = 0.07;
     g_iflow_nas.LOSS_CUT_PCT  = 0.07;
     g_iflow_us30.LOSS_CUT_PCT = 0.07;
-    g_iflow_sp.set_shadow_mode(kShadowDefault);
-    g_iflow_nq.set_shadow_mode(kShadowDefault);
-    g_iflow_nas.set_shadow_mode(kShadowDefault);
-    g_iflow_us30.set_shadow_mode(kShadowDefault);
+    g_iflow_sp.set_shadow_mode(true);
+    g_iflow_nq.set_shadow_mode(true);
+    g_iflow_nas.set_shadow_mode(true);
+    g_iflow_us30.set_shadow_mode(true);
+    // S-2026-07-22c CULLED (operator live-only order: failed = cull, no paper parking).
+    // IndexFlow live-shadow record PF0.15 −$112; audit verdict said DISABLE but the class
+    // had no enabled field until now. IndexMacroCrash ×4: no backtest cert ever produced.
+    g_iflow_sp.enabled    = false;
+    g_iflow_nq.enabled    = false;
+    g_iflow_nas.enabled   = false;
+    g_iflow_us30.enabled  = false;
+    g_imacro_sp.enabled   = false;
+    g_imacro_nq.enabled   = false;
+    g_imacro_nas.enabled  = false;
+    g_imacro_us30.enabled = false;
 
     // -- IndexIntradayDriftEngine (S37-Z 2026-05-28) -------------------------
     // BUY at first H1 of UTC day / SELL at last H1. 3 viable instances.
@@ -1444,7 +1463,7 @@ static void init_engines(const std::string& cfg_path)
         // The DD profile that drove the S52 disable may improve with the
         // gate; 60+ days HARD shadow before considering enabled=live.
         g_xau_tf_d1.shadow_mode = false;  // S-2026-07-01: LIVE on IBKR 4002 paper (operator all-engines cutover)
-        g_xau_tf_d1.enabled     = true;   // S88: revived w/ vol-band gate, HARD shadow
+        g_xau_tf_d1.enabled     = true;   // [STALE-NOTE FIXED S-2026-07-22c] LIVE since S-07-01; the S88 "HARD shadow" note above is history only
         g_xau_tf_d1.min_impulse_atr = 0.5;  // UPGRADE S-2026-06-22 (fleet-audit, real engine reproduced in main tree, backtest/XauTrendFollowD1Backtest.cpp IMP=0.5): signal-day |close-open|>=0.5*ATR14 gate. Ensemble bull PF1.60, bear PF1.52, both-WF-halves+ both regimes, maxDD -16%. Per-cell + IMP=1.0-rejected detail in manifest XauTfD1 row + fleet-audit log.
         // S-2026-06-17 cold-loss protection. Daily backtest (losscut_batch_b.py):
         // LC=1.0% -> net flat, maxDD -68% (-341->-110), worst -174->-53.
@@ -2145,7 +2164,7 @@ static void init_engines(const std::string& cfg_path)
                     handle_closed_trade(tr);
                 });
             fl.finalize_all();
-            printf("[OMEGA-INIT][SEED] FX jump LADDER wired: GBPUSD(W48/0.75 L) only -- S-2026-07-09c IBKR-feed revalidation: GBPUSD PASS all-6 (+40.5%% PF1.44 n526, 2x-cost holds); EURUSD/NZDUSD/AUDUSD/USDCAD DISABLED (fail all-6 standalone on 3Y IBKR data). %zu H1 bars seeded, %zu forward bars restored, LC5thr+trail+window-flush, SHADOW, deploy-forward\n",
+            printf("[OMEGA-INIT][SEED] FX jump LADDER wired: GBPUSD(W48/0.75 L) only -- S-2026-07-09c IBKR-feed revalidation: GBPUSD PASS all-6 (+40.5%% PF1.44 n526, 2x-cost holds); EURUSD/NZDUSD/AUDUSD/USDCAD DISABLED (fail all-6 standalone on 3Y IBKR data). %zu H1 bars seeded, %zu forward bars restored, LC5thr+trail+window-flush, LIVE-EXEC (send_live_order, S-22c live-only), deploy-forward\n",
                    flseeded, flrestored);
             fflush(stdout);
         }
@@ -2301,7 +2320,7 @@ static void init_engines(const std::string& cfg_path)
                     handle_closed_trade(tr);
                 });
             il.finalize_all();
-            printf("[OMEGA-INIT][SEED] INDEX mimic LADDER wired: US500(W24/2.0) NAS100(W24/1.5) GER40(W12/1.5 BULL-GATED) M2K(W24/1.0 BULL-GATED, feed via bridge --symbols M2K), ALL IBKR-futures seed+live (S-2026-07-09 complete migration), %zu H1 warmup bars seeded, %zu forward bars restored, LC5thr+trail+window-flush, SHADOW, deploy-forward\n",
+            printf("[OMEGA-INIT][SEED] INDEX mimic LADDER wired: US500(W24/2.0) NAS100(W24/1.5) GER40(W12/1.5 BULL-GATED) M2K(W24/1.0 BULL-GATED, feed via bridge --symbols M2K), ALL IBKR-futures seed+live (S-2026-07-09 complete migration), %zu H1 warmup bars seeded, %zu forward bars restored, LC5thr+trail+window-flush, LIVE-EXEC (send_live_order, S-22c live-only), deploy-forward\n",
                    ilseeded, ilrestored);
             fflush(stdout);
         }
@@ -2337,6 +2356,12 @@ static void init_engines(const std::string& cfg_path)
         //   fed by the internal 15-min poller over sp500_long_close.csv (close-only, h=l=c).
         {
             auto& bc = omega::be_cascade_book();
+            // S-2026-07-22c CULLED (operator live-only order): every cell cert (incl the
+            // nNeg=0 prebe validation) PRE-DATES the S-20z honest-fill fix — the same
+            // clamped-booking tautology that collapsed the gold ladder 0/13. Uncertified-
+            // honest = cull. Cells stay configured (detectors cold); enabled=false means
+            // on_bar is inert and ZERO clips book. Revival = per-cell honest re-cert.
+            bc.enabled = false;
             const double NOTIONAL = 10000.0;   // $ per clip (companion convention; revisit-lot-sizes)
             bc.set_clip_fn([NOTIONAL](const std::string& sym, double net_bp_real,
                                       double entry_px, double exit_px, double mfe_pct,
@@ -3116,6 +3141,14 @@ static void init_engines(const std::string& cfg_path)
                                       // ENGINE_EXIT re-books every parent loser. The exact
                                       // IBS-incident shape, certified dead on this parent.
             auto& reg = omega::stall_companions();
+            // S-2026-07-22c CULLED registry-wide (operator live-only order): 31-engine paper
+            // zoo (main + 26 clips + 4 mirrors) with only 4 certified-floored books, 7 never
+            // certified at all, and every booking = shadow-ledger paper. enabled=false ⇒
+            // due()/maybe_drive() inert, zero clips book. The 4 certified books
+            // (idx_bearshort ×2, rider4h, threebar30m) are LIVE-WIRING candidates — parents
+            // partly culled + real-order sizing = operator decision (revisit-lot-sizes) —
+            // wire them as real companion engines or leave dead, no paper middle state.
+            reg.enabled = false;
             auto B = [&](SC c){ c.dir = "stall/" + c.name; reg.add(std::move(c)); };
             // helpers: PCT book / USD book (mirrors the two cron gauges)
             // --- shared main book (default EXCLUDE, default gauge) ---
@@ -3521,7 +3554,10 @@ static void init_engines(const std::string& cfg_path)
         // are hot on first tick. >=5 live shadow trades before any LIVE thought.
         g_nas_turtle_d1.p           = omega::make_nas_turtle_d1_params();
         g_nas_turtle_d1.shadow_mode = true;
-        g_nas_turtle_d1.enabled     = true;   // S-2026-07-03 RE-ENABLED GATED-TO-BULL (operator: "redo the ndx and
+        g_nas_turtle_d1.enabled     = false;  // S-2026-07-22c CULLED (operator live-only order: marginal =
+                                              // cull, no paper parking). MARGINAL-KEEP PF1.18 bull-beta;
+                                              // SPX+DJ30 turtle siblings carry the real cross-regime edge.
+                                              // Prior state: S-2026-07-03 RE-ENABLED GATED-TO-BULL (operator: "redo the ndx and
         g_nas_turtle_d1.p.regime_bear_block = true; // ensure its gated to bull"). regime_bear_block sits new longs
                                               // out in sustained bear -> answers the 06-24 cull reason (it was
                                               // bull-beta / no bear edge): now it ONLY trades bull/neutral, so the
@@ -3723,8 +3759,10 @@ static void init_engines(const std::string& cfg_path)
                     // where uncond goes negative bull/half1; both-regime+ incl bear PF1.29; ~halves
                     // maxDD). Roster US500+USTEC+DJ30+UK100=ON; GER40 FAILS the gate (bull -1225bp)
                     // and ESTX50 was not in the tested set -> both stay unconditional (tt=false).
+                    // S-2026-07-22c PROMOTED LIVE (operator live-only order): certified Sharpe 0.80
+                    // VIX-term-gated (gate halves maxDD), viable-shadow verdict in the 07-22 audit.
                     auto idx_seas_boot = [](omega::IndexSeasonalEngine& e, double upp, bool tt, const char* warm){
-                        e.shadow_mode=true; e.enabled=true; e.lot=0.01; e.p.target_vol_bps=60.0; e.p.usd_per_pt=upp;
+                        e.shadow_mode=false; e.enabled=true; e.lot=0.01; e.p.target_vol_bps=60.0; e.p.usd_per_pt=upp;
                         e.tue_require_down=tt;
                         // VIX term-structure gate at 1.05 (Sharpe 0.69->0.80, maxDD halved). Reads
                         // data/vix_term_ratio.txt ("epoch_sec,ratio") refreshed daily by an external
@@ -3738,7 +3776,7 @@ static void init_engines(const std::string& cfg_path)
                     idx_seas_boot(g_idx_seas_dj30,    5.0, true,  "phase1/signal_discovery/warmup_DJ30_D1.csv");
                     idx_seas_boot(g_idx_seas_uk100,  10.0, true,  "phase1/signal_discovery/warmup_UK100_D1.csv");
                     idx_seas_boot(g_idx_seas_estx50, 10.0, false, "phase1/signal_discovery/warmup_ESTX50_D1.csv");
-                    std::printf("[OMEGA-INIT] IndexSeasonal x6 (Tue+Fri long; Turnaround-Tue gate on US500/USTEC/DJ30/UK100) -- shadow, warm-seeded\n");
+                    std::printf("[OMEGA-INIT] IndexSeasonal x6 (Tue+Fri long; Turnaround-Tue gate on US500/USTEC/DJ30/UK100) -- LIVE (S-22c), warm-seeded\n");
 
                     // S-2026-06-21: CrossSectionalIndexEngine x3 (relative-value RANKING of the
                     //   index basket -- ORTHOGONAL to the per-symbol directional book). Faithful
@@ -3791,8 +3829,12 @@ static void init_engines(const std::string& cfg_path)
                     //   Fills the book's bear-positive gap; orthogonal to trend/MR (calendar-timed).
                     //   Reuses the IndexSeasonal warmup CSVs. ESTX50 omitted (not validated).
                     {
+                        // S-2026-07-22c PROMOTED LIVE (operator live-only order): CalendarTom is a
+                        // LiveBook kEdge-validated EDGE (turn-of-month, STRONGER in the 2022 bear,
+                        // both-WF+). Was enabled+shadow — exactly the parked-paper state the operator
+                        // abolished. 0.01 lot unchanged.
                         auto tom_boot = [](omega::CalendarTomEngine& e, double upp, const char* warm){
-                            e.shadow_mode=true; e.enabled=true; e.lot=0.01; e.p.target_vol_bps=60.0;
+                            e.shadow_mode=false; e.enabled=true; e.lot=0.01; e.p.target_vol_bps=60.0;
                             e.p.usd_per_pt=upp; e.p.last_n=3; e.p.first_n=3;
                             e.seed_from_d1_csv(warm);
                         };
@@ -3804,7 +3846,7 @@ static void init_engines(const std::string& cfg_path)
                         // S-2026-06-21b GOLD TOM: gcf_daily 2010-2026 PF1.63 both-WF-halves+ (1.24/2.23),
                         // BULL1.61/BEAR1.92 -- TOM extends to gold (we trade it heavily). usd_per_pt=100 (XAU).
                         tom_boot(g_tom_xau,  100.0, "phase1/signal_discovery/warmup_XAUUSD_D1.csv");
-                        std::printf("[OMEGA-INIT] CalendarTom x6 (turn-of-month long, +XAU) -- shadow, warm-seeded\n");
+                        std::printf("[OMEGA-INIT] CalendarTom x6 (turn-of-month long, +XAU) -- LIVE (kEdge, S-22c), warm-seeded\n");
                     }
 
                     // S-2026-07-08c: GoldTsmomD1V2 -- gold deep-dive candidate #2 (Study 4,
@@ -3822,7 +3864,10 @@ static void init_engines(const std::string& cfg_path)
                     //   Auto-retirement latch -1000pt (2x worst wired-rule DD). SHADOW, 0.01 lot.
                     {
                         g_gold_tsmom_d1.enabled     = true;
-                        g_gold_tsmom_d1.shadow_mode = true;
+                        g_gold_tsmom_d1.shadow_mode = false;  // S-2026-07-22c PROMOTED LIVE (operator live-only
+                                                              // order). Cert PF1.96-2.09 both-regime, 2022 short
+                                                              // +117pt — NEVER bull-gate its shorts. Sparse-record
+                                                              // forward gate OVERRIDDEN by operator ruling.
                         g_gold_tsmom_d1.lot         = 0.01;   // 0.01 XAU lot per weight-unit ($1/pt at |w|=1)
                         g_gold_tsmom_d1.seed_from_d1_csv("phase1/signal_discovery/warmup_XAUUSD_D1.csv");  // prints the [SEED] line
                         g_engine_heartbeat.register_engine("GoldTsmomD1V2", g_gold_tsmom_d1.enabled, 3600, 0, 24);
@@ -3847,7 +3892,10 @@ static void init_engines(const std::string& cfg_path)
                     //   Auto-retirement latch -1725bp banked (2x worst pooled DD).
                     {
                         g_gold_campaign_d1.enabled     = true;
-                        g_gold_campaign_d1.shadow_mode = true;   // shadow until the live ledger proves it
+                        g_gold_campaign_d1.shadow_mode = false;  // S-2026-07-22c PROMOTED LIVE (operator live-only
+                                                                 // order). Cert PF2.02@14bp z=+3.22 pooled n=60,
+                                                                 // additivity proven. ~9 trades/yr forward gate
+                                                                 // OVERRIDDEN by operator ruling.
                         g_gold_campaign_d1.lot         = 0.01;
                         g_gold_campaign_d1.init();
                         g_gold_campaign_d1.seed_m1_from_csv("phase1/signal_discovery/warmup_XAUUSD_M1.csv");  // prints the [SEED] line
@@ -3864,8 +3912,12 @@ static void init_engines(const std::string& cfg_path)
                     //   only, SHADOW. ONE bull + ONE bear window only: multi-window cert OWED
                     //   before any live promotion. MGC = XAU proxy (no MGC minute data).
                     {
-                        g_gold_bull_trend.enabled       = true;
-                        g_gold_bull_trend.shadow_mode   = true;   // SHADOW: uncertified bull-beta, single-window
+                        g_gold_bull_trend.enabled       = false;  // S-2026-07-22c CULLED (operator live-only order:
+                                                                  // marginal/uncertified = cull, no paper parking).
+                                                                  // Fails all-weather (neg 4/8 windows), single-window
+                                                                  // cert only, vault says "do NOT run live". Revival
+                                                                  // requires multi-window all-weather cert.
+                        g_gold_bull_trend.shadow_mode   = true;   // moot while disabled
                         g_gold_bull_trend.lot           = 0.01;
                         g_gold_bull_trend.bypass_cost_gate = false; // PRODUCTION: real ExecutionCostGuard + daily-halt (parity-only knob stays OFF)
                         g_gold_bull_trend.use_regime_gate  = true;  // shared sustained-bear brain
@@ -3909,14 +3961,16 @@ static void init_engines(const std::string& cfg_path)
                     //   before a scheduled FOMC announcement, exit FOMC-day close. Decayed
                     //   but alive (+11.8bp/event 2023-26, index_validate2.cpp). Respects the
                     //   portfolio risk-gate. usd_per_pt = shadow-PnL scaling only.
+                    // S-2026-07-22c CULLED (operator live-only order: marginal = cull). Edge
+                    // DECAYING: PF1.48 lifetime but 2026 PF0.10. Rebuild only on fresh evidence.
                     auto idx_fomc_boot = [](omega::IndexFomcEngine& e, double upp, const char* warm){
-                        e.shadow_mode=true; e.enabled=true; e.lot=0.01; e.p.target_vol_bps=60.0; e.p.usd_per_pt=upp;
+                        e.shadow_mode=true; e.enabled=false; e.lot=0.01; e.p.target_vol_bps=60.0; e.p.usd_per_pt=upp;
                         e.seed_from_d1_csv(warm);
                     };
                     idx_fomc_boot(g_idx_fomc_us500, 50.0, "phase1/signal_discovery/warmup_US500_D1.csv");
                     idx_fomc_boot(g_idx_fomc_ustec, 20.0, "phase1/signal_discovery/warmup_USTEC_D1.csv");
                     idx_fomc_boot(g_idx_fomc_dj30,   5.0, "phase1/signal_discovery/warmup_DJ30_D1.csv");
-                    std::printf("[OMEGA-INIT] IndexFomc x3 (US, pre-FOMC long) -- shadow, warm-seeded\n");
+                    std::printf("[OMEGA-INIT] IndexFomc x3 (US, pre-FOMC long) -- CULLED S-22c (edge decayed, 2026 PF0.10)\n");
                 }
             }
 
@@ -4721,6 +4775,12 @@ static void init_engines(const std::string& cfg_path)
     // cell object kept so persistence/dedup semantics match the audited BT exactly.
     for (auto& c : g_survivor.cells)
         if (std::strcmp(c.cfg.tag, "USTEC_4h_RSI_N7") == 0) c.st.enabled = false;
+    // S-2026-07-22c PROMOTED LIVE (operator live-only order): every ACTIVE cell trades
+    // real. Cert survivor_gated_bt.cpp PF1.70 +$11,065 n=445, BEAR-2022 PF1.90+, both-WF+,
+    // 2x-cost PF1.66. Per-cell 30-trade forward gate OVERRIDDEN by operator ruling
+    // (certified-live, rest culled). Disabled cells stay disabled (RSI_N7 cull above).
+    for (auto& c : g_survivor.cells)
+        c.st.shadow_mode = false;
     // S-2026-07-08c bear chokepoint (the gate the 06-24 cull demanded); replicated
     // 1:1 by the audit harness via the same Portfolio::entry_veto hook.
     g_survivor.entry_veto = [](const char* sym, int side) -> bool {
@@ -6207,11 +6267,11 @@ static void init_engines(const std::string& cfg_path)
         //   fixed-TP 1.60). NAS 2022 bear PF 1.60 +1623pt n=18 BOTH halves+
         //   (1.70/1.50); regime gate keeps it ~flat in the 24-26 bull (pooled
         //   +702 vs ungated -9025). CAVEAT: ONE bear instrument so far -- SPX/GER
-        //   2022 cross-validation PENDING -> SHADOW only, NAS100 instance first.
+        //   2022 cross-validation PENDING -> [STALE-NOTE FIXED S-2026-07-22c: went LIVE S-07-01] NAS100 instance first.
         g_idx_bear_short_nas.symbol      = "NAS100";
         g_idx_bear_short_nas.engine_name = "IndexBearShort";
         g_idx_bear_short_nas.shadow_mode = false;     // S-2026-07-01: LIVE on IBKR 4002 paper (operator all-engines cutover overrides prove-on-shadow note)
-        g_idx_bear_short_nas.enabled     = true;   // SHIPPING DON24 all-weather (real engine): 2022 bear PF1.26 +1061 both-halves+, 2024-26 bull PF1.07 +514. Shadow. Manifest IdxBearShortNas. Full history (DON48 vindication, the within-session disable/revert, the DON48->24 bull-bleed fix, all figures) on the DON line below + memory feedback-drive-real-engine-not-port.
+        g_idx_bear_short_nas.enabled     = true;   // SHIPPING DON24 all-weather (real engine): 2022 bear PF1.26 +1061 both-halves+, 2024-26 bull PF1.07 +514. [STALE-NOTE FIXED S-2026-07-22c: LIVE since S-07-01, "Shadow" removed]. Manifest IdxBearShortNas. Full history (DON48 vindication, the within-session disable/revert, the DON48->24 bull-bleed fix, all figures) on the DON line below + memory feedback-drive-real-engine-not-port.
         g_idx_bear_short_nas.COST_PTS    = 2.0;      // NAS100 RT pts
         g_idx_bear_short_nas.lot         = 1.0;
         g_idx_bear_short_nas.USE_RISKOFF_GATE = false;  // price-structure gate is the validated one; flip on once VIX/credit feed trusted
@@ -6259,7 +6319,9 @@ static void init_engines(const std::string& cfg_path)
         g_idx_bear_short_sp.symbol      = "US500";
         g_idx_bear_short_sp.engine_name = "IndexBearShort";
         g_idx_bear_short_sp.shadow_mode = true;   // S-2026-07-22 DEMOTE-to-shadow (operator): fails both-WF-halves (H2 -177pt PF0.88), 2024-26 bull -181pt, 2xcost H2 -200; only 2022 bear leg real. INDEX_REVALIDATE_2026-07-21 verdict=DEMOTE. Was LIVE since S-07-01 cutover.
-        g_idx_bear_short_sp.enabled     = true;
+        g_idx_bear_short_sp.enabled     = false;  // S-2026-07-22c CULLED (operator live-only order: failed =
+                                                  // cull, not shadow-park). Same-day demote upgraded to full
+                                                  // disable. NAS sibling (both-WF+) stays live.
         g_idx_bear_short_sp.COST_PTS    = 0.6;       // US500 RT pts (real-engine SPX2022 cost)
         g_idx_bear_short_sp.lot         = 1.0;
         g_idx_bear_short_sp.USE_RISKOFF_GATE = false;
@@ -6319,8 +6381,10 @@ static void init_engines(const std::string& cfg_path)
                 m.e->engine_name = std::string("MondayRiskOn_") + m.sym;
                 m.e->tag         = "MONRISK";
                 m.e->sma_len     = 50;
-                m.e->shadow_mode = true;
-                m.e->enabled     = true;
+                m.e->shadow_mode = true;   // moot while disabled
+                m.e->enabled     = false;  // S-2026-07-22c CULLED (operator live-only order: needs-work =
+                                           // cull). Own-SMA gate = partial bear cover only; the macro gate
+                                           // its own caveat demands was never built. Rebuild gated or not at all.
                 m.e->verbose     = false;
                 m.e->lot         = 1.0;
                 m.e->seed_from_csv(omega::resolve_seed_path(m.d1));
@@ -6475,7 +6539,11 @@ static void init_engines(const std::string& cfg_path)
         g_connors_ger.TZ_STD_OFF_MIN = 60;     // CET = UTC+1
         g_connors_ger.TZ_EU_DST      = true;   // EU last-Sunday DST rules
         g_connors_ger.lot         = 0.3;
-        g_connors_ger.shadow_mode = true;
+        g_connors_ger.shadow_mode = false;  // S-2026-07-22c PROMOTED LIVE (operator live-only order:
+                                            // "if viable then enable it and ensure it is running live").
+                                            // Cert: connors_ger_gate_audit.cpp PF1.38@3pt n=225 both-WF+,
+                                            // 2x-cost PF1.33, 2022 bear +285pt. Forward-shadow gate
+                                            // OVERRIDDEN by operator ruling (certified-live, rest culled).
         g_connors_ger.enabled     = true;   // S-2026-07-08c RE-ENABLED GATED (operator: "reinstate all winners,
                                             // correctly gated"). The 06-24 cull rested on the freq_dd_frontier
                                             // next-open PROXY ("bear n=4 too thin"); the REAL class had never been
@@ -6486,7 +6554,7 @@ static void init_engines(const std::string& cfg_path)
                                             // -- the n=4 IS the gate sitting out the bear (by design, per operator
                                             // bull-gate-not-reject rule). REGIME_GATE=1 asym-veto tested and REJECTED
                                             // here (fails both-halves at 2x-cost; H1 -255) -> SMA200 gate stays.
-                                            // SHADOW only; AUDITED_CONFIGS row ConnorsGerReal; TOMBSTONES.tsv row
+                                            // [STALE-NOTE FIXED S-2026-07-22c: PROMOTED LIVE, see shadow_mode pin above]; AUDITED_CONFIGS row ConnorsGerReal; TOMBSTONES.tsv row
                                             // downgraded same commit. Prior cull note kept for history above.
         g_connors_ger.on_trade_record = [](const omega::TradeRecord& tr){ handle_closed_trade(tr); };
         g_connors_ger.init();
@@ -6505,7 +6573,11 @@ static void init_engines(const std::string& cfg_path)
             e.TREND_SMA=200; e.SHORT_SMA=5; e.MAXHOLD=10;
             e.IBS_IN=0.10; e.STREAK_N=3; e.DBL_IBS=0.20; e.DBL_RSI=15.0;
             e.SESS_OPEN_HM=sess_open; e.SESS_CLOSE_HM=sess_close; e.TZ_STD_OFF_MIN=-300; e.TZ_EU_DST=false;
-            e.lot=0.3; e.shadow_mode=true; e.enabled=true;
+            e.lot=0.3; e.shadow_mode=false; e.enabled=true;  // S-2026-07-22c PROMOTED LIVE (operator
+                                            // live-only order): breadth book certified PF2.19-3.64
+                                            // per-cell (mr_hunt 10yr, 8pt-cost-robust both-halves+),
+                                            // CORRELATED — BOOK_CAP=3 is the sizing lever, treat as
+                                            // ONE edge when allocating.
             e.on_trade_record=[](const omega::TradeRecord& tr){ handle_closed_trade(tr); };
             e.init(); e.seed_from_d1_csv(warmup);
             g_engine_heartbeat.register_engine(nm, e.enabled, 3600, 0, 24);
@@ -6530,7 +6602,7 @@ static void init_engines(const std::string& cfg_path)
         // SPX/DJ30 keep REGIME_GATE=0 (close>SMA200) — recheck: asym raises DD there.
         // Book-level concurrent-position cap = the freq/DD-frontier DD lever (cap=3 -> ~2.4% maxDD).
         omega::ConnorsRSI2Engine::BOOK_CAP = 3;
-        printf("[OMEGA-INIT] Connors MR breadth book: NAS{RSI2,IBS,STREAK,DOUBLE,RSI3} + SPX{STREAK,DOUBLE,IBS,RSI2} + DJ30{IBS,RSI2,DOUBLE} (shadow); NAS=asym-veto, SPX/DJ30=SMA200, BOOK_CAP=3\n");
+        printf("[OMEGA-INIT] Connors MR breadth book: NAS{RSI2,IBS,STREAK,DOUBLE,RSI3} + SPX{STREAK,DOUBLE,IBS,RSI2} + DJ30{IBS,RSI2,DOUBLE} (LIVE S-22c); NAS=asym-veto, SPX/DJ30=SMA200, BOOK_CAP=3\n");
         fflush(stdout);
     }
 
@@ -6829,11 +6901,65 @@ static void init_engines(const std::string& cfg_path)
         } else {
             std::cout << "[OMEGA-PILOT] Multi-symbol shadow enabled | all configured engines may trade\n";
         }
-        std::cout << "[OMEGA-SHADOW-POLICY] Newly-stamped engines follow g_cfg.mode"
-                  << " (kShadowDefault=" << (kShadowDefault ? "true" : "false") << ")"
-                  << " | locked-shadow: MCE, RSIReversal,"
-                  << " PDHL, H1Swing, H4Regime, ISwingSP, ISwingNQ\n";
+        std::cout << "[OMEGA-SHADOW-POLICY] kShadowDefault DELETED S-2026-07-22c (live-only"
+                  << " conversion): every engine carries an explicit live-or-culled state\n";
         std::cout << "[OMEGA-MODE] SHADOW -- exact live simulation (orders paper only, all risk gates active)\n";
+    }
+
+    // ── [LIVE-ONLY-GATE] S-2026-07-22c (operator live-only mandate) ──────────────
+    // DONE-definition check #4: every engine is LIVE (enabled + shadow_mode=false)
+    // or CULLED (enabled=false). An enabled engine still in shadow_mode is a
+    // VIOLATION: named loudly and FORCE-DISABLED (fail-safe — shadow paper can never
+    // run silently again). Covers every Class-1 engine with public enabled/shadow
+    // members + the Survivor cells. Known carve-outs (listed, not violations):
+    // g_gold_stack (shared regime-signal infra, certify-or-cull owed),
+    // g_regime_adaptor + guards (infra, open no positions), tombstoned engines
+    // (all enabled=false). protection/boot monitors watch for "0 VIOLATION".
+    {
+        int lo_live = 0, lo_off = 0, lo_viol = 0;
+        auto lo_chk = [&](const char* nm, bool en, bool sh, bool* force_off) {
+            if (en && sh) { ++lo_viol; if (force_off) *force_off = false;
+                std::printf("[LIVE-ONLY-GATE] VIOLATION %s enabled+shadow -> FORCE-DISABLED\n", nm); }
+            else if (en) ++lo_live; else ++lo_off;
+        };
+        #define OMEGA_LO(e) lo_chk(#e, e.enabled, e.shadow_mode, &e.enabled)
+        OMEGA_LO(g_connors_nas);      OMEGA_LO(g_connors_ger);
+        OMEGA_LO(g_dj30_turtle_d1);   OMEGA_LO(g_spx_turtle_d1);  OMEGA_LO(g_nas_turtle_d1);
+        OMEGA_LO(g_idx_bear_short_nas); OMEGA_LO(g_idx_bear_short_sp);
+        OMEGA_LO(g_xau_tf_d1);        OMEGA_LO(g_xau_tf_1h);      OMEGA_LO(g_xau_tf_2h);
+        OMEGA_LO(g_xau_tf_4h);        OMEGA_LO(g_rider_4h);       OMEGA_LO(g_rider_d1);
+        OMEGA_LO(g_xau_threebar_30m); OMEGA_LO(g_xau_sess_nypm);  OMEGA_LO(g_gold_volbrk_m30);
+        OMEGA_LO(g_gold_don_10m);     OMEGA_LO(g_gold_don_h1);    OMEGA_LO(g_gold_kelt_m30);
+        OMEGA_LO(g_gold_tfbw_1040);   OMEGA_LO(g_gold_tfbw_20100);
+        OMEGA_LO(g_gold_tsmom_d1);    OMEGA_LO(g_gold_campaign_d1); OMEGA_LO(g_gold_bull_trend);
+        OMEGA_LO(g_gold_panic_bounce); OMEGA_LO(g_h1_swing_gold);  OMEGA_LO(g_nas_bbrev_long_h1);
+        OMEGA_LO(g_xau_swing_break_d1); OMEGA_LO(g_iswing_sp);     OMEGA_LO(g_iswing_nq);
+        OMEGA_LO(g_monday_nas);       OMEGA_LO(g_ema_cross);
+        OMEGA_LO(g_tom_us500);  OMEGA_LO(g_tom_ustec); OMEGA_LO(g_tom_ger40);
+        OMEGA_LO(g_tom_dj30);   OMEGA_LO(g_tom_uk100); OMEGA_LO(g_tom_xau);
+        OMEGA_LO(g_idx_seas_us500); OMEGA_LO(g_idx_seas_ustec); OMEGA_LO(g_idx_seas_ger40);
+        OMEGA_LO(g_idx_seas_dj30);  OMEGA_LO(g_idx_seas_uk100); OMEGA_LO(g_idx_seas_estx50);
+        OMEGA_LO(g_idx_fomc_us500); OMEGA_LO(g_idx_fomc_ustec); OMEGA_LO(g_idx_fomc_dj30);
+        OMEGA_LO(g_ibs_nas);   OMEGA_LO(g_streak_nas); OMEGA_LO(g_dbl_nas);
+        OMEGA_LO(g_streak_spx); OMEGA_LO(g_dbl_spx);   OMEGA_LO(g_rsi3_nas);
+        OMEGA_LO(g_ibs_spx);   OMEGA_LO(g_rsi2_spx);   OMEGA_LO(g_ibs_dj);
+        OMEGA_LO(g_rsi2_dj);   OMEGA_LO(g_dbl_dj);
+        OMEGA_LO(g_xs_mom_long); OMEGA_LO(g_xs_mom_ls); OMEGA_LO(g_xs_mr_ls);
+        OMEGA_LO(g_imacro_sp); OMEGA_LO(g_imacro_nq); OMEGA_LO(g_imacro_nas); OMEGA_LO(g_imacro_us30);
+        #undef OMEGA_LO
+        // IndexFlow x4: shadow lives on private pos_ (proxy-set true above) and all 4
+        // are hard-culled — enabled-only check keeps them counted without a getter.
+        lo_chk("g_iflow_sp",   g_iflow_sp.enabled,   false, nullptr);
+        lo_chk("g_iflow_nq",   g_iflow_nq.enabled,   false, nullptr);
+        lo_chk("g_iflow_nas",  g_iflow_nas.enabled,  false, nullptr);
+        lo_chk("g_iflow_us30", g_iflow_us30.enabled, false, nullptr);
+        for (auto& c : g_survivor.cells)
+            lo_chk((std::string("Survivor_") + c.cfg.tag).c_str(),
+                   g_survivor.enabled && c.st.enabled, c.st.shadow_mode, &c.st.enabled);
+        std::printf("[LIVE-ONLY-GATE] %d live / %d culled / %d VIOLATION%s\n",
+                    lo_live, lo_off, lo_viol,
+                    lo_viol ? "  <-- P1: shadow engine force-disabled, fix engine_init" : "");
+        fflush(stdout);
     }
 
     build_id_map();
@@ -8294,11 +8420,13 @@ static void init_engines(const std::string& cfg_path)
             }
         }
 
-        // GoldTrendMimicLadder: ARM now -- every trend engine has finished warm-seeding, so a
-        // historical open replayed during seed can no longer spawn phantom mimic legs. Live trend
-        // opens (post-boot) spawn the independent mimic legs. deploy-forward ($0 until first clip).
-        omega::gold_trend_mimic().arm();
-        std::printf("[OMEGA-INIT] GoldTrendMimicLadder ARMED (post-seed) -- live trend opens now spawn mimic legs\n");
+        // GoldTrendMimicLadder: S-2026-07-22c CULLED — NOT ARMED (operator live-only order:
+        // failed = cull). The S-20z honest-fill re-cert collapsed the registry 0/13 (every
+        // book cert pre-dated 58a478e2's real-fill booking; only DJ30Turtle marginal and it
+        // fails bear+2x). Books stay configured for reference; without arm() no legs ever
+        // spawn. Revival = per-book honest re-cert PASS, nothing else.
+        // [history: was omega::gold_trend_mimic().arm() post-seed]
+        std::printf("[OMEGA-INIT] GoldTrendMimicLadder CULLED S-22c (honest re-cert 0/13) -- not armed, no legs will spawn\n");
         std::fflush(stdout);
         std::fflush(stdout);
     }

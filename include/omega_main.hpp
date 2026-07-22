@@ -243,8 +243,11 @@ int main(int argc, char* argv[])
     // BT on MGC 30m: PF2.10 n37 mdd0.78. Warm-seed from MGC 30m hist (M30 Donchian/
     // ATR) + aggregated H1 (EMA200 trend). SHADOW; shares the starved-until-
     // entitlement MGC feed with g_mgc_fastdon. Driven inside poll_mgc_feed.
-    g_mgc_volbrk.enabled     = true;
-    g_mgc_volbrk.shadow_mode = true;   // S-2026-07-22 DISARM (operator): own vault cert says "HARD shadow, do NOT flip live" -- bull-only, bear-untested, fat-tail top3=83% of net. Spot sibling disarmed S-07-21; this MGC leg was still LIVE via S-07-01 cutover. Back to shadow.
+    g_mgc_volbrk.enabled     = false;  // S-2026-07-22c CULLED (operator live-only order: uncertified =
+                                       // cull, not shadow-park). Same-day disarm upgraded to full disable.
+                                       // Bull-only, bear-untested, fat-tail top3=83% of net. Revival
+                                       // requires both-regime cert.
+    g_mgc_volbrk.shadow_mode = true;   // moot while disabled. [history S-2026-07-22 DISARM: own vault cert says "HARD shadow, do NOT flip live"; spot sibling disarmed S-07-21; this MGC leg was still LIVE via S-07-01 cutover.]
     // S-2026-07-11 GOLD PHASE 1 (GOLD_BOOK_ROADMAP bug 2, venue identity): this
     // instance is MGC-fed but used to ledger tr.symbol="XAUUSD" lot=0.01 under the
     // SAME tag as the spot instance -- wrong venue ($1/pt booked instead of

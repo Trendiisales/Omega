@@ -174,6 +174,10 @@ static inline bool ece_hour_allowed(int64_t ms) noexcept {
 struct EMACrossEngine {
 
     bool shadow_mode = true;
+    // S-2026-07-22c CULL toggle (operator live-only order): S37d verdict DISABLE
+    // (PF0.85 −$74); engine had no enabled field so it kept running paper. false in
+    // engine_init ⇒ on_bar/on_tick inert.
+    bool enabled = true;
 
     using CloseCallback = std::function<void(const omega::TradeRecord&)>;
 
@@ -215,6 +219,7 @@ struct EMACrossEngine {
     // bar_rsi:   RSI14 from OHLCBarEngine (use g_bars_gold.m1.ind.rsi14)
     // now_ms:    current timestamp
     void on_bar(double bar_close, double bar_atr, double bar_rsi, int64_t now_ms) noexcept {
+        if (!enabled) return;   // S-2026-07-22c culled via engine_init
         // Update ATR and RSI from bar data
         if (bar_atr > 0.5 && bar_atr < 50.0) _atr = bar_atr;
         _rsi = bar_rsi;
