@@ -6581,8 +6581,18 @@ static void init_engines(const std::string& cfg_path)
         // unit = 1 MNQ ($2/pt); MAX_UNITS=2 caps worst case at 2 MNQ. The 3.0
         // DD-budget sizing (S-2026-06-26s) can be restored once live is proven.
         g_connors_nas.lot         = 1.0;    // dollar-normalized size (index convention)
-        g_connors_nas.shadow_mode = false;  // S-2026-07-01: LIVE on IBKR 4002 paper (validated EDGE)
-        g_connors_nas.enabled     = true;   // SHADOW
+        g_connors_nas.shadow_mode = false;
+        g_connors_nas.enabled     = true;   // S-2026-07-22j REAL EXEC wired (PF4.18 07-21c reval)
+        g_connors_nas.set_exec(
+            [](const std::string& sym, bool is_long, double lots, double px)->std::string {
+                return send_live_order(sym, is_long, lots, px);
+            },
+            [](const std::string& sym, bool orig_is_long, double lots, double px, const std::string& token){
+                send_live_order(sym, !orig_is_long, lots, px, token);
+            },
+            [](const std::string& sym, double tp_dist_pts, double lots)->bool {
+                return ExecutionCostGuard::is_viable(sym.c_str(), 0.5, tp_dist_pts, lots, 1.5);
+            });
         g_connors_nas.REGIME_GATE  = 1;     // S-2026-06-20: asym sustained-bear veto > SMA200 (faithful 6/6) — SHADOW
         g_connors_nas.on_trade_record = [](const omega::TradeRecord& tr){ handle_closed_trade(tr); };
         g_connors_nas.init();
@@ -6686,6 +6696,20 @@ static void init_engines(const std::string& cfg_path)
                                             // CORRELATED — BOOK_CAP=3 is the sizing lever, treat as
                                             // ONE edge when allocating.
             e.on_trade_record=[](const omega::TradeRecord& tr){ handle_closed_trade(tr); };
+            // S-2026-07-22j REAL EXEC (operator "live and actionable"): every entry/
+            // scale-in/exit now routes send_live_order -> IBKR (MNQ/MES/MYM micros).
+            // NOTE: fractional index lots floor to 1 contract at place_order; the
+            // account margin ceiling (~1 micro at a time) rejects excess LOUDLY.
+            e.set_exec(
+                [](const std::string& sym, bool is_long, double lots, double px)->std::string {
+                    return send_live_order(sym, is_long, lots, px);
+                },
+                [](const std::string& sym, bool orig_is_long, double lots, double px, const std::string& token){
+                    send_live_order(sym, !orig_is_long, lots, px, token);
+                },
+                [](const std::string& sym, double tp_dist_pts, double lots)->bool {
+                    return ExecutionCostGuard::is_viable(sym.c_str(), 0.5, tp_dist_pts, lots, 1.5);
+                });
             e.init(); e.seed_from_d1_csv(warmup);
             g_engine_heartbeat.register_engine(nm, e.enabled, 3600, 0, 24);
         };
@@ -7030,7 +7054,10 @@ static void init_engines(const std::string& cfg_path)
                 std::printf("[PAPER-PURGE] %s force-disabled (no real order path)\n", nm); }
         };
         #define OMEGA_PP(e) purge(#e, e.enabled)
-        OMEGA_PP(g_connors_nas);      OMEGA_PP(g_connors_ger);
+        // g_connors_nas + the 11-cell breadth cohort REMOVED from the purge
+        // S-2026-07-22j: class rewired with REAL exec (entry/scale-in/exit ->
+        // send_live_order), certs stand (NAS 4.18; breadth 2.19-3.64/cell).
+        OMEGA_PP(g_connors_ger);
         OMEGA_PP(g_dj30_turtle_d1);   OMEGA_PP(g_spx_turtle_d1);  OMEGA_PP(g_nas_turtle_d1);
         OMEGA_PP(g_idx_bear_short_nas); OMEGA_PP(g_idx_bear_short_sp);
         OMEGA_PP(g_xau_tf_d1);        OMEGA_PP(g_xau_tf_1h);      OMEGA_PP(g_xau_tf_2h);
@@ -7047,10 +7074,6 @@ static void init_engines(const std::string& cfg_path)
         OMEGA_PP(g_idx_seas_us500); OMEGA_PP(g_idx_seas_ustec); OMEGA_PP(g_idx_seas_ger40);
         OMEGA_PP(g_idx_seas_dj30);  OMEGA_PP(g_idx_seas_uk100); OMEGA_PP(g_idx_seas_estx50);
         OMEGA_PP(g_idx_fomc_us500); OMEGA_PP(g_idx_fomc_ustec); OMEGA_PP(g_idx_fomc_dj30);
-        OMEGA_PP(g_ibs_nas);   OMEGA_PP(g_streak_nas); OMEGA_PP(g_dbl_nas);
-        OMEGA_PP(g_streak_spx); OMEGA_PP(g_dbl_spx);   OMEGA_PP(g_rsi3_nas);
-        OMEGA_PP(g_ibs_spx);   OMEGA_PP(g_rsi2_spx);   OMEGA_PP(g_ibs_dj);
-        OMEGA_PP(g_rsi2_dj);   OMEGA_PP(g_dbl_dj);
         OMEGA_PP(g_xs_mom_long); OMEGA_PP(g_xs_mom_ls); OMEGA_PP(g_xs_mr_ls);
         OMEGA_PP(g_imacro_sp); OMEGA_PP(g_imacro_nq); OMEGA_PP(g_imacro_nas); OMEGA_PP(g_imacro_us30);
         #undef OMEGA_PP

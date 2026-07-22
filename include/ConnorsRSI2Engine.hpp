@@ -101,7 +101,20 @@ public:
     using TradeRecordCallback = std::function<void(const omega::TradeRecord&)>;
     TradeRecordCallback on_trade_record;
 
-    struct Position { bool active=false; double entry_px=0, size=0; int64_t entry_ms=0; int held=0; int units=0; double mfe=0,mae=0; } pos;
+    // ── REAL EXEC ROUTING (S-2026-07-22j, operator "live and actionable") ─────
+    // Injected in engine_init: open -> send_live_order, close -> opposite via
+    // token, gate -> ExecutionCostGuard::is_viable. shadow_mode=true or unset
+    // fns = book-only (backtest TUs unaffected). Every entry/scale-in/exit
+    // transition below routes through these — the LIVE flag now means ORDERS.
+    using OpenFn  = std::function<std::string(const std::string& sym, bool is_long, double lots, double px)>;
+    using CloseFn = std::function<void(const std::string& sym, bool orig_is_long, double lots, double px, const std::string& token)>;
+    using GateFn  = std::function<bool(const std::string& sym, double tp_dist_pts, double lots)>;
+    OpenFn exec_open; CloseFn exec_close; GateFn exec_gate;
+    void set_exec(OpenFn o, CloseFn c, GateFn g) {
+        exec_open = std::move(o); exec_close = std::move(c); exec_gate = std::move(g);
+    }
+
+    struct Position { bool active=false; double entry_px=0, size=0; int64_t entry_ms=0; int held=0; int units=0; double mfe=0,mae=0; std::string token; bool sent=false; } pos;
 
     bool persist_save(const char* eng, const char* sym, omega::PositionSnapshot& o) const {
         if (!pos.active) return false;
@@ -191,6 +204,13 @@ public:
                         const double px=ask>0?ask:close;
                         pos.entry_px=(pos.entry_px*pos.units + px)/(pos.units+1);
                         pos.units+=1; pos.size=pos.units*lot;
+                        if (!shadow_mode && exec_open) {                 // real scale-in unit
+                            if (!exec_gate || exec_gate(symbol, px*0.01, lot)) {
+                                const std::string t = exec_open(symbol, true, lot, px);
+                                if (pos.token.empty()) pos.token = t;
+                                pos.sent = pos.sent || !t.empty();
+                            }
+                        }
                         if (verbose) printf("[%s] %s SCALE-IN unit%d avg=%.2f\n",
                             engine_name.c_str(), symbol.c_str(), pos.units, pos.entry_px);
                     }
@@ -205,6 +225,12 @@ public:
                 const bool cap_ok = (BOOK_CAP <= 0 || s_book_open < BOOK_CAP);
                 if (regime_ok && cap_ok && _signal()) {
                     pos=Position{}; pos.active=true; pos.entry_px=ask>0?ask:close; pos.size=lot; pos.units=1; pos.entry_ms=now_ms; pos.held=0;
+                    if (!shadow_mode && exec_open) {
+                        if (!exec_gate || exec_gate(symbol, pos.entry_px*0.01, lot)) {
+                            pos.token = exec_open(symbol, true, lot, pos.entry_px);
+                            pos.sent  = !pos.token.empty();
+                        }
+                    }
                     m_done_today=true; ++s_book_open;
                     if (verbose) printf("[%s] %s DIP-BUY entry=%.2f rsi2=%.1f close=%.2f sma%d=%.2f%s\n",
                         engine_name.c_str(), symbol.c_str(), pos.entry_px, r, close, TREND_SMA, sma, shadow_mode?" [SHADOW]":"");
@@ -250,6 +276,8 @@ private:
     }
     void _close(double exit_px, int64_t now_ms, const char* reason) {
         if (!pos.active) return;
+        if (pos.sent && exec_close)            // real broker close (full size incl scale-ins)
+            exec_close(symbol, true, pos.size, exit_px, pos.token);
         if (s_book_open > 0) --s_book_open;   // release the book-cap slot
         const double pnl=(exit_px-pos.entry_px)*pos.size;
         omega::TradeRecord tr{};
