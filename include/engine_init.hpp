@@ -29,6 +29,7 @@
 #include "StockDayMoverBeFloorCompanion.hpp"// per-name BIGCAP day-mover BE-floor companion (RETIRED S-2026-07-07e) -> /api/stockmover_companion
 #include "StockDayMoverLadderCompanion.hpp" // per-name BIGCAP day-mover MIMIC LADDER companion (39 stocks) -> /api/stockladder_companion
 #include "StockDipTurtleEngine.hpp" // per-name US-stock StockDip (ConnorsRSI2 archetype) + StockTurtle (Donchian 20/10) daily-close books (S-2026-07-08c)
+#include "DayMover7Engine.hpp"      // thr7 day-mover momentum continuation, 60-bar time-stop (S-2026-07-23 build; cert BULLGATE_PROTECTION_SWEEPS_2026-07-23.md §A)
 #include "BigCapHi52Engine.hpp"     // 52wk-high-proximity BIGCAP-45 portfolio book, SPY-200DMA gated, weekly rebal (S-2026-07-17k scan candidate C)
 #include "BigCap2pctImpulseCompanion.hpp"  // per-name BIGCAP +2%-impulse / 20d-breakout LONG-only LOOSE-RIDE book (S-2026-07-09) -> /api/bigcap2pct_companion
 #include "StallCompanion.hpp"       // 25 gold/index giveback-clip books (native C++ port of stall_accountant.py) -> /api/companion
@@ -3194,8 +3195,9 @@ static void init_engines(const std::string& cfg_path)
             // S-2026-07-23a: LIVE OPEN TRADES visibility — the family's open
             // positions (e.g. the first real fill, BMY) were invisible to the
             // GUI registry until this source registration.
-            // ── DUAL-MOMENTUM rotation (S-2026-07-23a operator wire; cert in the
-            //    engine header: Sharpe 1.86 / mdd 21.5% / both-WF+ / 2x-cost;
+            // ── DUAL-MOMENTUM rotation (S-2026-07-23a operator wire; cert RESTATED
+            //    S-23l to the engine's real mechanism: keff Sharpe 1.66 / mdd 29.9,
+            //    ctrl 1.34 — see the restatement comment at the block's printf;
             //    whipsaw levers TESTED — plain gate + stop20 + vol25 optimal).
             {
                 auto& dm = omega::dual_momentum_engine();
@@ -3310,6 +3312,104 @@ static void init_engines(const std::string& cfg_path)
                 // cert: K5/rel63/rebal10 + gross-scaling overlay = 1.90/21.0/2022 -6.1.
                 printf("[OMEGA-INIT][SEED] DualMomentum wired: K8/rel63/abs251/rebal10 SPY-200 cash gate, "
                        "stop20/name + volTgt25-keff (cert Sharpe 1.66 mdd 29.9 name-count mechanism; ctrl 1.34), "
+                       "LIVE 1 share/name, deploy-forward\n");
+                fflush(stdout);
+            }
+
+            // ── DAY-MOVER-7 momentum continuation (S-2026-07-23 operator build order;
+            //    cert backtest/BULLGATE_PROTECTION_SWEEPS_2026-07-23.md §A: thr7 no-gate
+            //    n=328 PF3.27 mDD270 MAR12.7, 2022 TRADED +103% PF1.52, ex-best(WDC) PASS;
+            //    entry threshold IS the bear protection — bull-gates REJECTED (gate-lag),
+            //    init-stops REJECTED (flip 2022 negative). ~46 trades/yr, 1 share/name
+            //    proving size (~$16 avg win vs $2 IBKR min commission = viable). Exit =
+            //    pure 60-bar time-stop (the certified cell; no trail, no regime switch). ──
+            {
+                auto& dm7 = omega::day_mover7_engine();
+                dm7.cfg.live_book = true; dm7.cfg.lot = 1.0;
+                dm7.set_exec(
+                    [](const std::string& sym, bool is_long, double lots, double px) -> std::string {
+                        return send_live_order(sym, is_long, lots, px);
+                    },
+                    [](const std::string& sym, bool orig_is_long, double lots, double px, const std::string& token) {
+                        send_live_order(sym, !orig_is_long, lots, px, token);
+                    },
+                    [](const std::string& sym, double tp_dist_pts, double lots) -> bool {
+                        // certified mean edge is ~+10%/trade at thr7 — 5% conservative TP proxy
+                        // so the $2/order minimum fails honestly on cheap names.
+                        return ExecutionCostGuard::is_viable(sym.c_str(), 0.02, tp_dist_pts, lots);
+                    },
+                    [](const std::string& engine, const std::string& sym, bool is_long,
+                       double entry_px, double exit_px, double lots,
+                       int64_t entry_ts, int64_t exit_ts, const char* reason) {
+                        omega::TradeRecord tr;
+                        tr.engine = engine; tr.symbol = sym; tr.side = is_long ? "LONG" : "SHORT";
+                        tr.entryPrice = entry_px; tr.exitPrice = exit_px; tr.size = lots;
+                        tr.entryTs = entry_ts; tr.exitTs = exit_ts; tr.exitReason = reason;
+                        tr.pnl = (is_long ? (exit_px - entry_px) : (entry_px - exit_px)) * lots;
+                        handle_closed_trade(tr);
+                    });
+                // seed histories from the same wide daily-close csv, FILTERED to the
+                // engine's 27-name validated universe (on_daily_close does not filter;
+                // feeding all ~500 csv columns would inflate seen_today_ / hist_).
+                {
+                    std::set<std::string> uni7(dm7.cfg.universe.begin(), dm7.cfg.universe.end());
+                    std::ifstream wf(omega::resolve_seed_path("data/rdagent/sp500_long_close.csv"));
+                    std::string hdr;
+                    if (wf.is_open() && std::getline(wf, hdr)) {
+                        std::vector<std::string> cols; { std::stringstream hs(hdr); std::string t;
+                            while (std::getline(hs, t, ',')) cols.push_back(t); }
+                        std::string ln;
+                        while (std::getline(wf, ln)) {
+                            std::stringstream ls(ln); std::string tok; size_t ci = 0;
+                            while (std::getline(ls, tok, ',')) {
+                                if (ci > 0 && ci < cols.size() && !tok.empty() && uni7.count(cols[ci])) {
+                                    const double v = atof(tok.c_str());
+                                    if (v > 0) dm7.seed_close(cols[ci], v);
+                                }
+                                ++ci;
+                            }
+                        }
+                    }
+                }
+                dm7.finalize_seed();
+                dm7.load_state();
+                g_open_positions.register_source("DayMover7",
+                    []() { return omega::day_mover7_engine().collect_positions(); });
+                g_engine_heartbeat.register_engine("DayMover7", true, 86400, 0, 24);
+                g_engine_heartbeat.pulse("DayMover7");   // daily-cadence: boot pulse or false STARTUP-FAIL (S-23h lesson)
+                // 15-min poller: NEW daily rows only, universe-filtered (same csv as DualMom's
+                // poller; kept separate so either engine can be culled without touching the other).
+                std::thread([]() {
+                    std::string last_row;
+                    for (;;) {
+                        std::this_thread::sleep_for(std::chrono::minutes(15));
+                        auto& e7 = omega::day_mover7_engine();
+                        static const std::set<std::string> uni(
+                            e7.cfg.universe.begin(), e7.cfg.universe.end());
+                        std::ifstream wf(omega::resolve_seed_path("data/rdagent/sp500_long_close.csv"));
+                        if (!wf.is_open()) continue;
+                        std::string hdr, ln, lastln;
+                        std::getline(wf, hdr);
+                        while (std::getline(wf, ln)) if (!ln.empty()) lastln = ln;
+                        if (lastln.empty() || lastln == last_row) continue;
+                        last_row = lastln;
+                        std::vector<std::string> cols; { std::stringstream hs(hdr); std::string t;
+                            while (std::getline(hs, t, ',')) cols.push_back(t); }
+                        const int64_t now_s = (int64_t)std::chrono::duration_cast<std::chrono::seconds>(
+                            std::chrono::system_clock::now().time_since_epoch()).count();
+                        std::stringstream ls(lastln); std::string tok; size_t ci = 0;
+                        while (std::getline(ls, tok, ',')) {
+                            if (ci > 0 && ci < cols.size() && !tok.empty() && uni.count(cols[ci])) {
+                                const double v = atof(tok.c_str());
+                                if (v > 0) e7.on_daily_close(cols[ci], now_s, v);
+                            }
+                            ++ci;
+                        }
+                        g_engine_heartbeat.pulse("DayMover7");
+                    }
+                }).detach();
+                printf("[OMEGA-INIT][SEED] DayMover7 wired: thr7 new-20d-high next-close entry, "
+                       "60-bar time-stop exit (cert PF3.27 mDD270 2022 +103 PF1.52), "
                        "LIVE 1 share/name, deploy-forward\n");
                 fflush(stdout);
             }

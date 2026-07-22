@@ -74,6 +74,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             const int n_gd  = g_gold_daily_cbe.kill_all(px_of("XAUUSD"), now);   // S-22i GoldDailyCbe
             const int n_gdm = omega::gold_daily_cbe_mimic().kill_all(px_of("XAUUSD"), now); // S-22i mimic x2
             const int n_dm  = omega::dual_momentum_engine().kill_all(0.0, now);              // S-23a dual-momentum
+            const int n_dm7 = omega::day_mover7_engine().kill_all(0.0, now);                 // S-23 day-mover-7
             // S-23a: ConnorsRSI2 family (direct globals, no singleton accessor) --
             // real-exec since S-22j; force_close routes each book's own close/ledger
             // path (and the live token close via set_exec close_fn).
@@ -92,8 +93,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 }
             }
             printf("[KILL-ALL] book families flattened: gm=%d sdm=%d sdt=%d fl=%d il=%d "
-                   "sl=%d bi=%d gd=%d gdm=%d dm=%d cn=%d (booked closes + disarmed pendings)\n",
-                   n_gm, n_sdm, n_sdt, n_fl, n_il, n_sl, n_bi, n_gd, n_gdm, n_dm, n_cn);
+                   "sl=%d bi=%d gd=%d gdm=%d dm=%d dm7=%d cn=%d (booked closes + disarmed pendings)\n",
+                   n_gm, n_sdm, n_sdt, n_fl, n_il, n_sl, n_bi, n_gd, n_gdm, n_dm, n_dm7, n_cn);
         }
         printf("[KILL-ALL] manual panic flatten on trading thread -- %d position(s) "
                "flattened (opposing MKT) + engine slots cleared\n", n_flat);

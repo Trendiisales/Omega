@@ -34,6 +34,7 @@
 # columns: book <TAB> system <TAB> producer <TAB> transport <TAB> endpoint <TAB> panel <TAB> fold <TAB> status <TAB> note
 omega_engine_ledger	omega-new	include/engine_init.hpp	VPS-local omega_shadow.csv+omega_trade_closes.csv	/api/shadow_csv	ENGINE LEDGER/HEAT/LAST-15	ALL-TIME base ROWS tot	WIRED	~16 enabled g_* engines via handle_closed_trade -> OmegaTradeLedger
 stockdip_turtle_books	omega-new	include/engine_init.hpp	stock_dipturtle_book ledger callback -> omega_shadow.csv	/api/shadow_csv	ENGINE LEDGER	folds with ROWS	WIRED	per-name StockDip/StockTurtle books ride the engine ledger
+day_mover7	omega-new	include/DayMover7Engine.hpp	handle_closed_trade -> omega_trade_closes.csv (real exec, IB tokens)	/api/shadow_csv	ENGINE LEDGER + LIVE OPEN (register_source DayMover7)	folds with ROWS	WIRED	thr7 day-mover LIVE 1sh (S-23 build; cert BULLGATE_PROTECTION_SWEEPS_2026-07-23.md)
 omega_stall_clip_companion	omega-new	include/StallCompanion.hpp	companion_state.json (VPS)	/api/companion	COMP-BANK sub-rows	window._comptot	WIRED	25 gold/index giveback books, native port of stall_accountant
 bigcap_mimic_ladder	omega-new	include/StockDayMoverLadderCompanion.hpp	stockladder_companion_state.json (VPS)	NONE	NONE	NONE	RETIRED-ok	panel+endpoint removed S-23j (operator paper-purge); dead $0 pre-trade book
 bigcap_2pct_impulse	omega-new	include/BigCap2pctImpulseCompanion.hpp	bigcap2pct_companion_state.json (VPS)	/api/bigcap2pct_companion	STOCK MOVERS pollBc2pct	window._bc2tot	WIRED	orphan fixed S-2026-07-11
