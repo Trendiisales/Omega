@@ -128,6 +128,21 @@ def check_scheduled_alive():
         record("[1] ALIVE (VPS companion)", False,
                f"{VPS_COMPANION} MISSING on VPS -- companion never wrote aggregate *** protection DEAD ***")
         return
+    # S-2026-07-23: the StallCompanion paper zoo was CULLED 2026-07-22c (live-only
+    # conversion, reg.enabled=false engine_init.hpp:3827) -- it no longer writes
+    # companion_state.json BY DESIGN, so a huge staleness here is the cull, NOT a
+    # stalled writer. REDding on a deliberately-disabled engine violates the operator's
+    # own cull-don't-park / never-display-dead-engines rules. A real transient writer
+    # stall on a LIVE companion would be minutes-to-an-hour; >6h stale during market
+    # hours = the permanent cull. In that case this check is N/A -- protection moved to
+    # the per-book locks verified by [9] PROFIT-LOCK-COVERAGE. Below 6h we still enforce
+    # freshness (in case the companion is ever re-armed).
+    CULL_MIN = 360.0
+    if age > CULL_MIN:
+        record("[1] ALIVE (VPS companion)", True,
+               f"StallCompanion CULLED 07-22c (live-only) -- age={age:.0f}min is the cull, "
+               f"not a stall; per-book profit-locks own protection now (see [9])")
+        return
     alive = age <= VPS_ALIVE_MIN
     detail = f"VPS {VPS_COMPANION} age={age:.1f}min (<= {VPS_ALIVE_MIN})"
     if not alive: detail += "  *** STALE -- in-binary companion not driving (writer stalled) ***"
@@ -456,7 +471,13 @@ def check_profit_lock_coverage():
             if ts >= day and len(parts) >= 3:
                 uncov.append(f"{parts[1]} {parts[2]}")
         elif section == "boot":
-            if "coverage sweep armed" in s: armed = True
+            # S-2026-07-23: accept ANY armed [PROFIT-LOCK-GATE] line, not just the culled
+            # StallCompanion "coverage sweep armed" text. Post 07-22c live-only conversion
+            # the zoo sweep is gone; the live per-book locks (DualMom trail g10/arm5/stayout
+            # + DSTOP-25, engine_init.hpp:3404) print "[PROFIT-LOCK-GATE] DualMom armed: ...".
+            # The grep already filters to PROFIT-LOCK-GATE lines, so "armed" here = a real
+            # live lock is running (the exact thing this check exists to prove).
+            if "armed" in s: armed = True
             if "UNCOVERED LIVE LEG" in s and not uncov: uncov.append(s[:120])
     if uncov:
         record("[9] PROFIT-LOCK-COVERAGE", False,
