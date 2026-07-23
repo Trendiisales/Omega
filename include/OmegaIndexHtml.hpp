@@ -154,28 +154,20 @@ a{color:var(--blu);text-decoration:none}
 <div class="compcols" style="margin-top:8px">
 <div class="cstack">
 
-<!-- ═══ LIVE OPEN TRADES (always visible) ═══ -->
-<div class="pan" id="ltpan">
-  <div style="display:flex;align-items:baseline;gap:10px">
-    <span class="lbl">LIVE OPEN TRADES</span>
-    <span id="ltcount" class="lbl"></span>
-    <span id="ltpnl" class="num" style="margin-left:auto;font-size:13px"></span>
-  </div>
-  <div style="max-height:110px;overflow-y:auto;margin-top:3px"><table id="lt"><tr><td class="l d">FLAT — no open positions</td></tr></table></div>
-</div>
+<!-- LIVE OPEN TRADES moved to the RIGHT column S-2026-07-23y (operator: "move to other side, allow it to be bigger") -->
 
 <!-- ═══ MAIN DASHBOARD ROW: chart (left) + money rail (right) — packs wide screens, cuts scroll ═══ -->
 <div class="grid deskmain" style="grid-template-columns:1fr;align-items:start">
 
 <!-- ═══ PREDICTIVE RANGES ═══ -->
 <div class="pan" style="margin-top:0">
-)OMEGAD0"
-R"OMEGAD1(  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
     <span class="lbl">PREDICTIVE RANGES</span>
     <span class="lbl" style="color:var(--t3)">stepped · non-repainting</span>
     <span id="prinfo" class="lbl num"></span>
     <span style="margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-      <span id="prlast" class="num" style="font-size:13px;color:var(--w)"></span>
+)OMEGAD0"
+R"OMEGAD1(      <span id="prlast" class="num" style="font-size:13px;color:var(--w)"></span>
       <span id="prtrend" class="chip" style="background:var(--pan2)"></span>
       <span id="prsyms" style="display:flex;gap:4px"></span>
       <span id="prtfs" style="display:flex;gap:4px"></span>
@@ -259,6 +251,16 @@ R"OMEGAD1(  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
 
 <!-- ═══ RIGHT column cstack (S-2026-07-22h): ENGINE LEDGER + ladders/stock books stack ═══ -->
 <div class="cstack">
+
+<!-- ═══ LIVE OPEN TRADES (always visible; moved right + enlarged S-2026-07-23y, operator ask) ═══ -->
+<div class="pan" id="ltpan">
+  <div style="display:flex;align-items:baseline;gap:10px">
+    <span class="lbl">LIVE OPEN TRADES</span>
+    <span id="ltcount" class="lbl"></span>
+    <span id="ltpnl" class="num" style="margin-left:auto;font-size:15px"></span>
+  </div>
+  <div style="max-height:420px;overflow-y:auto;margin-top:3px;font-size:12.5px"><table id="lt" style="width:100%"><tr><td class="l d">FLAT — no open positions</td></tr></table></div>
+</div>
 
 <!-- ═══ ENGINE LEDGER (running totals) — moved here S-2026-07-22h from the old lone topgrid
      right cell (its row-height mismatch vs the chart column was THE gaping-void bug).
@@ -392,11 +394,11 @@ setInterval(pollHealth,15000); pollHealth();
 
 /* ── sounds ── */
 var SND=localStorage.getItem('omega_snd')!=='0',ACTX=null;/* default ON (operator wants fire sound); mute persists as '0' */
-function sndBtn(){var b=el('snd');b.textContent=SND?'SND ON':'SND OFF';b.className=SND?'on':'';}
+)OMEGAD1"
+R"OMEGAD2(function sndBtn(){var b=el('snd');b.textContent=SND?'SND ON':'SND OFF';b.className=SND?'on':'';}
 function ensureCtx(){if(!ACTX){try{ACTX=new (window.AudioContext||window.webkitAudioContext)();}catch(e){}}
  if(ACTX&&ACTX.state==='suspended')ACTX.resume();}
-)OMEGAD1"
-R"OMEGAD2(el('snd').onclick=function(){SND=!SND;localStorage.setItem('omega_snd',SND?'1':'0');sndBtn();
+el('snd').onclick=function(){SND=!SND;localStorage.setItem('omega_snd',SND?'1':'0');sndBtn();
  if(SND){ensureCtx();chime([[0,880,0.5],[0.12,1320,0.4]]);}};
 sndBtn();
 // ── PANIC KILL-ALL: market-close every open position in THIS book (live opposing MKT) ──
@@ -555,11 +557,11 @@ var TKS=[['gold','XAUUSD','xau'],['sp','US500','sp'],['nq','USTEC','nq'],/* NAS1
     VIX stays null (no vix_curh in the emit list). */
  ['eurusd','EURUSD','eurusd'],['gbpusd','GBPUSD','gbpusd'],['usdjpy','USDJPY','usdjpy'],['audusd','AUDUSD','audusd'],['nzdusd','NZDUSD','nzdusd'],['usdcad','USDCAD','usdcad']];
 /* crypto legs (live from Binance public REST, CORS-open) — book roster, same strip as existing.
-   S-2026-07-12c: +XRP/XLM/GRT/AVAX/LINK/BCH/UNI/LDO — the consolidation/universe-scan engines'
+)OMEGAD2"
+R"OMEGAD3(   S-2026-07-12c: +XRP/XLM/GRT/AVAX/LINK/BCH/UNI/LDO — the consolidation/universe-scan engines'
    symbols (operator asked twice; they traded on josgp1 with no top-bar tile). */
 var CTKS=[['BTC','BTCUSDT'],['ETH','ETHUSDT'],['SOL','SOLUSDT'],['BNB','BNBUSDT'],['DOGE','DOGEUSDT'],
-)OMEGAD2"
-R"OMEGAD3( ['ADA','ADAUSDT'],['TRX','TRXUSDT'],['XRP','XRPUSDT'],['XLM','XLMUSDT'],['NEAR','NEARUSDT'],
+ ['ADA','ADAUSDT'],['TRX','TRXUSDT'],['XRP','XRPUSDT'],['XLM','XLMUSDT'],['NEAR','NEARUSDT'],
  ['AVAX','AVAXUSDT'],['LINK','LINKUSDT'],['BCH','BCHUSDT'],['UNI','UNIUSDT'],['GRT','GRTUSDT'],
  ['LDO','LDOUSDT'],['AAVE','AAVEUSDT'],['OP','OPUSDT'],
  /* S-2026-07-13: TSMOM/Donchian slot-engine coins — TRADED on josgp1 but had no tile
@@ -738,10 +740,10 @@ function markTiles(){
  /* S-2026-07-22 operator mandate (real-fills-only): the index/FX LADDER books (_ixlad/_fxlad) are
     SHADOW/paper — an open ladder LEG is NOT a real broker fill, so it must NOT light a tile neon
     "TRADING". This was the false USTEC-neon: NAS100 ladder held 4 shadow legs -> lit USTEC as live
-    when Omega has ZERO real fills and LIVE OPEN TRADES is FLAT. The 07-20 "light so it's not killed
-    blind" reason is served instead by the ladder's OWN panels (STOCK MOVERS / INDEX-FX LADDER),
 )OMEGAD3"
-R"OMEGAD4(    which show every open leg labelled. Neon TRADING = REAL open position only (_lastLts / REGPOS);
+R"OMEGAD4(    when Omega has ZERO real fills and LIVE OPEN TRADES is FLAT. The 07-20 "light so it's not killed
+    blind" reason is served instead by the ladder's OWN panels (STOCK MOVERS / INDEX-FX LADDER),
+    which show every open leg labelled. Neon TRADING = REAL open position only (_lastLts / REGPOS);
     when Omega wires a real-fill position feed, THAT lights the tile — never a shadow ladder leg. */
  TKS.forEach(function(t){var e=el('tkl_'+t[0]),bx=el('tkbox_'+t[0]);var on=!!act[t[0]];
   if(e){e.style.color=on?'#39ff14':'';e.style.fontWeight=on?'700':'';e.style.textShadow=on?'0 0 8px #39ff14':'';}
@@ -915,10 +917,10 @@ function pollTrades(){
     fetch('/api/stockdipturtle').then(function(r){return r.json();}).catch(function(){return {};}),
     fetch('/api/crypto_live_pnl').then(function(r){return r.json();}).catch(function(){return {};})
   ]).then(function(res){
-    /* S-2026-07-18r LIVE REALIZED (operator: "the correct loss number in the PnL"): real Binance
-       fills' cash-truth realized (fees incl), from josgp1 live_realized.json via relay HOP 3.
 )OMEGAD4"
-R"OMEGAD5(       Folds into ALL-TIME in updDayPnl + eqtot. The matching MIMIC-LIVE rows in LAST-15 are
+R"OMEGAD5(    /* S-2026-07-18r LIVE REALIZED (operator: "the correct loss number in the PnL"): real Binance
+       fills' cash-truth realized (fees incl), from josgp1 live_realized.json via relay HOP 3.
+       Folds into ALL-TIME in updDayPnl + eqtot. The matching MIMIC-LIVE rows in LAST-15 are
        display-only (excluded from _chimtot below) so this is the ONE accounting source. */
     window._clivetot=safe(((res[3]||{}).total_usd));
     /* S-2026-07-15n operator: StockDip/StockTurtle book trades were in the TOTAL (sdAll) but never in
@@ -1087,12 +1089,12 @@ function ccrLegPnl(h){
 /* CRYPTO MIMIC BOOKS — LIVE (S-2026-07-19i rebuild). Reads window._ccMirror.holds ONLY
    (real Binance legs, g_mimic_mirror/LiveMimicMirror S-18al) -- zero window._cc /
    shadow_mode reference. Coin summary row (Σ unrealized $) then one nested row per leg
-   (tag/qty/entry px/cur px/hwm/unrl $/floored). */
+)OMEGAD5"
+R"OMEGAD6(   (tag/qty/entry px/cur px/hwm/unrl $/floored). */
 function drawCCReal(){
  var mir=window._ccMirror,holds=(mir&&Array.isArray(mir.holds))?mir.holds:[];
  if(!holds.length){
-)OMEGAD5"
-R"OMEGAD6(  el('ccrtab').innerHTML='<tr><td class="l d">no live open legs</td></tr>';
+  el('ccrtab').innerHTML='<tr><td class="l d">no live open legs</td></tr>';
   el('ccrinfo').innerHTML='<span class="d">0 open legs</span>';
   el('ccrtotal').innerHTML='OVERALL <span class="d">$0.00</span> <span class="d" style="font-size:10px;font-weight:400">unrealized · no live open legs</span>';
   return;
@@ -1284,11 +1286,11 @@ function parseShadow(txt){
    pnl:parseFloat(f[ix.net_pnl])||0,
    size:ix.size!==undefined?(parseFloat(f[ix.size])||0):0,
    mfe:ix.mfe!==undefined?(parseFloat(f[ix.mfe])||0):0,
-   mae:ix.mae!==undefined?(parseFloat(f[ix.mae])||0):0,
+)OMEGAD6"
+R"OMEGAD7(   mae:ix.mae!==undefined?(parseFloat(f[ix.mae])||0):0,
    hold:ix.hold_sec!==undefined?(parseInt(f[ix.hold_sec],10)||0):0,
    reason:ix.exit_reason!==undefined?unq(f[ix.exit_reason]):'',
-)OMEGAD6"
-R"OMEGAD7(   spread:ix.spread_at_entry!==undefined?(parseFloat(f[ix.spread_at_entry])||0):0,
+   spread:ix.spread_at_entry!==undefined?(parseFloat(f[ix.spread_at_entry])||0):0,
    lat:ix.latency_ms!==undefined?(parseFloat(f[ix.latency_ms])||0):0});}
  out.sort(function(a,b){return a.ts-b.ts;});return out;}
 function winRows(){if(WIN>=9999)return ROWS;
@@ -1425,10 +1427,10 @@ function drawLedger(){var t=el('ledger');/* S-19b/19c: crypto companion PAPER ba
 function drawEquity(){var cv=el("eqc");if(!cv)return;/* PRE-TRADE EQUITY panel removed 2026-07-06 (operator: useless) */var H=110,ctx=prep(cv,H);
  var W=cv.clientWidth;ctx.clearRect(0,0,W,H);
  var rs=winRows();if(!rs.length){ctx.fillStyle='#6B7785';ctx.font='11px IBM Plex Mono';ctx.fillText('no pre-trade closes in window',10,20);
-  /* no pre-trade closes -> still fold the companion (paper) bank for the window so it never silently drops */
-  var cw=0;/* stall-clip companion window bank removed S-22e (dead book) */
 )OMEGAD7"
-R"OMEGAD8(  var clv0=(WIN!==1&&WIN!==7&&WIN!==30)?safe(window._clivetot):0;/* LIVE mirror real realized (S-2026-07-18r); crypto PAPER (cc0/chim0) excluded S-18w */
+R"OMEGAD8(  /* no pre-trade closes -> still fold the companion (paper) bank for the window so it never silently drops */
+  var cw=0;/* stall-clip companion window bank removed S-22e (dead book) */
+  var clv0=(WIN!==1&&WIN!==7&&WIN!==30)?safe(window._clivetot):0;/* LIVE mirror real realized (S-2026-07-18r); crypto PAPER (cc0/chim0) excluded S-18w */
   var fg0=(WIN!==1&&WIN!==7&&WIN!==30)?(safe(window._smtot)+safe(window._fxladtot)+safe(window._ixladtot)):0;/* stockmover/fx/index-LADDER forward banks (all-time) -- dead-book terms removed S-22e */
   var cwT=cw+clv0+fg0;tweenNum('eqtot',cwT,fmt$);el('eqtot').style.color=cwT>=0?'var(--grn)':'var(--red)';el('eqstats').innerHTML=cwT?'<span style="color:var(--t3)">paper only</span>':'';return;}
  var cum=[],c=0,pk=0,mdd=0,wins=0,gp=0,gl=0;
@@ -1600,12 +1602,12 @@ function drawPR(){var cv=el("prc");
   if(b[9]>0)lo=Math.min(lo,b[9]); if(b[7]>0)hi=Math.max(hi,b[7]);});
  var pad=(hi-lo)*0.06||1;lo-=pad;hi+=pad;
  var dp=hi<100?3:hi<1000?2:1;
- function X(i){return padL+pw*i/Math.max(1,n-1);}
+)OMEGAD8"
+R"OMEGAD9( function X(i){return padL+pw*i/Math.max(1,n-1);}
  function Y(v){return padT+ph*(1-(v-lo)/(hi-lo));}
  ctx.fillStyle='#6B7785';
  for(var g=0;g<=5;g++){var gy=padT+ph*g/5,gv=hi-(hi-lo)*g/5;
-)OMEGAD8"
-R"OMEGAD9(  ctx.strokeStyle='rgba(255,255,255,0.05)';ctx.beginPath();ctx.moveTo(padL,gy);ctx.lineTo(padL+pw,gy);ctx.stroke();
+  ctx.strokeStyle='rgba(255,255,255,0.05)';ctx.beginPath();ctx.moveTo(padL,gy);ctx.lineTo(padL+pw,gy);ctx.stroke();
   ctx.fillText(gv.toFixed(dp),padL+pw+6,gy+3);}
  for(var t=0;t<=4;t++){var ii=Math.round((n-1)*t/4),d=new Date(bars[ii][0]*1000);
   var lb=String(d.getUTCDate()).padStart(2,'0')+'.'+String(d.getUTCMonth()+1).padStart(2,'0')+' '
@@ -1804,10 +1806,11 @@ drawBlot();setInterval(drawBlot,20000);
 [['w1',1],['w7',7],['w30',30],['wall',9999]].forEach(function(b){if(!el(b[0]))return;/* window buttons lived in removed PRE-TRADE EQUITY panel */el(b[0]).onclick=function(){WIN=b[1];
  ['w1','w7','w30','wall'].forEach(function(x){if(el(x))el(x).className=x===b[0]?'on':'';});redrawAll();};});
 var _mm=el('mmsym');if(_mm)_mm.onchange=drawMM;
-window.addEventListener('resize',function(){drawEquity();drawMM();drawPR();});
+)OMEGAD9"
+R"OMEGAD10(window.addEventListener('resize',function(){drawEquity();drawMM();drawPR();});
 </script>
 </body>
 </html>
-)OMEGAD9"
+)OMEGAD10"
 ;
 } // namespace omega_gui

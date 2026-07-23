@@ -148,15 +148,7 @@ a{color:var(--blu);text-decoration:none}
 <div class="compcols" style="margin-top:8px">
 <div class="cstack">
 
-<!-- ═══ LIVE OPEN TRADES (always visible) ═══ -->
-<div class="pan" id="ltpan">
-  <div style="display:flex;align-items:baseline;gap:10px">
-    <span class="lbl">LIVE OPEN TRADES</span>
-    <span id="ltcount" class="lbl"></span>
-    <span id="ltpnl" class="num" style="margin-left:auto;font-size:13px"></span>
-  </div>
-  <div style="max-height:110px;overflow-y:auto;margin-top:3px"><table id="lt"><tr><td class="l d">FLAT — no open positions</td></tr></table></div>
-</div>
+<!-- LIVE OPEN TRADES moved to the RIGHT column S-2026-07-23y (operator: "move to other side, allow it to be bigger") -->
 
 <!-- ═══ MAIN DASHBOARD ROW: chart (left) + money rail (right) — packs wide screens, cuts scroll ═══ -->
 <div class="grid deskmain" style="grid-template-columns:1fr;align-items:start">
@@ -252,6 +244,16 @@ a{color:var(--blu);text-decoration:none}
 
 <!-- ═══ RIGHT column cstack (S-2026-07-22h): ENGINE LEDGER + ladders/stock books stack ═══ -->
 <div class="cstack">
+
+<!-- ═══ LIVE OPEN TRADES (always visible; moved right + enlarged S-2026-07-23y, operator ask) ═══ -->
+<div class="pan" id="ltpan">
+  <div style="display:flex;align-items:baseline;gap:10px">
+    <span class="lbl">LIVE OPEN TRADES</span>
+    <span id="ltcount" class="lbl"></span>
+    <span id="ltpnl" class="num" style="margin-left:auto;font-size:15px"></span>
+  </div>
+  <div style="max-height:420px;overflow-y:auto;margin-top:3px;font-size:12.5px"><table id="lt" style="width:100%"><tr><td class="l d">FLAT — no open positions</td></tr></table></div>
+</div>
 
 <!-- ═══ ENGINE LEDGER (running totals) — moved here S-2026-07-22h from the old lone topgrid
      right cell (its row-height mismatch vs the chart column was THE gaping-void bug).
