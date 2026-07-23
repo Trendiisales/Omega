@@ -25,6 +25,21 @@ Notes:
   * Connors silence context: ConnorsRSI2 is SMA200 bull-gated -- with NAS100 in a bear
     leg (IndexBearShort short open) ZERO fires is the GATE working, not the engine dead.
     That is why WAITING has a generous eval window instead of alarming on day one.
+
+FILL-DROUGHT check (S-2026-07-24, operator "checks-a-proxy-misses-the-outcome" audit):
+  The per-engine watch above counts CLOSED TRADES. With ZERO trades it can only say
+  WAITING (silent green) for the whole eval window -- which is EXACTLY the overnight
+  blind spot: the engines fired signals all night, every order bounced off a broker
+  filter -> 0 fills, nothing closed, and a "closed-trade" monitor saw nothing to alarm
+  on. Silence read as healthy. This is the canonical "expected activity but got zero"
+  failure. check_fill_drought() closes it by watching the OUTCOME of the signal->fill
+  pipeline directly:
+    * omega_shadow_signals.csv  -> allow=1 rows  = entries the system WANTED to take
+    * ibkr_fills.csv            -> broker fills   = entries that actually CLEARED
+  If the box emitted many entry-signals across several symbols over the window but ZERO
+  broker fills landed, the pipeline is broken (orders not placed / rejected / venue
+  down) -> RED, NOT a quiet green. The signal count IS the activity gate: a genuinely
+  quiet/closed market emits few signals and never trips this, so no false alarm.
 """
 import subprocess
 import sys
@@ -57,6 +72,106 @@ def fetch(path):
         return r.stdout if r.returncode == 0 else ""
     except Exception:
         return ""
+
+
+# ── FILL-DROUGHT (outcome check: signals fired but nothing filled) ──────────────
+import os as _os
+
+SIGNALS_CSV = r"C:\Omega\logs\shadow\omega_shadow_signals.csv"
+FILLS_CSV   = r"C:\Omega\logs\trades\ibkr_fills.csv"
+# window + thresholds (env-overridable so the healthy path is easy to demonstrate)
+DROUGHT_HRS    = float(_os.environ.get("EPW_DROUGHT_HRS", "24"))
+DROUGHT_MINSIG = int(_os.environ.get("EPW_DROUGHT_MINSIG", "20"))   # allow=1 signals in window
+DROUGHT_MINSYM = int(_os.environ.get("EPW_DROUGHT_MINSYM", "2"))    # across >=N distinct symbols
+DROUGHT_INJECT_FILL = _os.environ.get("EPW_INJECT_FILL", "") == "1"  # pretend a fill exists (green-path proof)
+
+
+def _count_allow_signals(text, since_ts):
+    """(n_allow, {symbols}) for allow=1 entry-signals stamped >= since_ts."""
+    n, syms = 0, set()
+    if not text.strip():
+        return n, syms
+    try:
+        rdr = csv.DictReader(io.StringIO(text))
+        for row in rdr:
+            if (row.get("allow") or "").strip() != "1":
+                continue
+            try:
+                ts = float(row.get("ts_unix") or 0)
+            except ValueError:
+                continue
+            if ts >= since_ts:
+                n += 1
+                s = (row.get("symbol") or "").strip()
+                if s:
+                    syms.add(s)
+    except csv.Error:
+        pass
+    return n, syms
+
+
+def _count_fills(text, since_ts):
+    """n broker fills (ibkr_fills.csv, col0=ts_unix) stamped >= since_ts; -1 if file empty/unreadable."""
+    lines = [ln for ln in (text or "").splitlines() if ln.strip()]
+    if not lines:
+        return -1
+    n = 0
+    for ln in lines:
+        try:
+            row = next(csv.reader([ln]))
+        except Exception:
+            continue
+        if not row or row[0] == "ts_unix":
+            continue
+        try:
+            ts = float(row[0])
+        except ValueError:
+            continue
+        if ts >= since_ts:
+            n += 1
+    return n
+
+
+def check_fill_drought(now):
+    """OUTCOME check: entry-signals fired but ZERO broker fills over the window = RED.
+
+    Prints one block and returns 1 (RED) / 0 (ok). The presence of >= DROUGHT_MINSIG
+    allow=1 signals across >= DROUGHT_MINSYM symbols proves the market was live and the
+    engines armed; ZERO fills in the same window means the signal->order->fill pipeline
+    is not delivering (the overnight reject-storm class). A quiet/closed market emits few
+    signals and never trips this -> no false alarm."""
+    since = now.timestamp() - DROUGHT_HRS * 3600.0
+    sig_txt = fetch(SIGNALS_CSV)
+    fil_txt = fetch(FILLS_CSV)
+    n_sig, syms = _count_allow_signals(sig_txt, since)
+    n_fill = _count_fills(fil_txt, since)
+    if DROUGHT_INJECT_FILL:
+        n_fill = max(n_fill, 1)   # green-path proof knob
+
+    hdr = f"  FILL-DROUGHT (signal->fill pipeline, last {DROUGHT_HRS:.0f}h):"
+    # can we even read the inputs?
+    if not sig_txt.strip() and not fil_txt.strip():
+        print(f"{hdr} SKIP -- could not read signals/fills on {HOST} (ssh down?)")
+        return 0
+    active = (n_sig >= DROUGHT_MINSIG and len(syms) >= DROUGHT_MINSYM)
+    drought = active and (n_fill == 0)
+    if drought:
+        print(f"  RED  [FILL-DROUGHT ] engines fired {n_sig} entry-signals across "
+              f"{len(syms)} syms ({','.join(sorted(syms))}) but 0 broker fills in {DROUGHT_HRS:.0f}h")
+        print(f"        signals want to trade, NOTHING is clearing the broker -- orders "
+              f"rejected/not-placed (the overnight 0-fill blind spot). Check the exec path, not the ledger.")
+        return 1
+    # healthy / benign explanations
+    if not active:
+        print(f"  PASS [FILL-DROUGHT ] only {n_sig} signals / {len(syms)} syms in window "
+              f"(< {DROUGHT_MINSIG}/{DROUGHT_MINSYM} activity gate) -- market quiet, drought not asserted")
+    elif n_fill < 0:
+        print(f"  PASS [FILL-DROUGHT ] {n_sig} signals / {len(syms)} syms but fills file empty/unreadable "
+              f"-- cannot assert drought (no false RED)")
+    else:
+        print(f"  PASS [FILL-DROUGHT ] {n_sig} signals / {len(syms)} syms -> {n_fill} broker fills in window "
+              f"(pipeline delivering)")
+    return 0
 
 
 def parse_ledger(text, engine_col, net_col, exit_ts_col):
@@ -131,8 +246,13 @@ def main():
         print(f"  {flag} [{verdict:11s}] {w['name']}: n={n} net=${net:+.2f} WR={wr} "
               f"last={last_s} watch-day {age_d}/{w['eval_days']}")
         print(f"        {w['note']}")
+    # OUTCOME check: signals fired but nothing filled (the overnight 0-fill blind spot).
+    # Independent of the per-engine WATCH list -> catches the whole-book pipeline stall
+    # that "closed-trade" counting reads as silent-green.
+    worst |= check_fill_drought(now)
     if worst:
-        print("  -> RED: an engine is NOT turning (or never produced inside its window).")
+        print("  -> RED: an engine is NOT turning (or never produced inside its window),")
+        print("     or the signal->fill pipeline is dead (signals fired, 0 broker fills).")
         print("     Operator standing order: bring a BETTER SOLUTION, don't let it ride.")
     return worst
 

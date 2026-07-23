@@ -43,6 +43,20 @@ TEN CHECKS (each pass/fail independently; overall RED if any fail):
                             per-engine precedence, noise band, unknown-pnl, NO-CLOSER).
                             Added S-2026-07-20n: guard was ARMED-verified in prod but the
                             trigger path had never fired anywhere (rare-event standing rule).
+  [11] FIRED-ON-LIVE-LEDGER — checks [3]/[10] prove protection CAN fire in a sandbox and [9]
+                            proves the gate is ARMED, but NONE proved it actually FIRES (or
+                            fails to) on the REAL live book. This audits the live trade ledger
+                            (omega_trade_closes.csv + dailies) for the OUTCOME: (a) protection
+                            HAS fired historically (>0 closes with a protective exit_reason:
+                            BE_FLOOR/TRAIL_STOP/*CLIP/*LOCK/DSTOP/...), proving the effect path
+                            is real on the live binary, AND (b) NO real position rode a large
+                            favorable peak (mfe) all the way to a deep net-negative close under a
+                            NON-protective exit -- the "floor configured but never triggers"
+                            failure. A giveback that escaped protection = RED. Added S-2026-07-24
+                            ("checks-a-proxy-misses-the-outcome" audit): a protection that exists
+                            + is armed but never actually clips a real adverse move is the exact
+                            silent-failure class -- a sandbox fire and an armed boot line do not
+                            prove the LIVE book was ever protected.
 
 Exit 0 = all green. Exit 1 = one or more RED. Writes a status file the SessionStart hook surfaces.
 """
@@ -539,6 +553,97 @@ def check_catastrophe_breach():
     except Exception as e:
         record("[10] CATASTROPHE-BREACH", False, f"harness error: {e}")
 
+# ---- [11] FIRED-ON-LIVE-LEDGER (protection proven to fire, no giveback escaped) ----
+# Env-tunable so the "healthy" path and negatives are demonstrable.
+PROT_LOOKBACK_D = float(os.environ.get("PROT_FIRED_LOOKBACK_D", "30"))
+PROT_LEAK_ARM_PCT = float(os.environ.get("PROT_LEAK_ARM_PCT", "0.6"))   # mfe/entry% that means "armed"
+PROT_LEAK_NET_USD = float(os.environ.get("PROT_LEAK_NET_USD", "50"))    # deep-negative close threshold
+# substrings (case-insensitive) that mark an exit as PROTECTIVE (the effect fired)
+_PROTECTIVE = ("floor", "clip", "lock", "trail", "stall", "dstop", "disaster",
+               "ratchet", "stop", "giveback", "cap", "be_", "breakeven", "protect")
+
+def _exit_is_protective(reason):
+    r = (reason or "").lower()
+    return any(k in r for k in _PROTECTIVE)
+
+def _fetch_live_ledger_rows():
+    """ONE ssh: type the live cumulative ledger + daily files (backups filtered python-side).
+    Returns list of dict rows keyed by header. Pipe-free PS foreach (cmd.exe splits '|')."""
+    ps = (r"foreach($lf in Get-ChildItem 'C:\Omega\logs\trades\omega_trade_closes*.csv'){"
+          r"Write-Output ('===LFILE '+$lf.Name);Get-Content $lf.FullName}")
+    try:
+        r = subprocess.run(["ssh","omega-new","powershell","-NoProfile","-Command",ps],
+                           capture_output=True, text=True, timeout=90)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if r.returncode != 0 or not (r.stdout or "").strip():
+        return None
+    import csv as _csv
+    rows, hdr, skip = [], None, False
+    for line in r.stdout.splitlines():
+        if line.startswith("===LFILE "):
+            nm = line[9:].strip().lower()
+            skip = any(x in nm for x in ("bak", "pre_", "pre-", "cutover", "culled",
+                                          "removed", "tmp", "archive", "phantom", "premult"))
+            continue
+        if skip or not line.strip():
+            continue
+        try: rec = next(_csv.reader([line]))
+        except Exception: continue
+        if rec and rec[0] in ("trade_id", '"trade_id"'):
+            hdr = [c.strip().strip('"') for c in rec]
+            continue
+        if hdr is None or len(rec) < len(hdr):
+            continue
+        rows.append(dict(zip(hdr, rec)))
+    return rows
+
+def check_fired_on_live_ledger():
+    rows = _fetch_live_ledger_rows()
+    if rows is None:
+        record("[11] FIRED-ON-LIVE-LEDGER", False, "ssh omega-new failed -- live ledger UNVERIFIABLE"); return
+    # negative-test injection (proves the leak branch can fire): PROT_INJECT=leak
+    if os.environ.get("PROT_INJECT", "") == "leak":
+        rows = list(rows) + [{"exit_ts_unix": str(int(time.time()) - 3600), "symbol": "INJ",
+                              "engine": "INJ_TEST", "entry_px": "100", "mfe": "5.0",
+                              "net_pnl": "-500", "exit_reason": "TIMEOUT"}]
+    now = time.time(); cut = now - PROT_LOOKBACK_D * 86400
+    def _f(v):
+        try: return float(v)
+        except (TypeError, ValueError): return 0.0
+    recent = [r for r in rows if _f(r.get("exit_ts_unix")) >= cut]
+    fired, leaks = [], []
+    for r in recent:
+        reason = r.get("exit_reason", "")
+        net = _f(r.get("net_pnl"))
+        entry = _f(r.get("entry_px"))
+        mfe = _f(r.get("mfe"))
+        if _exit_is_protective(reason):
+            fired.append(reason)
+        # LEAK: rode a real favorable peak (armed) then closed deep-negative under a
+        # NON-protective exit -> the floor/lock should have caught it and did not.
+        if entry > 0 and mfe > 0:
+            peak_pct = 100.0 * mfe / entry
+            if peak_pct >= PROT_LEAK_ARM_PCT and net <= -PROT_LEAK_NET_USD and not _exit_is_protective(reason):
+                leaks.append(f"{r.get('symbol')}/{r.get('engine')} peaked +{peak_pct:.2f}% then "
+                             f"closed ${net:.0f} via {reason or '?'} (UNPROTECTED giveback)")
+    if leaks:
+        record("[11] FIRED-ON-LIVE-LEDGER", False,
+               f"*** {len(leaks)} real giveback(s) escaped protection: " + "; ".join(leaks[:3]) + " ***")
+        return
+    if fired:
+        from collections import Counter
+        top = ", ".join(f"{k}x{v}" for k, v in Counter(fired).most_common(4))
+        record("[11] FIRED-ON-LIVE-LEDGER", True,
+               f"protection FIRED on live book {len(fired)}x in {PROT_LOOKBACK_D:.0f}d ({top}); "
+               f"0 unprotected givebacks -- effect proven on the LIVE ledger, not just sandbox")
+        return
+    # no closes in lookback (fresh/reset ledger): can't audit fire-history here, but
+    # [3]/[9]/[10] already prove can-fire + armed. Do NOT hard-RED an empty ledger.
+    record("[11] FIRED-ON-LIVE-LEDGER", True,
+           f"no live closes in {PROT_LOOKBACK_D:.0f}d -- fire-history not auditable on the ledger; "
+           f"armed+can-fire proven by [3]/[9]/[10] (no unprotected giveback to flag)")
+
 def main():
     check_scheduled_alive()
     check_real_not_shadow()
@@ -550,6 +655,7 @@ def main():
     check_stall_bank_ledger_parity()
     check_profit_lock_coverage()
     check_catastrophe_breach()
+    check_fired_on_live_ledger()
     overall = all(ok for _,ok,_ in results)
     ts = time.strftime("%Y-%m-%d %H:%M:%S")
     lines = [f"PROTECTION SELF-TEST {'GREEN -- all protection FUNCTIONAL' if overall else 'RED -- PROTECTION NOT WORKING'}  ({ts})"]

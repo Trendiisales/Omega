@@ -42,13 +42,26 @@ CHECKS (DISPLAYED vs AUTHORITATIVE, per desk surface):
                       History: original check built after S-2026-07-14q reqId
                       bleed — CRM's series in ADBE's column for 251 rows, desk
                       showed ADBE -$835 on a really-+$174 position).
+  [6] OMEGA-FILL-PARITY the Omega ENGINE LEDGER / trade table (/api/history?all=1 +
+                      /api/trades, both served straight from omega_trade_closes.csv
+                      with NO broker-fill gating) must show only trades the BROKER
+                      actually filled. Diffs the displayed PnL-bearing closes against
+                      the authoritative broker column (broker_entry_filled) in the
+                      same VPS file, cross-referenced to ibkr_fills.csv. FAIL when the
+                      desk folds net PnL from closes with broker_entry_filled=0 —
+                      i.e. PAPER shown as live money. Added S-2026-07-24
+                      ("checks-a-proxy-misses-the-outcome" audit + memory
+                      feedback-real-trade-broker-evidence): the 7 "real trades" of
+                      2026-07-22 were ALL paper at posted_exec=0 yet drove the desk's
+                      ENGINE LEDGER — the plumbing checks above never noticed because
+                      the rows WERE served correctly; they just weren't real.
 
 RESULT: marker line + exit 0 GREEN / 2 RED (WARN-only stays GREEN, is printed).
 Interpreter: /usr/bin/python3 (3.9-safe: no datetime.UTC, no 3.11-only APIs).
 Cron: scripts/install_crashsafe_monitor_crons.sh (30 min, crash-safe wrapped).
 Negative tests: DTS_INJECT=roster_missing|roster_extra|legacy_shape|
-trade_undercount|symbol_missing|config_drift|pnl_crosswire (comma list) mutates
-the fetched data so each check can be PROVEN to fire. Never set in cron.
+trade_undercount|symbol_missing|config_drift|pnl_crosswire|omega_paper (comma
+list) mutates the fetched data so each check can be PROVEN to fire. Never set in cron.
 
 This is the CONTENT-parity layer ABOVE the structural gate
 (tools/trade_visibility_manifest.tsv + scripts/trade_visibility_gate.sh).
@@ -252,6 +265,8 @@ VPS_FILES = [
     ("chimera_inbound", r"C:\Omega\logs\trades\chimera_inbound.csv"),
     ("gui_state_daily", r"C:\Omega\ibkrcrypto_gui\state.json"),
     ("gui_state_intraday", r"C:\Omega\ibkrcrypto_gui\state_intraday.json"),
+    ("omega_closes", r"C:\Omega\logs\trades\omega_trade_closes.csv"),
+    ("ibkr_fills", r"C:\Omega\logs\trades\ibkr_fills.csv"),
 ]
 
 
@@ -420,6 +435,7 @@ def main() -> int:
     served_b2 = http_json("/api/bigcap2pct_companion")
     served_tm = http_json("/api/telemetry")
     served_rb = http_json("/api/rdagent_book")
+    served_hist = http_json("/api/history?all=1")   # the desk's Omega trade table / ENGINE LEDGER source
     chim = probe_chimera()
     vps = probe_vps()
     einit = read_file(ENGINE_INIT)
@@ -446,6 +462,26 @@ def main() -> int:
         for l in served_cc.get("legs", []):
             if l.get("tag", "").startswith("BTC-"):
                 l["det_thr_pct"] = float(l.get("det_thr_pct", 0)) + 7.0
+    if "omega_paper" in INJECT:
+        # fabricate a paper close (broker_entry_filled=0, non-zero net) landing in the
+        # VPS omega_trade_closes.csv view + a served history row, to prove [6] fires.
+        _hdr = ("trade_id,trade_ref,entry_ts_unix,entry_ts_utc,entry_utc_weekday,exit_ts_unix,"
+                "exit_ts_utc,exit_utc_weekday,symbol,engine,side,entry_px,exit_px,tp,sl,size,"
+                "gross_pnl,net_pnl,slippage_entry,slippage_exit,commission,slip_entry_pct,"
+                "slip_exit_pct,comm_per_side,mfe,mae,hold_sec,spread_at_entry,latency_ms,regime,"
+                "exit_reason,l2_imbalance,l2_live,entry_clOrdId,close_clOrdId,broker_entry_filled,"
+                "broker_close_filled,broker_entry_rejected,broker_close_rejected,"
+                "broker_entry_fill_px,broker_close_fill_px,broker_pnl")
+        _row = ("9999,INJ,1784800000,x,Wed,1784803600,x,Wed,INJPAPER,INJ_ENGINE,LONG,100,101,0,0,1,"
+                "199.99,199.99,0,0,0,0,0,0,0,0,3600,0,0,TREND,SMA5_BOUNCE,0,1,,,0,0,0,0,0,0,0")
+        vps_inject_closes = _hdr + "\n" + _row
+        # also make the desk SERVE it (the real 07-22 incident: paper row displayed as live)
+        if not isinstance(served_hist, list):
+            served_hist = []
+        served_hist = list(served_hist) + [{"symbol": "INJPAPER", "engine": "INJ_ENGINE",
+                                            "net_pnl": 199.99, "exitReason": "SMA5_BOUNCE"}]
+    else:
+        vps_inject_closes = None
     if "pnl_crosswire" in INJECT and isinstance(served_rb, dict):
         # remark position 0 at position 1's price — the exact ADBE<-CRM signature
         _ps = served_rb.get("positions", [])
@@ -742,6 +778,58 @@ def main() -> int:
     else:
         rec("PASS", "BASKET-PNL", "paper basket endpoint absent from live desk (removed "
             "S-2026-07-23g; research lives Mac-side only)")
+
+    # ═══ [6] OMEGA-FILL-PARITY (desk PnL vs broker fills) ═════════════════════
+    # The Omega trade table + ENGINE LEDGER are served straight off omega_trade_closes.csv
+    # (buildTradesJson / buildHistoryJson) with NO broker-fill gating — so a PAPER close
+    # (broker_entry_filled=0, posted_exec=0) is displayed and folded into ALL-TIME PnL
+    # exactly like a real fill. Authoritative "did it really fill" = the broker_entry_filled
+    # column in that same file, cross-checked to ibkr_fills.csv. RED when the desk is
+    # showing PnL-bearing closes the broker never filled.
+    closes_text = vps_inject_closes if vps_inject_closes is not None else (
+        vps.get("omega_closes") if isinstance(vps, dict) and "__err__" not in vps else None)
+    fills_text = vps.get("ibkr_fills") if isinstance(vps, dict) and "__err__" not in vps else None
+    served_rows = served_hist if isinstance(served_hist, list) else []
+    if closes_text is None:
+        rec("FAIL", "OMEGA-FILL", "omega-new omega_trade_closes.csv UNREADABLE — cannot verify displayed trades are real")
+    else:
+        import csv as _csvm
+        paper_pnl, paper_rows, real_rows = 0.0, [], 0
+        try:
+            for row in _csvm.DictReader(closes_text.splitlines()):
+                try:
+                    net = float(row.get("net_pnl") or 0.0)
+                except ValueError:
+                    continue
+                if abs(net) < 0.01:
+                    continue
+                bef = (row.get("broker_entry_filled") or "").strip()
+                if bef in ("", "0", "0.0", "false", "False"):
+                    paper_pnl += net
+                    paper_rows.append("%s/%s $%+.0f(%s)" % (row.get("symbol", "?"), row.get("engine", "?"),
+                                                            net, row.get("exit_reason", "?")))
+                else:
+                    real_rows += 1
+        except Exception as e:
+            rec("FAIL", "OMEGA-FILL", "omega_trade_closes.csv parse error: %s" % e)
+            paper_rows = None
+        if paper_rows is not None:
+            n_fills = max(0, len([1 for ln in (fills_text or "").splitlines()
+                                  if ln.strip() and not ln.startswith("ts_unix")]))
+            n_served = len(served_rows)
+            if paper_rows and n_served > 0:
+                rec("FAIL", "OMEGA-FILL",
+                    "desk serves %d trade(s) via /api/history but %d carry net PnL with broker_entry_filled=0 "
+                    "(PAPER shown as live, Σ$%+.0f): %s — broker has %d real fill(s) on record" %
+                    (n_served, len(paper_rows), paper_pnl, ",".join(paper_rows[:5]), n_fills))
+            elif paper_rows and n_served == 0:
+                rec("WARN", "OMEGA-FILL",
+                    "%d paper PnL row(s) in omega_trade_closes.csv (broker_entry_filled=0) but endpoint serves 0 — "
+                    "not currently displayed; would show as live if the table repopulates" % len(paper_rows))
+            else:
+                rec("PASS", "OMEGA-FILL",
+                    "desk trade table clean: %d served, %d broker-filled close(s), 0 paper PnL rows (%d broker fills on record)" %
+                    (n_served, real_rows, n_fills))
 
     # ── verdict ────────────────────────────────────────────────────────────────
     verdict = ("RED — DESK DISPLAY DIVERGES FROM REALITY (%d mismatch%s)" % (red, "es" if red != 1 else "")
