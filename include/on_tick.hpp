@@ -14,6 +14,8 @@
 #include "FxMimicLadderCompanion.hpp"      // fl + il (FX + index ladder books)
 #include "StockDayMoverLadderCompanion.hpp"// sl (bigcap daily ladder book)
 #include "BigCap2pctImpulseCompanion.hpp"  // bi (bigcap 2pct impulse + BE-mimic book)
+#include "DayMover7Engine.hpp"             // dm7 (S-23m; MSVC: on_tick TU needs it directly -- Mac canary blind, deploy 0d7f87e4 C2039)
+#include "Bigcap3G4Engine.hpp"             // b3  (S-23q; same include-order class)
 #include "XagBeFloorCompanion.hpp"// XAGPos/XAGNeg SILVER BE-floor companion H1 feed (fed from XAGUSD DOM mid below)
 #include "UsoilBeFloorCompanion.hpp"// USOILPos/USOILNeg WTI BE-floor companion H1 feed (fed from USOIL.F DOM mid below)
 // (JumpRiderEngine.hpp include REMOVED — engine culled/tombstoned S-2026-07-10)
