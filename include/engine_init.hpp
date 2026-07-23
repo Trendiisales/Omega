@@ -7926,16 +7926,13 @@ static void init_engines(const std::string& cfg_path)
                             const long ooid = omega::ibkr_exec::preflight("XAUUSD.O", true, 1.0);
                             std::this_thread::sleep_for(std::chrono::seconds(8));
                             if (ooid >= 0 && !omega::ibkr_exec::preflight_rejected(ooid)) {
-                                // S-2026-07-23bb OPERATOR SIZE-UP ORDER ("the money is into ibkr so it
-                                // should allow gold now", funding landed + 1OZ margin $683 VIABLE):
-                                // the S-23a 0.005-lot report-only hold is LIFTED -- first clean 1OZ
-                                // whatIf FLIPS the engine off GLD onto the 1-oz future (eff_sym
-                                // XAUUSD.O, 23h session, true minimum futures lot). New entries only;
-                                // any open GLD position keeps its venue until its own exit.
-                                g_gold_daily_cbe.use_mgc.store(true);
-                                std::printf("[GOLD-VENUE] SWITCHED: 1OZ future margin fits -- GoldDailyCbe "
-                                            "now trades XAUUSD.O (1 oz/contract; operator size-up order "
-                                            "S-23bb; GLD retired for new entries)\n");
+                                // S-2026-07-23bb size-up flip STAGED but HELD (operator 2026-07-23:
+                                // "waiting to see any gold trades fire before i up the lot size").
+                                // 1OZ margin is VIABLE ($683) -- the flip (g_gold_daily_cbe.use_mgc
+                                // .store(true)) is ready but NOT armed: gold stays on GLD proving
+                                // size until a first GLD trade prints, then the operator lifts this.
+                                std::printf("[GOLD-VENUE] 1OZ future VIABLE ($683 margin) -- size-up STAGED, "
+                                            "HELD on GLD per operator (awaiting first gold trade before lot-up)\n");
                                 std::fflush(stdout);
                             }
                         }
