@@ -77,6 +77,16 @@ PROBE=$(ssh -o ConnectTimeout=25 -o BatchMode=yes chimera-direct '
     # "HALTED when credentials fail" as documentation text, not a state.
     halts=$(tail -n +"$bootln" "$logf" | grep -vF "[REGISTRY]" | grep -ciE "EXECUTOR.*HALT|Invalid API-key|code.:-201[45]|401 Unauthorized|[Ss]ignature for this request is not valid")
   fi
+  # ORDER-EXECUTION health (S-2026-07-24): count Binance order rejects, order
+  # intents, and real fills SINCE BOOT. A LOT_SIZE/-1013 reject storm keeps the
+  # executor LIVE + un-halted while every order bounces (qty not rounded to step)
+  # -> signals fire, 0 fills, nothing trades. None of the checks above see it.
+  rejects=0; intents=0; fills=0
+  if [ -n "$bootln" ]; then
+    rejects=$(tail -n +"$bootln" "$logf" | grep -ciE "submit failed|Filter failure|code.:-1013|code.:-1111|code.:-1013|code.:-2010")
+    intents=$(tail -n +"$bootln" "$logf" | grep -ciE "TRENDROSTER-INTENT\] tag=|MIMIC-LIVE\] BUY allowlisted|governed_submit.*BUY")
+    fills=$(tail -n +"$bootln" "$logf" | grep -ciE "\[LIVE-FILL\]|EXECUTOR\] FILLED|status=FILLED")
+  fi
   starts30=$(sudo -n journalctl -u chimera --since "-30 min" --no-pager 2>/dev/null | grep -c "Started chimera")
   lcs=$(grep -o "\"shadow_mode\"[[:space:]]*:[[:space:]]*[a-z]*" /home/jo/ChimeraCrypto/config/live_config.json 2>/dev/null | head -1 | grep -o "[a-z]*$")
   lcm=$(grep -o "\"mode\"[[:space:]]*:[[:space:]]*\"[a-z]*\"" /home/jo/ChimeraCrypto/config/live_config.json 2>/dev/null | tail -1 | grep -o "[a-z]*\"$" | tr -d "\"")
@@ -87,7 +97,7 @@ PROBE=$(ssh -o ConnectTimeout=25 -o BatchMode=yes chimera-direct '
   upe=""; [ -n "$upts" ] && upe=$(date -d "$upts" +%s 2>/dev/null)
   nowb=$(date +%s); ups=""
   case "$upe" in (*[0-9]) ups=$((nowb-upe));; esac
-  printf "ACT=%s\nMODE=%s\nEXEC=%s\nHALTS=%s\nSTARTS30=%s\nLCSHADOW=%s\nLCMODE=%s\nCRSHADOW=%s\nBUILD=%s\nHEADSHA=%s\nUPTIME=%s\n" "$act" "$mode" "$execl" "$halts" "$starts30" "$lcs" "$lcm" "$crs" "$build" "$headsha" "$ups"
+  printf "ACT=%s\nMODE=%s\nEXEC=%s\nHALTS=%s\nSTARTS30=%s\nLCSHADOW=%s\nLCMODE=%s\nCRSHADOW=%s\nBUILD=%s\nHEADSHA=%s\nUPTIME=%s\nREJECTS=%s\nINTENTS=%s\nFILLS=%s\n" "$act" "$mode" "$execl" "$halts" "$starts30" "$lcs" "$lcm" "$crs" "$build" "$headsha" "$ups" "$rejects" "$intents" "$fills"
 ' 2>/dev/null)
 SSH_RC=$?
 
@@ -108,6 +118,9 @@ CRSHADOW=$(printf '%s\n' "$PROBE" | sed -n 's/^CRSHADOW=//p')
 BUILD=$(printf '%s\n' "$PROBE" | sed -n 's/^BUILD=//p')
 HEADSHA=$(printf '%s\n' "$PROBE" | sed -n 's/^HEADSHA=//p')
 UPTIME_S=$(printf '%s\n' "$PROBE" | sed -n 's/^UPTIME=//p'); UPTIME_S=${UPTIME_S:-0}
+REJECTS=$(printf '%s\n' "$PROBE" | sed -n 's/^REJECTS=//p'); REJECTS=${REJECTS:-0}
+INTENTS=$(printf '%s\n' "$PROBE" | sed -n 's/^INTENTS=//p'); INTENTS=${INTENTS:-0}
+FILLS=$(printf '%s\n' "$PROBE" | sed -n 's/^FILLS=//p'); FILLS=${FILLS:-0}
 
 REASON=""
 [ "$ACT" != "active" ]                                   && REASON="chimera.service not active ($ACT)"
@@ -141,6 +154,15 @@ fi
 [ -z "$REASON" ] && ! printf '%s' "$EXECL" | grep -q "shadow=NO (LIVE)" \
                                                           && REASON="executor not LIVE: ${EXECL:-<no line>}"
 [ -z "$REASON" ] && [ "$HALTS" -gt 0 ]                    && REASON="$HALTS executor-halt/credential-failure line(s) since boot"
+# ORDER-EXECUTION HEALTH (S-2026-07-24, operator: "why are these basic errors not
+# picked up... what use is the ML and checks if nothing is done"). The executor can
+# be LIVE + un-halted while EVERY order bounces off a Binance filter (-1013 LOT_SIZE:
+# qty not rounded to stepSize). Signals fire, 0 fills, nothing trades all night, and
+# every check above stays GREEN. This is the missing OUTCOME check: are orders landing.
+#   * REJECT STORM: >=3 Binance filter rejects since boot -> orders not filling.
+#   * ZERO-FILL: order intents fired but 0 real fills -> effectively shadow despite LIVE.
+[ -z "$REASON" ] && [ "$REJECTS" -ge 3 ]                  && REASON="ORDER-REJECT STORM: $REJECTS Binance rejects (LOT_SIZE/filter) since boot — orders bouncing, NOT filling (signals fire, 0 trades)"
+[ -z "$REASON" ] && [ "$INTENTS" -ge 3 ] && [ "$FILLS" -eq 0 ] && REASON="ZERO-FILL: $INTENTS order intents but 0 real fills — executor LIVE yet nothing lands (effectively shadow; check reject/filter errors)"
 
 # ── S-2026-07-18af health JSON (the GUI truth chip's feed) — written EVERY run,
 #    green or red, at PROBE truth (no strike debounce: the chip shows raw state;
@@ -150,8 +172,8 @@ fi
 MODEW=$(printf '%s' "$MODE" | grep -o 'RUNTIME MODE = [A-Z]*' | awk '{print $NF}')
 OK=1; [ -n "$REASON" ] && OK=0
 RSAFE=$(printf '%s' "$REASON" | tr -d '"\\')
-printf '{"ts":%s,"ok":%s,"reason":"%s","build":"%s","headsha":"%s","mode":"%s","act":"%s","uptime_s":%s,"starts30":%s,"halts":%s}\n' \
-  "$now_e" "$OK" "$RSAFE" "$BUILD" "$HEADSHA" "${MODEW:-?}" "$ACT" "$UPTIME_S" "$STARTS30" "$HALTS" > "$HEALTH.tmp" \
+printf '{"ts":%s,"ok":%s,"reason":"%s","build":"%s","headsha":"%s","mode":"%s","act":"%s","uptime_s":%s,"starts30":%s,"halts":%s,"rejects":%s,"intents":%s,"fills":%s}\n' \
+  "$now_e" "$OK" "$RSAFE" "$BUILD" "$HEADSHA" "${MODEW:-?}" "$ACT" "$UPTIME_S" "$STARTS30" "$HALTS" "$REJECTS" "$INTENTS" "$FILLS" > "$HEALTH.tmp" \
   && mv "$HEALTH.tmp" "$HEALTH"
 
 # read state: "<phase> <last_notify_epoch>"  phase in ok|fail1|fail2|red
