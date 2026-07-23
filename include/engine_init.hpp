@@ -2335,6 +2335,17 @@ static void init_engines(const std::string& cfg_path)
                 // WF 52.3/36.2 clip 64.3/24.2 date, worst -2.53, 2x PF 1.578. Load-bearing
                 // levers: W=48, be_entry=1.0, floor ON. Per-cell overrides below.
                 {"NAS100", "NAS100",  48, 2.0, 3.0, false, "phase1/signal_discovery/warmup_NAS100_H1.csv"},
+                // NAS100S SHORT TWIN (S-2026-07-23z edge hunt + C++ parity cert
+                // backtest/nas_short_twin_parity_2026-07-23.cpp): bear-hysteresis DOWN-JUMP
+                // ladder — capitulation-grade breaks (~3.75% off the W-bar high) short
+                // follow-through. C++ live-form cert: n=340 +57.2% PF 1.341 DD 34.7,
+                // 2022 +22.0, bull-era +35.2, WF +17.7/+39.5, worst -2.09, 2x +50.3.
+                // Random-window control decisively negative (short timing is real).
+                // NOT a naive mirror (the W48 mirror is -35). Long/short gates mutually
+                // exclusive by hysteresis state -> two-state all-weather NAS book, never
+                // doubled exposure. Correlation note: sits in the same direction/regime as
+                // the live DON24 bear-short -- size jointly. Overrides below.
+                {"NAS100S","NAS100",  24, 2.5, 3.0, false, "phase1/signal_discovery/warmup_NAS100_H1.csv"},
                 {"GER40",  "GER40",   12, 1.5, 2.0, true,  "phase1/signal_discovery/warmup_GER40_H1.csv"},
                 // S-2026-07-09: M2K micro E-mini Russell 2000 (CME), IBKR-only L1 feed.
                 // rt=4.0 conservative (micro Russell < ES/NQ liquidity). BULL-GATED: the 2yr
@@ -2426,6 +2437,28 @@ static void init_engines(const std::string& cfg_path)
                         omega::resolve_seed_path("data/ndx_close_hist.csv"), 1.01, 0.99);
                     c.block_new_windows_fn = [] {
                         return !ndx_gate.bull((int64_t)std::time(nullptr));
+                    };
+                }
+                if (std::string(ic.tag) == "NAS100S") {
+                    c.short_downjump = true;       // DOWN-JUMP short twin (parity cert S-23z)
+                    c.be_entry_pct = 1.25;         // confirm 0.5*thr — load-bearing (shallow cm dead)
+                    c.pend_bars    = 24;           // pend to window flush (=W)
+                    c.wide_gb_frac = 0.70;         // python g70: keep 30% of MFE runner
+                    c.wide_arm_pct = -1.0;         // legacy 2.7*thr engage
+                    c.cap          = 1;            // no reclips (cert cap0)
+                    c.pre_arm_floor_stop = true;   // short floor epx*(1-RT), d_-parameterized (verified)
+                    // WEEKEND DEVIATION (certified, operator-flagged): gap-downs PAY a short
+                    // book — Layer-3 carry=0 costs -23.7 net and KILLS the cert; Layer-2
+                    // block-arms is ~free. Deliberate deviation from the S-11 long-book f=0.
+                    c.block_weekend_arms = true;
+                    c.weekend_carry_frac = 1.0;
+                    // BEAR hysteresis gate: OWN latch (NOT !bull — dead-zone + fail-closed
+                    // semantics differ): ON below MA200*0.99, OFF above MA200*1.01, same
+                    // nightly canonical feed; stale/short -> bear=false -> windows BLOCKED.
+                    static omega::Dma200GateFeed ndx_gate_s(
+                        omega::resolve_seed_path("data/ndx_close_hist.csv"), 1.01, 0.99);
+                    c.block_new_windows_fn = [] {
+                        return !ndx_gate_s.bear((int64_t)std::time(nullptr));
                     };
                 }
                 il.add(std::move(c));

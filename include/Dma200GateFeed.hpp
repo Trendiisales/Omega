@@ -50,6 +50,27 @@ public:
         return state_;
     }
 
+    // BEAR-side latch (S-2026-07-23, NAS100 short twin): its OWN state machine —
+    // NOT !bull(): the hysteresis dead-zone means both latches can be off, and a
+    // stale feed must fail CLOSED for the short book too (bear=false -> windows
+    // blocked). ON when close < ma*off_mult (0.99 at the certified band), OFF when
+    // close > ma*on_mult (1.01) — the exact state-machine inverse the cert ran.
+    bool bear(int64_t now_sec) {
+        std::lock_guard<std::mutex> lk(mu_);
+        refresh_();
+        if (closes_.size() < 210) { bear_state_ = false; return false; }     // fail-CLOSED
+        if (now_sec > 0 && last_ts_ > 0 &&
+            now_sec - last_ts_ > (int64_t)stale_days_ * 86400) {
+            bear_state_ = false; return false;
+        }
+        double s = 0; const size_t n = closes_.size();
+        for (size_t i = n - 200; i < n; ++i) s += closes_[i];
+        const double ma = s / 200.0, c = closes_.back();
+        if (!bear_state_ && c < ma * off_mult_) bear_state_ = true;          // bear ON
+        if ( bear_state_ && c > ma * on_mult_)  bear_state_ = false;         // bear OFF
+        return bear_state_;
+    }
+
 private:
     void refresh_() {
         struct stat st{};
@@ -76,7 +97,8 @@ private:
     std::mutex mu_;
     std::deque<double> closes_;
     int64_t last_ts_ = 0, mtime_ = -1;
-    bool state_ = false;   // hysteresis latch (starts risk-off = fail-closed)
+    bool state_ = false;        // bull hysteresis latch (starts risk-off = fail-closed)
+    bool bear_state_ = false;   // bear latch (starts blocked = fail-closed for the short book)
 };
 
 } // namespace omega
