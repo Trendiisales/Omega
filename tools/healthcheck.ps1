@@ -272,6 +272,57 @@ foreach ($port in @(4001)) {
     } catch { Add-Check "ib.port_$port" "WARN" "error" $_.Exception.Message }
 }
 
+# ---------- 6b. Intraday PRICE feed freshness + gateway liveness (2026-07-23) ----
+# WHY: a 2h13min gold+NAS price outage went un-alerted because (a) the nearest
+# feed check here keyed on SHADOW CSVs at a 2h threshold, and (b) the gateway
+# check above is PORT-LISTENING only -- the IB Gateway JVM had HUNG (.Responding
+# =$false) with the port still open + farm status frozen-green, so it read OK.
+# Add a DIRECT check on the live L1 price CSV the desk tiles actually use, with a
+# tight in-session threshold, and a real gateway-responsiveness check. Both FAIL
+# -> desk badge RED + beep within one poll, not 2 hours.
+$priceFeeds = @{
+    'feed.xauusd_l1' = "logs\ibkr_l2\ibkr_l1_XAUUSD_$todayUtc.csv"
+}
+foreach ($kv in $priceFeeds.GetEnumerator()) {
+    $p = Join-Path $Root $kv.Value
+    if (-not (Test-Path $p)) {
+        $sev = if ($isMarketHours) { 'FAIL' } else { 'OK' }
+        Add-Check $kv.Key $sev "missing" "$p does not exist (feed down?)"
+    } else {
+        $f = Get-Item $p
+        $ageMin = ($now - $f.LastWriteTime).TotalMinutes
+        if ($isMarketHours -and $ageMin -gt 10) {
+            Add-Check $kv.Key "FAIL" "stale" ("{0:N0}m since last tick (live price feed frozen -- IBKR gateway/bridge)" -f $ageMin)
+        } elseif ($isMarketHours -and $ageMin -gt 3) {
+            Add-Check $kv.Key "WARN" "lagging" ("{0:N1}m since last tick" -f $ageMin)
+        } else {
+            Add-Check $kv.Key "OK" "ok" ("{0:N1}m old" -f $ageMin)
+        }
+    }
+}
+
+# Gateway JVM responsiveness -- catches the "Zulu not responding" hang the port
+# check misses. Any non-responding java (the IB Gateway on this box) = FAIL.
+try {
+    $gw = @(Get-Process java -ErrorAction SilentlyContinue)
+    if ($gw.Count -eq 0) {
+        $gsev = if ($isMarketHours) { 'FAIL' } else { 'WARN' }
+        Add-Check "ib.gateway_process" $gsev "down" "no java (IB Gateway) process running"
+    } elseif (@($gw | Where-Object { -not $_.Responding }).Count -gt 0) {
+        Add-Check "ib.gateway_process" "FAIL" "hung" "IB Gateway JVM not responding (frozen -- ticks stall; needs a gateway bounce + 2FA)"
+    } else {
+        Add-Check "ib.gateway_process" "OK" "responding" "IB Gateway JVM responding"
+    }
+} catch { Add-Check "ib.gateway_process" "WARN" "error" $_.Exception.Message }
+
+# Escalation flag dropped by ibkr_l2_freshness_check.ps1 (feed stale N runs / gw hung).
+$feedFlag = Join-Path $Root 'logs\health\ibkr_feed_stale.flag'
+if (Test-Path $feedFlag) {
+    $flagTxt = (Get-Content $feedFlag -Raw -EA SilentlyContinue)
+    $fsev = if ($isMarketHours) { 'FAIL' } else { 'WARN' }
+    Add-Check "feed.watchdog_escalation" $fsev "stale" ("IBKR feed watchdog escalated: " + ($flagTxt -replace '\s+',' ').Trim())
+}
+
 # ---------- 7. Disk space ----------
 $drive = Get-PSDrive C
 $freeGB = [math]::Round($drive.Free / 1GB, 1)

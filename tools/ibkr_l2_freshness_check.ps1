@@ -71,6 +71,27 @@ $TaskName = 'OmegaIbkrBridge'
 $EmptyBackoffSec = 1800
 $EmptyStateFile  = 'C:\Omega\logs\ibkr_l2_empty_restart.state'
 
+# ---- ESCALATION + gateway-hang detector (2026-07-23) -------------------------
+# ROOT CAUSE of a 2h13min gold+NAS feed outage: the IB Gateway JVM ("Zulu
+# Platform") HUNG (froze, .Responding=$false) at 07:35 -- ports still listened,
+# farm status frozen-green -- so no ticks flowed, and THIS watchdog restarted the
+# BRIDGE every 2 min uselessly (a bridge restart cannot fix a hung gateway; the
+# script header even said so). Nothing bounced the gateway and nothing PUSHED an
+# alert to the operator -- it screamed into ibkr_l2_alerts.log for 2h13min.
+# Now: (1) after N consecutive STALE runs (bridge restart not clearing it) OR the
+# gateway java reporting .Responding=$false, ESCALATE -> bounce the GATEWAY (kill
+# java; IbkrGateway task relaunches via IBC + 2FA), throttled to once per
+# $GwBounceBackoffSec so it can't loop (a bounce needs 2FA). (2) Drop a HEALTH flag
+# healthcheck.ps1 raises to a desk-RED+beep FAIL (the push channel the operator
+# actually sees). A gateway bounce needs the operator to approve 2FA, so the alert
+# is the load-bearing fix; the auto-bounce is best-effort recovery.
+$StaleEscalateN     = 3        # consecutive STALE runs (~6 min) before bouncing the gateway
+$StaleCountFile     = 'C:\Omega\logs\ibkr_l2_stale_count.state'
+$GwBounceBackoffSec = 1500     # >= 25 min between gateway bounces (2FA-gated; must not loop)
+$GwBounceStateFile  = 'C:\Omega\logs\ibkr_gw_bounce.state'
+$HealthFlagDir      = 'C:\Omega\logs\health'
+$HealthFlag         = 'C:\Omega\logs\health\ibkr_feed_stale.flag'
+
 # ---- guard: skip outside market hours ---------------------------------------
 # IBKR L2 dries up overnight + on weekends. Don't alarm during known-quiet
 # windows (would page-fatigue the operator).
@@ -123,6 +144,9 @@ if ($problems.Count -eq 0) {
     # Clear the EMPTY backoff timer so a fresh header-only failure later gets an
     # immediate first restart attempt rather than inheriting a stale timestamp.
     if (Test-Path $EmptyStateFile) { Remove-Item $EmptyStateFile -Force -EA SilentlyContinue }
+    # Feed healthy again -> reset the escalation counter + clear the desk-RED flag.
+    if (Test-Path $StaleCountFile) { Remove-Item $StaleCountFile -Force -EA SilentlyContinue }
+    if (Test-Path $HealthFlag)     { Remove-Item $HealthFlag     -Force -EA SilentlyContinue }
     exit 0
 }
 
@@ -181,5 +205,50 @@ if (-not $task) {
 }
 Start-ScheduledTask -TaskName $TaskName
 Add-Content -Path $AlertLog -Value "  restarted task '$TaskName'"
+
+# ---- ESCALATION: persistent STALE / gateway hang -> bounce the GATEWAY + PUSH -
+# Only STALE/MISSING (restart-fixable) reaches here as an upstream candidate;
+# EMPTY-only backed off earlier. A bridge restart just ran above; if the feed has
+# been STALE for N consecutive runs it is NOT the bridge -- it is the gateway.
+if ($hasRestartFixable) {
+    # 1) consecutive-STALE counter
+    $sc = 0
+    if (Test-Path $StaleCountFile) { try { $sc = [int]((Get-Content $StaleCountFile -Raw).Trim()) } catch { $sc = 0 } }
+    $sc++
+    $sc | Out-File -Encoding ascii $StaleCountFile
+
+    # 2) gateway JVM-hang detector (the exact 07-23 "Zulu not responding" case)
+    $gwHung = $false
+    try {
+        $gw = @(Get-Process java -EA SilentlyContinue)
+        if ($gw.Count) { $gwHung = @($gw | Where-Object { -not $_.Responding }).Count -gt 0 }
+    } catch { }
+
+    # 3) PUSH: drop a HEALTH flag -> healthcheck.ps1 raises a desk-RED+beep FAIL
+    try {
+        New-Item -ItemType Directory -Force -Path $HealthFlagDir -EA SilentlyContinue | Out-Null
+        Set-Content -Path $HealthFlag -Value ("[$nowUtc UTC] IBKR FEED STALE (${sc} consecutive; gw_hung=$gwHung): " + ($problems -join '; ')) -EA SilentlyContinue
+    } catch { }
+
+    if (($sc -ge $StaleEscalateN) -or $gwHung) {
+        $last = 0
+        if (Test-Path $GwBounceStateFile) { try { $last = [int64]((Get-Content $GwBounceStateFile -Raw).Trim()) } catch { $last = 0 } }
+        $nowEpoch = [int64][DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+        if (($nowEpoch - $last) -ge $GwBounceBackoffSec) {
+            $nowEpoch | Out-File -Encoding ascii $GwBounceStateFile
+            $reason = if ($gwHung) { "gateway JVM NOT RESPONDING (hung)" } else { "${sc} consecutive STALE runs -- bridge restart is not clearing it (upstream/gateway)" }
+            Add-Content -Path $AlertLog -Value "  ESCALATE: $reason -> bouncing IB Gateway (kill java + relaunch IbkrGateway task)"
+            try {
+                @(Get-Process java -EA SilentlyContinue) | ForEach-Object { Stop-Process -Id $_.Id -Force -EA SilentlyContinue }
+                Start-Sleep -Seconds 3
+                Start-ScheduledTask -TaskName 'IbkrGateway' -EA SilentlyContinue
+                Add-Content -Path $AlertLog -Value "  ESCALATE: IbkrGateway relaunch triggered -- OPERATOR MUST APPROVE 2FA on the IBKR mobile app"
+            } catch { Add-Content -Path $AlertLog -Value "  ESCALATE ERROR: $($_.Exception.Message)" }
+            $sc = 0; $sc | Out-File -Encoding ascii $StaleCountFile   # reset after a bounce; give the fresh gateway time
+        } else {
+            Add-Content -Path $AlertLog -Value ("  ESCALATE SUPPRESSED: gateway bounced " + ($nowEpoch - $last) + "s ago (< ${GwBounceBackoffSec}s backoff; awaiting login/2FA) -- HEALTH flag stays RED")
+        }
+    }
+}
 
 exit 1
