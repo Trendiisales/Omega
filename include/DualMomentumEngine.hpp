@@ -58,6 +58,13 @@ public:
         // total) available by config. trail_g_pct=0 disables.
         double trail_g_pct   = 10.0;  // close when px < peak*(1-g/100), armed only after...
         double trail_arm_pct = 5.0;   // ...fav >= +arm% from entry
+        // S-2026-07-23w DISASTER STOP (intraday, certified scratchpad disaster/dualmom):
+        // replaces the -20% close-check semantics with a -25% INTRADAY resting check --
+        // Sharpe 1.65 vs 1.66 (noise), mdd 29.6, worst single-name trade capped
+        // -40.5 -> -33.9 (the residual IS the open-gap floor: a stop cannot cap a gap,
+        // it caps post-open continuation), ~1.4 fires/yr. Checked against live marks by
+        // the wire-side 60s watcher (dstop_intraday_check). 0 disables.
+        double dstop_intra_pct = 25.0;
         double voltgt    = 0.25;   // annualized; scales held-name count
         double lot       = 1.0;    // shares per name (proving size)
         std::string engine_tag = "DualMom";
@@ -118,6 +125,27 @@ public:
         seen_today_.clear();
         ++day_no_;
         step_(ts_sec);
+    }
+
+    // Intraday disaster-stop check (S-23w): called by the wire-side 60s mark watcher
+    // with a live-price lookup. Closes any held name whose mark has fallen
+    // dstop_intra_pct below entry -- the certified -25% resting-intra cell. The
+    // daily stop_pct close-check in step_ stays as the backstop for mark outages.
+    int dstop_intraday_check(const std::function<double(const std::string&)>& px_of,
+                             int64_t now_sec) {
+        std::lock_guard<std::mutex> lk(mu_);
+        if (cfg.dstop_intra_pct <= 0) return 0;
+        int n = 0;
+        for (auto it = held_.begin(); it != held_.end();) {
+            const double lp = px_of ? px_of(it->first) : 0.0;
+            if (lp > 0 && lp < it->second.entry * (1.0 - cfg.dstop_intra_pct / 100.0)) {
+                close_name_(it->first, it->second, lp, now_sec, "DSTOP_INTRA25");
+                stayout_.insert(it->first);   // crashed name: no same-cycle re-buy
+                it = held_.erase(it); ++n;
+            } else ++it;
+        }
+        if (n) save_();
+        return n;
     }
 
     int kill_all(double, int64_t now_sec) {

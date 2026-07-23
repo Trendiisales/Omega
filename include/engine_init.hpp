@@ -3352,8 +3352,24 @@ static void init_engines(const std::string& cfg_path)
                 // PROFIT-LOCK boot gate (operator mandate feedback-profit-lock-mandatory;
                 // clears protection_selftest FAIL[9] for this book): loud armed line, and a
                 // loud VIOLATION if the certified trail is ever config-disabled.
+                // DISASTER-STOP watcher (S-23w): 60s live-mark check, certified -25% intra
+                // cell (worst trade capped -40.5 -> -33.9; ~1.4 fires/yr; daily stop_pct
+                // close-check remains the mark-outage backstop). Broker-resting STP GTC is
+                // the survivability upgrade (needs per-order cancel plumbing) -- queued.
+                std::thread([]() {
+                    for (;;) {
+                        std::this_thread::sleep_for(std::chrono::seconds(60));
+                        auto& d = omega::dual_momentum_engine();
+                        const int64_t now_s = (int64_t)std::chrono::duration_cast<std::chrono::seconds>(
+                            std::chrono::system_clock::now().time_since_epoch()).count();
+                        const int n = d.dstop_intraday_check(
+                            [](const std::string& s) { return omega::ibkr_exec::last_price(s); }, now_s);
+                        if (n) printf("[DUALMOM] DSTOP_INTRA25 fired on %d name(s)\n", n);
+                    }
+                }).detach();
                 if (dm.cfg.trail_g_pct > 0)
                     printf("[PROFIT-LOCK-GATE] DualMom armed: trail g=%.0f%% arm=+%.0f%% stayout "
+                           "+ DSTOP intra-25 (60s mark watcher) "
                            "(certified S-23; giveback surrender -31%%)\n",
                            dm.cfg.trail_g_pct, dm.cfg.trail_arm_pct);
                 else
