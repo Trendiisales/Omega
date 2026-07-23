@@ -125,6 +125,21 @@ public:
         // pending leg if BE is not made within pend_bars. 0 = legacy enter-at-trigger.
         double be_entry_pct  = 0.0;       // >0 = wait for +be% before opening
         int    pend_bars     = 4;         // cancel a pending leg if BE not made within this many bars
+        // ── PRE-ARM BE-FLOOR STOP (S-2026-07-23, flag-gated, default OFF = bit-identical) ──
+        //   A leg past BE-ENTRY (opened) but NOT yet armed on any trail exits when price crosses
+        //   back to the python-cert floor epx*(1 + d*RT-frac) — epx = the spawn close the leg was
+        //   priced off (L.trig for BE-ENTRY legs; entry for legacy enter-at-trigger legs, the same
+        //   value by construction). Honest fills: a bar OPEN through the floor books the open (gap),
+        //   otherwise the level (nas_ladder_sweep2.py floored-arch bar order). The check runs on
+        //   every H1 bar while unarmed — no weekend special-casing; the floor sits ABOVE (long) the
+        //   5*thr LOSS_CUT so it fires first, LC stays as backstop; window flush unchanged for legs
+        //   the floor never touches.
+        // ADVERSE-PROTECTION: backtested verdict — the S-23 C++ parity cert
+        //   (backtest/BULLGATE_PROTECTION_SWEEPS_2026-07-23.md, CERT-1/NAS100) found this exact
+        //   architecture MISSING from the engine: pre-arm losers rode to window flush, DD 33 vs the
+        //   python-certified 14 (W48/thr2.0 ndx200 confirm-1.0% cell, PF 1.88). This flag closes
+        //   that gap class; the python reference is scratchpad nas_ladder_sweep2.py "floored".
+        bool   pre_arm_floor_stop = false;
         // BE-FLOOR-ON-OPEN family flag (feedback-no-prebe-loss-ever S-17, HONESTY-CORRECTED
         // S-2026-07-20). ⚠ The original semantics ("EVERY booked clip floored at break-even,
         // nNeg==0 by construction") were the crypto S-17f accounting tautology: book_clip_
@@ -184,6 +199,27 @@ public:
         // negative -> wire ONLY behind the index risk-off gate, feedback-companion-bull-
         // gate-not-reject). Open legs still manage/flush; only new triggers are blocked.
         std::function<bool()> block_new_windows_fn;
+        // ── REAL-EXEC PROXY HOOKS (S-2026-07-23, default null = paper book, bit-identical) ──
+        //   DualMom-style callbacks (DualMomentumEngine.hpp L60-66 contract: shares-based,
+        //   token per position). ACTIVE only when open_fn is set AND exec_proxy_sym non-empty:
+        //   every leg OPEN then routes gate_fn -> open_fn on the PROXY symbol with
+        //   shares = round(exec_notional_usd / px); a gate refusal or empty token means the
+        //   broker did NOT take it -> the leg is NOT booked at all (refusal honesty, the
+        //   DualMom S-23e pattern — ladder legs are window-scoped so there is no retry set:
+        //   the leg is simply skipped with a printf). Every leg CLOSE calls close_fn with the
+        //   stored per-leg token; the book still records the engine's own H1-based fill (the
+        //   proxy order is printf'd alongside). NO reconciliation logic here by design — the
+        //   [vps-pospar] engine<->broker position parity gate covers proxy-vs-book drift
+        //   externally. Distinct from the class-level set_exec() shadow/ledger wiring, which
+        //   is untouched.
+        using OpenFn  = std::function<std::string(const std::string& sym, bool is_long, double shares, double px)>;
+        using CloseFn = std::function<void(const std::string& sym, bool orig_long, double shares, double px, const std::string& token)>;
+        using GateFn  = std::function<bool(const std::string& sym, double tp_dist, double shares)>;
+        OpenFn  open_fn;                     // null = paper (default, current behavior)
+        CloseFn close_fn;
+        GateFn  gate_fn;
+        std::string exec_proxy_sym;          // "" = paper (default); the broker symbol legs proxy into
+        double exec_notional_usd = 10000.0;  // $ per leg on the proxy; shares = round(usd / px)
         // ── WEEKEND-GAP RISK CAPS (S-2026-07-11, WEEKEND_RISK_LAYERS_FINDINGS.md) ──
         //   Faithful live port of backtest/weekend_risk_layers_bt.py Layer 2 + Layer 3.
         //   Both are flag-gated (defaults OFF -> byte-identical baseline behavior) and
@@ -437,6 +473,7 @@ private:
     double d_ = 1.0;                  // direction multiplier: +1 long mimic, -1 short downjump
     bool   retired_ = false;          // S-2026-07-08c auto-retirement latch state (new windows blocked)
     bool   retired_logged_ = false;   // one-shot retirement log
+    bool   prearm_floor_logged_ = false;   // S-2026-07-23 one-shot [LADDER] pre-arm-floor first-use log
     std::vector<int64_t> ts_;
     std::vector<double>  h_, l_, c_;
     int64_t deploy_ts_ = 0;
@@ -478,6 +515,10 @@ private:
         // gap this OPEN leg has spanned since entry (ets < gap_ts <= xts). At book time
         // the (1-weekend_carry_frac) share of this is subtracted -> size-scaled carry.
         double wknd_gap_adj = 0.0;
+        // REAL-EXEC proxy token (S-2026-07-23, cfg.open_fn path): empty = no proxy order.
+        // Shares are NOT stored — the open px == L.entry at both open sites, so the close
+        // recomputes round(exec_notional_usd / L.entry) and gets the same size.
+        std::string exec_token;
     };
     std::vector<Leg> legs_;
 
@@ -511,6 +552,18 @@ private:
         if (pct < 0.0 && pct > -1e-9) pct = 0.0;             // IEEE-754 dust only, never a real tail
         if (!fwd) return;
         if (!L.token.empty() && close_fn_) close_fn_(cfg_.live_sym, d_ > 0, cfg_.lot, fill, L.token);
+        // REAL-EXEC proxy close (S-2026-07-23): same shares as the open (recomputed off L.entry,
+        // == the open px by construction). The book below stays the engine's own H1-based fill;
+        // the proxy order is only printf'd. Proxy-vs-book drift is the external [vps-pospar]
+        // parity gate's job — no reconciliation here.
+        if (!L.exec_token.empty() && cfg_.close_fn) {
+            const double sh = std::round(cfg_.exec_notional_usd / L.entry);
+            cfg_.close_fn(cfg_.exec_proxy_sym, d_ > 0, sh, fill, L.exec_token);
+            std::printf("[FXLAD][EXEC-CLOSE] %s proxy %s sh=%.0f @%.5f tok=%s (%s)\n",
+                        leg_engine_(L.ti).c_str(), cfg_.exec_proxy_sym.c_str(), sh, fill,
+                        L.exec_token.c_str(), reason);
+            std::fflush(stdout);
+        }
         if (ledger_fn_) ledger_fn_(leg_engine_(L.ti), cfg_.live_sym, d_ > 0, L.entry, fill, cfg_.lot, L.entry_ts, ts_sec, reason);
         fwd_[L.ti].pct += pct; fwd_[L.ti].clips += 1; fwd_[L.ti].wins += (pct > 1e-9 ? 1 : 0);
         save_fwd_book_();
@@ -537,6 +590,9 @@ private:
         L.entry = px; L.peak = px;       // legacy: enter at the trigger close now
         L.arm_px = px * (1.0 + d_ * arm_off / 100.0);   // arm level in the favorable direction
         L.trail_abs = (trail_abs_mult > 0.0) ? px * (trail_abs_mult * cfg_.thr / 100.0) : 0.0;
+        // REAL-EXEC proxy open FIRST (S-2026-07-23): a refused leg must neither book nor fire
+        // the legacy order path. Refusal -> entry cleared; push_leg_ drops the dead leg.
+        if (!exec_open_(L, px, fwd)) { L.entry = 0.0; return L; }
         if (fwd && open_fn_) {
             const double tp_dist_pts = std::fabs(L.arm_px - px);
             if (!gate_fn_ || gate_fn_(cfg_.live_sym, tp_dist_pts, cfg_.lot)) {
@@ -548,6 +604,44 @@ private:
             }
         }
         return L;
+    }
+
+    // ── REAL-EXEC proxy open attempt (S-2026-07-23) for a leg entering at px. Paper (default:
+    //   null cfg.open_fn / empty exec_proxy_sym) returns true untouched — current behavior.
+    //   false = broker refused (gate false / sub-1-share sizing / empty token) -> the caller
+    //   drops the leg entirely: never book an engine leg the broker did not take (refusal
+    //   honesty, DualMom S-23e). shares = round(exec_notional_usd / px); px == the leg's entry
+    //   at both call sites, so the close in book_clip_ recomputes the same size off L.entry. ──
+    bool exec_open_(Leg& L, double px, bool fwd) noexcept {
+        if (!fwd || !cfg_.open_fn || cfg_.exec_proxy_sym.empty()) return true;   // paper book (default)
+        const double shares = std::round(cfg_.exec_notional_usd / px);
+        const double tp_dist = std::fabs(L.arm_px - px);
+        if (shares < 1.0 || (cfg_.gate_fn && !cfg_.gate_fn(cfg_.exec_proxy_sym, tp_dist, shares))) {
+            std::printf("[FXLAD][EXEC-SKIP] %s proxy %s %s sh=%.0f @%.5f gate/size refused -- leg skipped (window-scoped, no retry)\n",
+                        leg_engine_(L.ti).c_str(), cfg_.exec_proxy_sym.c_str(),
+                        d_ > 0 ? "LONG" : "SHORT", shares, px);
+            std::fflush(stdout);
+            return false;
+        }
+        L.exec_token = cfg_.open_fn(cfg_.exec_proxy_sym, d_ > 0, shares, px);
+        if (L.exec_token.empty()) {
+            std::printf("[FXLAD][EXEC-SKIP] %s proxy %s open refused (empty token) sh=%.0f @%.5f -- leg skipped (window-scoped, no retry)\n",
+                        leg_engine_(L.ti).c_str(), cfg_.exec_proxy_sym.c_str(), shares, px);
+            std::fflush(stdout);
+            return false;
+        }
+        std::printf("[FXLAD][EXEC-OPEN] %s proxy %s %s sh=%.0f @%.5f tok=%s\n",
+                    leg_engine_(L.ti).c_str(), cfg_.exec_proxy_sym.c_str(),
+                    d_ > 0 ? "LONG" : "SHORT", shares, px, L.exec_token.c_str());
+        std::fflush(stdout);
+        return true;
+    }
+
+    // Push a freshly-made leg; a proxy-refused leg (entry cleared by make_leg_) is dropped
+    // here — window-scoped, no retry set (S-2026-07-23; printf'd in exec_open_).
+    void push_leg_(Leg&& L) noexcept {
+        if (!L.pending && L.entry <= 0.0) return;
+        legs_.push_back(std::move(L));
     }
 
     // Incremental ladder state machine on the NEWEST H1 bar. Faithful harness bar order:
@@ -607,6 +701,9 @@ private:
                         L.entry = e; L.peak = e; L.pending = false; L.entry_ts = ts_sec;
                         L.arm_px = e * (1.0 + d_ * L.arm_off / 100.0);
                         L.trail_abs = (L.trail_mult > 0.0) ? e * (L.trail_mult * cfg_.thr / 100.0) : 0.0;
+                        // REAL-EXEC proxy open (S-2026-07-23): refusal drops the leg here — no book,
+                        // no legacy order (printf'd in exec_open_; window-scoped, no retry).
+                        if (!exec_open_(L, e, fwd)) continue;
                         if (fwd && open_fn_) {
                             const double tp_dist_pts = std::fabs(L.arm_px - e);
                             if (!gate_fn_ || gate_fn_(cfg_.live_sym, tp_dist_pts, cfg_.lot)) {
@@ -625,6 +722,26 @@ private:
                 for (int k = 0; k < 3 && !closed; ++k) {
                     const double px = seq[k];
                     if (!L.armed) {
+                        // PRE-ARM BE-FLOOR STOP (S-2026-07-23, cfg.pre_arm_floor_stop — see Config):
+                        // opened-but-unarmed leg exits at the python-cert floor epx*(1 + d*RT-frac)
+                        // (epx = spawn close: L.trig for BE-ENTRY legs, entry for legacy). Sits ABOVE
+                        // (long) the 5*thr LOSS_CUT so it fires first; LC stays as backstop. Honest
+                        // gap fill: a bar OPEN through the floor books the open, else the level
+                        // (nas_ladder_sweep2.py floored-arch bar order, o<=stop -> book o).
+                        if (cfg_.pre_arm_floor_stop) {
+                            const double epx = (L.trig > 0.0) ? L.trig : L.entry;
+                            const double flr = epx * (1.0 + d_ * cfg_.rt_cost_bp / 1e4);
+                            if (d_ * (px - flr) <= 0) {
+                                const double f = (bar_open > 0.0 && d_ * (bar_open - flr) <= 0) ? bar_open : flr;
+                                if (!prearm_floor_logged_) {
+                                    prearm_floor_logged_ = true;
+                                    std::printf("[LADDER] %s pre_arm_floor_stop ACTIVE: first floor-stop exit fill=%.5f (epx %.5f, CERT-1 S-2026-07-23)\n",
+                                                cfg_.pair.c_str(), f, epx);
+                                    std::fflush(stdout);
+                                }
+                                book_clip_(L, f, ts_sec, fwd, "PREARM_FLOOR"); closed = true; break;
+                            }
+                        }
                         const double cut = L.entry * lc_lvl_mult;   // long: below entry; short: rally above
                         if (d_ * (px - cut) <= 0) {   // HONEST fill: worse-of stop level vs pierce extreme (gap-through books its real tail)
                             const double f = (d_ > 0) ? std::min(cut, px) : std::max(cut, px);
@@ -697,7 +814,7 @@ private:
                 nclips_ = 1; last_reclip_px_ = cc;
             } else if (d_ * (cc - last_reclip_px_ * (1.0 + d_ * RECLIP_M * cfg_.thr / 100.0)) >= 0) {
                 const double warm = cfg_.wide_arm_pct;   // >=0 absolute MFE% engage; <0 legacy 2.7*thr
-                legs_.push_back(make_leg_(3, W_ARM_M, 0.0, cc, ts_sec, fwd, warm));         // LADDER (wide params)
+                push_leg_(make_leg_(3, W_ARM_M, 0.0, cc, ts_sec, fwd, warm));               // LADDER (wide params)
                 nclips_ += 1; last_reclip_px_ = cc;
             }
         }
@@ -709,10 +826,10 @@ private:
     // recovered window's legs are byte-identical to the ones an always-on book spawned).
     void spawn_base_batch_(double cc, int64_t ts_sec, bool fwd) noexcept {
         const double warm = cfg_.wide_arm_pct;   // >=0 absolute MFE% engage; <0 legacy 2.7*thr
-        legs_.push_back(make_leg_(0, T_ARM_M, T_TRAIL_M, cc, ts_sec, fwd));         // TIGHT
-        legs_.push_back(make_leg_(1, W_ARM_M, 0.0,       cc, ts_sec, fwd, warm));   // WIDE peak-profit
+        push_leg_(make_leg_(0, T_ARM_M, T_TRAIL_M, cc, ts_sec, fwd));         // TIGHT
+        push_leg_(make_leg_(1, W_ARM_M, 0.0,       cc, ts_sec, fwd, warm));   // WIDE peak-profit
         for (int k = 0; k < 3; ++k)
-            legs_.push_back(make_leg_(2, S_ARM_M[k], 0.0, cc, ts_sec, fwd));        // STACKED (staggered arm, shared gb)
+            push_leg_(make_leg_(2, S_ARM_M[k], 0.0, cc, ts_sec, fwd));        // STACKED (staggered arm, shared gb)
     }
 
     // ── S-2026-07-18 BOUNDED CATCH-UP replay (see Config::catchup_max_age_bars for the
@@ -829,13 +946,14 @@ private:
             if (kind == "win") {
                 int a = 0; f >> a >> age_ >> nclips_ >> last_reclip_px_;
                 win_ = (a != 0);
-            } else if (kind == "leg") {
+            } else if (kind == "leg" || kind == "leg2") {   // "leg2" = leg + trailing proxy exec token (S-2026-07-23)
                 Leg L; int armed = 0, pend = 0; long long ets = 0; std::string tok;
                 // new format adds: pending trig pbars arm_off trail_mult (before token). Old-format
                 // state (pre-BE-entry) fails this parse -> the leg is skipped (one-time seam drop).
                 if (f >> L.ti >> L.entry >> L.peak >> L.arm_px >> L.trail_abs >> armed >> ets
                       >> pend >> L.trig >> L.pbars >> L.arm_off >> L.trail_mult
                       >> L.wknd_gap_adj >> tok) {   // wknd_gap_adj added S-2026-07-11 (one-time seam drop of pre-field state)
+                    if (kind == "leg2") f >> L.exec_token;   // proxy token (feature-ON legs only)
                     if (L.ti >= 0 && L.ti < NT_ && (L.entry > 0.0 || pend)) {
                         L.armed = (armed != 0); L.pending = (pend != 0); L.entry_ts = (int64_t)ets;
                         L.token = (tok == "-") ? std::string() : tok;
@@ -851,12 +969,20 @@ private:
           f.precision(15);   // S-2026-07-18: full double round-trip — a reloaded leg's entry/
                              // peak/trail must be bit-faithful or post-restart clips drift
           f << "win " << (win_ ? 1 : 0) << " " << age_ << " " << nclips_ << " " << last_reclip_px_ << "\n";
-          for (const Leg& L : legs_)
-              f << "leg " << L.ti << " " << L.entry << " " << L.peak << " " << L.arm_px << " "
+          for (const Leg& L : legs_) {
+              // A leg holding a live proxy token persists as "leg2" (= "leg" + the exec token
+              // appended, S-2026-07-23); plain legs keep the exact legacy "leg" line, so state
+              // written with the exec feature OFF is byte-identical and old state still loads
+              // (an old binary skips "leg2" lines via the unknown-kind getline branch).
+              f << (L.exec_token.empty() ? "leg" : "leg2") << " "
+                << L.ti << " " << L.entry << " " << L.peak << " " << L.arm_px << " "
                 << L.trail_abs << " " << (L.armed ? 1 : 0) << " " << (long long)L.entry_ts << " "
                 << (L.pending ? 1 : 0) << " " << L.trig << " " << L.pbars << " "
                 << L.arm_off << " " << L.trail_mult << " " << L.wknd_gap_adj << " "
-                << (L.token.empty() ? "-" : L.token) << "\n"; }
+                << (L.token.empty() ? "-" : L.token);
+              if (!L.exec_token.empty()) f << " " << L.exec_token;
+              f << "\n";
+          } }
 #if defined(_WIN32)
         std::remove(cfg_.live_path.c_str());
 #endif

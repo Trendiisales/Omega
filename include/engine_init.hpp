@@ -2293,9 +2293,12 @@ static void init_engines(const std::string& cfg_path)
         //            edge; SPXUSD_2022_2026.h1.csv CERTIFIED CLEAN; thr2 plateau W12/24/96 WF+)
         //     NAS100 W24 thr1.5: +242.9% PF1.23 n2129 WF+ 2x+179 RANDOM -5 (the most
         //            lucrative index; W24 thr1.5-3.0 pocket beats random massively while the
-        //            rest of the NAS grid is bull-beta. DATA CAVEAT: source missing 7 months
-        //            (2022-04, 2024-04/07/08/09/11/12) — sweep gap-masked, live guard blocks
-        //            windows across gaps; forward record decides promotion)
+        //            rest of the NAS grid is bull-beta. DATA NOTE (operator, S-2026-07-23): the
+        //            old "missing 7 months" caveat is DEAD — NSXUSD_2022_2026.h1.csv was rebuilt
+        //            Jul-8, ALL 52 months present, data_integrity_gate CERTIFIED CLEAN, fill
+        //            months verified real vs independent NDX 5m. The W24/1.5 PF1.20 fail is
+        //            REAL (not data); certified replacement = W48/2.0 floored cell, see
+        //            backtest/BULLGATE_PROTECTION_SWEEPS_2026-07-23.md)
         //     GER40  W12 thr1.5 BULL-GATED: bull file +72.4% PF3.51 WF+ vs random -6.5, but
         //            bear file 24/24 cells NEGATIVE -> new windows ONLY when
         //            !omega::index_risk_off() (feedback-companion-bull-gate-not-reject)
@@ -2313,7 +2316,15 @@ static void init_engines(const std::string& cfg_path)
                 // futures too -> their futures warmup seed is now the CONSISTENT scale,
                 // RESTORED alongside NAS100 (all three seed on futures = live feed).
                 {"US500",  "US500.F", 24, 2.0, 4.0, false, "phase1/signal_discovery/warmup_US500_H1.csv"},
-                {"NAS100", "NAS100",  24, 1.5, 3.0, false, "phase1/signal_discovery/warmup_NAS100_H1.csv"},
+                // NAS100 cell DISABLED S-2026-07-23 (operator build order fallout): the W24/1.5
+                // leg is NO-SHIP on certified-clean data (PF 1.20, real not data), and the S-21
+                // arm0/g10 opt-in is honest-fill NEGATIVE (-35%, PF 0.88). The certified
+                // replacement (W48/2.0, confirm-1.0%, pre_arm_floor_stop, ndx200 gate — C++
+                // all-6 PASS PF 1.73 DD 21.3) is BLOCKED on a daily-NDX-close gate feed the
+                // binary doesn't have yet (and the US500 twin showed gate-SOURCE fragility:
+                // own-H1 vs external daily flips all-6 — needs a robustness cert before wire).
+                // Re-enable ONLY as the W48 floored cell once the gate infra + robustness cert land.
+                // {"NAS100", "NAS100",  24, 1.5, 3.0, false, "phase1/signal_discovery/warmup_NAS100_H1.csv"},
                 {"GER40",  "GER40",   12, 1.5, 2.0, true,  "phase1/signal_discovery/warmup_GER40_H1.csv"},
                 // S-2026-07-09: M2K micro E-mini Russell 2000 (CME), IBKR-only L1 feed.
                 // rt=4.0 conservative (micro Russell < ES/NQ liquidity). BULL-GATED: the 2yr
@@ -2385,13 +2396,9 @@ static void init_engines(const std::string& cfg_path)
                 // cell above (FX_CATCHUP_OUTAGE_CERT — index cells certified in the same
                 // harness run: US500/NAS100/GER40/M2K surgical 0 mismatch + grid gates).
                 c.catchup_max_age_bars = 24;
-                // NAS100 upside opt-in: arm0 (engage the 10% trail FROM ENTRY) = NAS100 +34.4%
-                // (robust: WF+ both halves, bear -12.4->+0.4). Flip below for the max NAS catch.
-                // S-2026-07-21: ENABLED (operator: NAS100 gave small pops back to BE instead of
-                // locking -- the +0.5% arm never engaged on sub-0.5% pops, e.g. +0.05% open legs /
-                // +0.25% batch banked only via MANUAL_KILL_ALL). arm0 engages the 10%-giveback trail
-                // from entry -> locks 90% of peak from the first tick up. Certified +34.4% robust.
-                if (std::string(ic.tag) == "NAS100") c.wide_arm_pct = 0.0;
+                // (NAS100 arm0/g10 opt-in REMOVED with the cell S-2026-07-23: the +34.4% claim
+                //  predates honest-fill accounting — on the certified-clean 2022-26 file it is
+                //  -35% PF 0.88. See the disabled IL[] row above for the full basis.)
                 il.add(std::move(c));
             }
             // S-2026-07-09 COMPLETE FEED-MIGRATION — FULL revert of the c1a83306 seam fix.

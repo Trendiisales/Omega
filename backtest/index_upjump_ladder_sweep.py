@@ -4,7 +4,7 @@ companion/upjump trades, NAS100 or most lucrative index, with protections).
 
 Same mechanism as backtest/omega_upjump_ladder_bt.py / fx_upjump_ladder_sweep2.py
 (parity-tested vs the C++ engine) + GAP MASK: a window may only trigger when the
-W-bar span is contiguous (<= W hours + 4 days) — NAS100 file has 7 missing months
+W-bar span is contiguous (<= W hours + 4 days). DATA NOTE S-2026-07-23: the NAS100 '7 missing months' claim is STALE/DEAD — NSXUSD_2022_2026.h1.csv rebuilt Jul-8, all 52 months present, integrity-gate CERTIFIED CLEAN (operator: the data is all there). Guard kept for other files
 (2022-04, 2024-04, 2024-07..09, 2024-11..12; integrity gate REJECTED for holes),
 US500 file is CERTIFIED CLEAN. GER40 runs its bull + bear files separately
 (bull-gate candidate per feedback-companion-bull-gate-not-reject).
