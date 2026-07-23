@@ -70,8 +70,19 @@ KNOWN_NONGLOBAL_SHAPES = [
      "grid), no FAIL verdict exists for it"),
     (re.compile(r'^dm\.cfg$'),
      "DualMomentumEngine local ref (auto& dm = omega::dual_momentum_engine(), engine_init "
-     "S-23a block); CERTIFIED PASS (backtest/dualmom_sweep.py + DD/whipsaw lever passes: "
-     "Sharpe 1.86 mdd 21.5% both-WF+ 2x-cost), no FAIL verdict exists for it"),
+     "S-23a block); CERTIFIED PASS (backtest/dualmom_sweep.py + DD/whipsaw lever passes; "
+     "cert RESTATED S-23l to keff mechanism Sharpe 1.66/mdd 29.9, still beats ctrl 1.34), "
+     "no FAIL verdict exists for it"),
+    (re.compile(r'^dm7\.cfg$'),
+     "DayMover7Engine local ref (auto& dm7 = omega::day_mover7_engine(), engine_init S-23m "
+     "block); CERTIFIED PASS thr8/cap32 DD-min cell (BULLGATE_PROTECTION_SWEEPS_2026-07-23.md "
+     "PF 4.34, 2022 TRADED +164, ex-WDC PASS), no FAIL verdict exists for it"),
+    (re.compile(r'^b3\.cfg$'),
+     "Bigcap3G4Engine local ref (auto& b3 = omega::bigcap3_g4_engine(), engine_init S-23 "
+     "block); CERTIFIED PASS G4+VS cell (same doc: PF 1.29 MAR 8.3, 2022 TRADED +23.5 "
+     "PF 1.10, ex-RGTI PASS). NOTE the ungated 3%-family FAIL verdicts (BIGCAP_3PCT_HONEST_"
+     "EDGE_2026-07-21e) applied to the UNGATED multi-day config -- the G4 composite gate + "
+     "vol-shorten-hold cell is a DIFFERENT certified config, traded-2022-positive"),
 ]
 
 def find_brace_span(text, open_idx):

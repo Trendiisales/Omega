@@ -30,6 +30,7 @@
 #include "StockDayMoverLadderCompanion.hpp" // per-name BIGCAP day-mover MIMIC LADDER companion (39 stocks) -> /api/stockladder_companion
 #include "StockDipTurtleEngine.hpp" // per-name US-stock StockDip (ConnorsRSI2 archetype) + StockTurtle (Donchian 20/10) daily-close books (S-2026-07-08c)
 #include "DayMover7Engine.hpp"      // thr7 day-mover momentum continuation, 60-bar time-stop (S-2026-07-23 build; cert BULLGATE_PROTECTION_SWEEPS_2026-07-23.md §A)
+#include "Bigcap3G4Engine.hpp"      // 3% day-mover, G4 composite gate (SPY>200 AND vol<20) + vol-shorten-hold (S-2026-07-23 build; the rdagent-basket signal's certified honest descendant)
 #include "BigCapHi52Engine.hpp"     // 52wk-high-proximity BIGCAP-45 portfolio book, SPY-200DMA gated, weekly rebal (S-2026-07-17k scan candidate C)
 #include "BigCap2pctImpulseCompanion.hpp"  // per-name BIGCAP +2%-impulse / 20d-breakout LONG-only LOOSE-RIDE book (S-2026-07-09) -> /api/bigcap2pct_companion
 #include "StallCompanion.hpp"       // 25 gold/index giveback-clip books (native C++ port of stall_accountant.py) -> /api/companion
@@ -3332,7 +3333,7 @@ static void init_engines(const std::string& cfg_path)
             //    pure 60-bar time-stop (the certified cell; no trail, no regime switch). ──
             {
                 auto& dm7 = omega::day_mover7_engine();
-                dm7.cfg.live_book = true; dm7.cfg.lot = 1.0;
+                dm7.cfg.enabled = true; dm7.cfg.live_book = true; dm7.cfg.lot = 1.0;
                 dm7.set_exec(
                     [](const std::string& sym, bool is_long, double lots, double px) -> std::string {
                         return send_live_order(sym, is_long, lots, px);
@@ -3418,6 +3419,123 @@ static void init_engines(const std::string& cfg_path)
                 printf("[OMEGA-INIT][SEED] DayMover7 wired: thr8/cap32 DD-min cell new-20d-high next-close entry, "
                        "60-bar time-stop exit (cert PF4.34 $DD296@10k 2022 +164, ex-WDC 3.54; thr7 max-net alt PF3.27), "
                        "LIVE 1 share/name, deploy-forward\n");
+                fflush(stdout);
+            }
+
+            // ── BIGCAP-3G4 — the rdagent stock-basket signal's CERTIFIED honest descendant
+            //    (S-2026-07-23 operator: "I want that engine working"). Same +3%-day-mover BUY
+            //    the paper basket ran (the COIN +$502 display), but with the parts that made
+            //    the paper book uncertifiable FIXED: G4 composite gate (SPY>200DMA AND SPY 20d
+            //    rvol<20%) + vol-shorten-hold (h3->h1 in high vol) + pure time-stop exit.
+            //    Cert (BULLGATE_PROTECTION_SWEEPS_2026-07-23.md §A): n=7878 (~656/yr) PF 1.29
+            //    MAR 8.3, 2022 TRADED n=148 +23.5% PF 1.10, WF+/+, 2x-cost+, ex-RGTI PASS.
+            //    COMMISSION-WALL FIX: equal-$ sizing notional_usd=2000 -> ~$2 RT commission
+            //    = ~10bp, inside the 20bp cert cost basis (1-share sizing would eat the
+            //    +43bp/trade mean edge on most names). ~656 trades/yr, ~8 avg concurrent
+            //    x $2k = ~$16k typical exposure. Operator resize = this one number. ──
+            {
+                auto& b3 = omega::bigcap3_g4_engine();
+                b3.cfg.enabled = true; b3.cfg.live_book = true;
+                b3.cfg.notional_usd = 2000.0;
+                b3.set_exec(
+                    [](const std::string& sym, bool is_long, double lots, double px) -> std::string {
+                        return send_live_order(sym, is_long, lots, px);
+                    },
+                    [](const std::string& sym, bool orig_is_long, double lots, double px, const std::string& token) {
+                        send_live_order(sym, !orig_is_long, lots, px, token);
+                    },
+                    [](const std::string& sym, double tp_dist_pts, double lots) -> bool {
+                        return ExecutionCostGuard::is_viable(sym.c_str(), 0.02, tp_dist_pts, lots);
+                    },
+                    [](const std::string& engine, const std::string& sym, bool is_long,
+                       double entry_px, double exit_px, double lots,
+                       int64_t entry_ts, int64_t exit_ts, const char* reason) {
+                        omega::TradeRecord tr;
+                        tr.engine = engine; tr.symbol = sym; tr.side = is_long ? "LONG" : "SHORT";
+                        tr.entryPrice = entry_px; tr.exitPrice = exit_px; tr.size = lots;
+                        tr.entryTs = entry_ts; tr.exitTs = exit_ts; tr.exitReason = reason;
+                        tr.pnl = (is_long ? (exit_px - entry_px) : (entry_px - exit_px)) * lots;
+                        handle_closed_trade(tr);
+                    });
+                // seed: universe names from the wide csv + SPY closes for the G4 gate
+                {
+                    std::set<std::string> uni3(b3.cfg.universe.begin(), b3.cfg.universe.end());
+                    std::ifstream wf(omega::resolve_seed_path("data/rdagent/sp500_long_close.csv"));
+                    std::string hdr;
+                    if (wf.is_open() && std::getline(wf, hdr)) {
+                        std::vector<std::string> cols; { std::stringstream hs(hdr); std::string t;
+                            while (std::getline(hs, t, ',')) cols.push_back(t); }
+                        std::string ln;
+                        while (std::getline(wf, ln)) {
+                            std::stringstream ls(ln); std::string tok; size_t ci = 0;
+                            while (std::getline(ls, tok, ',')) {
+                                if (ci > 0 && ci < cols.size() && !tok.empty() && uni3.count(cols[ci])) {
+                                    const double v = atof(tok.c_str());
+                                    if (v > 0) b3.seed_close(cols[ci], v);
+                                }
+                                ++ci;
+                            }
+                        }
+                    }
+                    std::ifstream sf(omega::resolve_seed_path("data/spy_close_hist.csv"));
+                    std::string ln2;
+                    while (sf.is_open() && std::getline(sf, ln2)) {
+                        const auto c = ln2.rfind(',');
+                        if (c != std::string::npos) {
+                            const double v = atof(ln2.c_str() + c + 1);
+                            if (v > 0) b3.push_spy_close(v);
+                        }
+                    }
+                }
+                b3.finalize_seed();
+                b3.load_state();
+                g_open_positions.register_source("Bigcap3G4",
+                    []() { return omega::bigcap3_g4_engine().collect_positions(); });
+                g_engine_heartbeat.register_engine("Bigcap3G4", true, 86400, 0, 24);
+                g_engine_heartbeat.pulse("Bigcap3G4");   // daily cadence: boot pulse (S-23h lesson)
+                // 15-min poller: new daily rows, universe-filtered + SPY push BEFORE the
+                // universe row (gate parity checkpoint in the engine header).
+                std::thread([]() {
+                    std::string last_row;
+                    for (;;) {
+                        std::this_thread::sleep_for(std::chrono::minutes(15));
+                        auto& e3 = omega::bigcap3_g4_engine();
+                        static const std::set<std::string> uni(
+                            e3.cfg.universe.begin(), e3.cfg.universe.end());
+                        std::ifstream wf(omega::resolve_seed_path("data/rdagent/sp500_long_close.csv"));
+                        if (!wf.is_open()) continue;
+                        std::string hdr, ln, lastln;
+                        std::getline(wf, hdr);
+                        while (std::getline(wf, ln)) if (!ln.empty()) lastln = ln;
+                        if (lastln.empty() || lastln == last_row) continue;
+                        last_row = lastln;
+                        // SPY FIRST (gate reads prior-day SPY state at signal evaluation)
+                        std::ifstream sf(omega::resolve_seed_path("data/spy_close_hist.csv"));
+                        std::string l2, lastspy;
+                        while (sf.is_open() && std::getline(sf, l2)) if (!l2.empty()) lastspy = l2;
+                        const auto cc = lastspy.rfind(',');
+                        if (cc != std::string::npos) {
+                            const double v = atof(lastspy.c_str() + cc + 1);
+                            if (v > 0) e3.push_spy_close(v);
+                        }
+                        std::vector<std::string> cols; { std::stringstream hs(hdr); std::string t;
+                            while (std::getline(hs, t, ',')) cols.push_back(t); }
+                        const int64_t now_s = (int64_t)std::chrono::duration_cast<std::chrono::seconds>(
+                            std::chrono::system_clock::now().time_since_epoch()).count();
+                        std::stringstream ls(lastln); std::string tok; size_t ci = 0;
+                        while (std::getline(ls, tok, ',')) {
+                            if (ci > 0 && ci < cols.size() && !tok.empty() && uni.count(cols[ci])) {
+                                const double v = atof(tok.c_str());
+                                if (v > 0) e3.on_daily_close(cols[ci], now_s, v);
+                            }
+                            ++ci;
+                        }
+                        g_engine_heartbeat.pulse("Bigcap3G4");
+                    }
+                }).detach();
+                printf("[OMEGA-INIT][SEED] Bigcap3G4 wired: thr3 G4-gate(SPY>200 AND vol<20) + VS hold, "
+                       "time-stop h3/h1 (cert PF1.29 MAR8.3 2022 +23.5 PF1.10 TRADED), "
+                       "LIVE $2k/name equal-$ sizing, deploy-forward\n");
                 fflush(stdout);
             }
 

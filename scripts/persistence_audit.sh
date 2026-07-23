@@ -91,6 +91,10 @@ allow="$allow QndxSqf"
 # DualMomentumEngine cfg.state_path save_/load_state incl. day counter + tokens).
 # A PositionPersistence wire would double-restore. Allowed as designed-out.
 allow="$allow StockDipTurtle DualMom"
+# DayMover7 + Bigcap3G4 (S-2026-07-23): same SELF-PERSISTING class -- own atomic
+# state files (daymover7_live.txt / bigcap3g4_live.txt, tmp+rename, load_state at
+# boot incl. RETRY rows), DualMom pattern verbatim.
+allow="$allow DayMover7 Bigcap3G4"
 while read -r tag; do
   [ -z "$tag" ] && continue
   printf '%s\n' "$pers" | grep -qx "$tag" && continue

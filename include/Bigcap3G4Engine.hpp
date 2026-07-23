@@ -90,7 +90,13 @@ public:
                                         // median; live should periodically re-derive)
         int    max_names      = 0;      // 0 = uncapped (harness has no cap); >0 = live safety cap
         int    retry_rows     = 3;      // refused-buy retry TTL in daily rows
-        double lot            = 1.0;    // shares per entry (proving size)
+        double lot            = 1.0;    // shares per entry when notional_usd==0
+        // S-2026-07-23 COMMISSION-WALL FIX (the reason live_book shipped false): at 1 share
+        // the $1-2 IBKR minimum eats the +43bp/trade edge on most names. notional_usd>0 sizes
+        // every entry to shares = max(1, round(notional_usd/px)) -> equal-$ book, commissions
+        // ~2*$1/notional RT. $2k/trade => ~10bp RT, inside the 20bp cert cost. Shares are
+        // stored PER POSITION (state-persisted) so a config change never corrupts open closes.
+        double notional_usd   = 0.0;    // 0 = fixed cfg.lot shares
         std::string engine_tag = "Bigcap3G4";
         std::string state_path = "bigcap3g4_live.txt";
         // BIGCAP-45 (backtest/dualmom_sweep.py BIGCAP — identical to the 45-name
@@ -198,9 +204,9 @@ public:
         for (auto& p : open_) {
             PositionSnapshot o;
             o.engine = cfg.engine_tag; o.symbol = p.sym; o.side = "LONG";
-            o.size = cfg.lot; o.entry = p.entry;
+            o.size = p.sh; o.entry = p.entry;
             o.current = last_px_(p.sym);
-            o.unrealized_pnl = (o.current - p.entry) * cfg.lot;
+            o.unrealized_pnl = (o.current - p.entry) * p.sh;
             o.entry_ts = p.entry_ts;      // seconds-native (poller now_s, epoch s)
             o.token = p.token;
             v.push_back(o);
@@ -212,7 +218,7 @@ public:
         std::ifstream f(cfg.state_path);
         if (!f.is_open()) return;
         f >> row_no_;
-        std::string s, tok; double e; long long ts; int held, tgt;
+        std::string s, tok; double e, shv; long long ts; int held, tgt;
         while (f >> s) {
             // RETRY rows persist broker-refused buys across a service restart
             // (DualMom pattern, ALAB/SNOW 2026-07-23). Extension vs DualMom: a
@@ -224,9 +230,9 @@ public:
                 if (f >> r >> left) retry_[r] = left;
                 continue;
             }
-            if (!(f >> e >> ts >> held >> tgt >> tok)) break;
+            if (!(f >> e >> ts >> held >> tgt >> shv >> tok)) break;
             Pos p; p.sym = s; p.entry = e; p.entry_ts = (int64_t)ts;
-            p.held = held; p.hold_tgt = tgt;
+            p.held = held; p.hold_tgt = tgt; p.sh = shv > 0 ? shv : 1.0;
             p.token = (tok == "-") ? std::string() : tok;
             open_.push_back(p);
         }
@@ -242,6 +248,7 @@ private:
         int64_t entry_ts = 0;
         int     held = 0;         // name-bars since entry (harness j - e_idx)
         int     hold_tgt = 3;     // VS-resolved hold target, FIXED at entry (run_exits L112)
+        double  sh = 1.0;         // shares (per-position, persisted; equal-$ sizing)
         std::string token;
     };
     std::map<std::string, std::deque<double>> hist_;
@@ -290,12 +297,21 @@ private:
         return open_at_(sym, ts, c, tgt, false);
     }
 
+    double shares_(double px) const {
+        if (cfg.notional_usd > 0 && px > 0) {
+            double sh = (double)(long long)(cfg.notional_usd / px + 0.5);
+            return sh < 1.0 ? 1.0 : sh;
+        }
+        return cfg.lot;
+    }
+
     bool open_at_(const std::string& sym, int64_t ts, double px, int tgt, bool is_retry) {
         std::string tok;
+        const double sh = shares_(px);
         if (cfg.live_book && open_fn_) {
             // honest-thin TP proxy = certified mean edge (+43bp), see COST GATE note
-            if (gate_fn_ && !gate_fn_(sym, px * 0.0043, cfg.lot)) return false;
-            tok = open_fn_(sym, true, cfg.lot, px);
+            if (gate_fn_ && !gate_fn_(sym, px * 0.0043, sh)) return false;
+            tok = open_fn_(sym, true, sh, px);
             if (tok.empty()) {
                 std::printf("[BIGCAP3G4] BUY %s @%.2f REFUSED by exec -- not booked, retry (%d rows)\n",
                             sym.c_str(), px, cfg.retry_rows);
@@ -305,7 +321,7 @@ private:
             }
         }
         Pos p; p.sym = sym; p.entry = px; p.entry_ts = ts; p.held = 0; p.hold_tgt = tgt;
-        p.token = tok;
+        p.sh = sh; p.token = tok;
         open_.push_back(p);
         retry_.erase(sym);
         std::printf("[BIGCAP3G4] BUY %s @%.2f hold_tgt=%d%s tok=%s (open=%zu)\n",
@@ -318,9 +334,9 @@ private:
     void close_pos_(const Pos& p, double px, int64_t ts, const char* why) {
         if (px <= 0) px = p.entry;
         if (cfg.live_book && !p.token.empty() && close_fn_)
-            close_fn_(p.sym, true, cfg.lot, px, p.token);
+            close_fn_(p.sym, true, p.sh, px, p.token);
         if (ledger_fn_)
-            ledger_fn_(cfg.engine_tag, p.sym, true, p.entry, px, cfg.lot, p.entry_ts, ts, why);
+            ledger_fn_(cfg.engine_tag, p.sym, true, p.entry, px, p.sh, p.entry_ts, ts, why);
         std::printf("[BIGCAP3G4] CLOSE %s entry=%.2f exit=%.2f held=%d (%s)\n",
                     p.sym.c_str(), p.entry, px, p.held, why);
         std::fflush(stdout);
@@ -355,13 +371,14 @@ private:
     // retry-open that reports fill success without touching retry_ (caller iterates it)
     bool retry_open_(const std::string& sym, int64_t ts, double px, int tgt) {
         std::string tok;
+        const double sh = shares_(px);
         if (cfg.live_book && open_fn_) {
-            if (gate_fn_ && !gate_fn_(sym, px * 0.0043, cfg.lot)) return false;
-            tok = open_fn_(sym, true, cfg.lot, px);
+            if (gate_fn_ && !gate_fn_(sym, px * 0.0043, sh)) return false;
+            tok = open_fn_(sym, true, sh, px);
             if (tok.empty()) return false;                // still refused, keep retrying
         }
         Pos p; p.sym = sym; p.entry = px; p.entry_ts = ts; p.held = 0; p.hold_tgt = tgt;
-        p.token = tok;
+        p.sh = sh; p.token = tok;
         open_.push_back(p);
         std::printf("[BIGCAP3G4] BUY %s @%.2f hold_tgt=%d (RETRY after refusal) tok=%s\n",
                     sym.c_str(), px, tgt, tok.empty() ? "(book-only)" : tok.c_str());
@@ -375,7 +392,7 @@ private:
           f << row_no_ << "\n";
           for (const auto& p : open_)
               f << p.sym << " " << p.entry << " " << (long long)p.entry_ts << " "
-                << p.held << " " << p.hold_tgt << " "
+                << p.held << " " << p.hold_tgt << " " << p.sh << " "
                 << (p.token.empty() ? "-" : p.token) << "\n";
           for (const auto& [s, left] : retry_) f << "RETRY " << s << " " << left << "\n"; }
 #if defined(_WIN32)
