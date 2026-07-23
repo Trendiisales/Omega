@@ -107,6 +107,32 @@ struct IbkrExecutionEngine : public DefaultEWrapper {
     std::map<int, std::string>              cd_req_;    // reqContractDetails reqId -> omega sym
     std::map<std::string, std::string>      ibkr_to_omega_;  // "GC" -> "XAUUSD" (fill reverse-map)
 
+    // ── ORDER CIRCUIT-BREAKER (2026-07-24) — makes an order-storm PHYSICALLY
+    //    IMPOSSIBLE. Root incident: ConnorsRSI2 fired 24,776 unfilled SELL NAS100
+    //    in ~40s the instant the exec reconnected (0 fills, but real exposure /
+    //    IBKR pacing risk) because there was NO cap between the connect-check and
+    //    placeOrder. Two hard limits + a STICKY halt: (a) global > MAX_ORDERS_PER_SEC
+    //    in any 1s window, (b) per-symbol >= MAX_UNFILLED_PER_SYM sends with 0 fills.
+    //    On trip: circuit_tripped_ + enabled=false -> every place_order returns -1;
+    //    one-shot loud log; cleared ONLY by a restart (operator investigates the
+    //    runaway first). A real FILL resets that symbol's unfilled counter, so
+    //    legit trading that fills never trips.
+    static constexpr int          MAX_ORDERS_PER_SEC   = 25;
+    static constexpr int          MAX_UNFILLED_PER_SYM = 8;
+    std::atomic<bool>             circuit_tripped_{false};
+    long long                     rate_win_start_ms_{0};   // guarded by mtx_
+    int                           rate_win_count_{0};      // guarded by mtx_
+    std::map<std::string,int>     unfilled_by_sym_;        // guarded by mtx_
+
+    void trip_circuit_(const std::string& why) {           // call under mtx_
+        if (circuit_tripped_.exchange(true)) return;       // one-shot
+        enabled.store(false);                              // hard halt
+        std::printf("[IBKR-EXEC] *** CIRCUIT-BREAKER TRIPPED *** %s -- ALL ORDERS HALTED "
+                    "(exec disabled; restart + investigate the runaway before re-enabling)\n",
+                    why.c_str());
+        std::fflush(stdout);
+    }
+
     IbkrExecutionEngine() {
         client_ = std::make_unique<EClientSocket>(this, &signal_);
         init_specs();
@@ -292,6 +318,7 @@ struct IbkrExecutionEngine : public DefaultEWrapper {
     long place_order(const std::string& omega_sym, bool is_long, double qty,
                      const std::string& type = "MKT", double px = 0.0) {
         if (!enabled.load()) { return -1; }
+        if (circuit_tripped_.load()) { return -1; }   // STICKY hard halt (already logged once)
         if (!connected_.load()) {
             std::printf("[IBKR-EXEC] BLOCKED %s -- not connected\n", omega_sym.c_str());
             std::fflush(stdout); return -1;
@@ -331,6 +358,24 @@ struct IbkrExecutionEngine : public DefaultEWrapper {
         if (type == "LMT") o.lmtPrice = px;
         if (type == "STP") o.auxPrice = px;
 
+        // ── CIRCUIT-BREAKER: hard rate + per-symbol-unfilled cap (2026-07-24).
+        //    Caps a runaway at ~MAX_ORDERS_PER_SEC instead of 24,776. A real FILL
+        //    resets unfilled_by_sym_[sym], so legit filling trades never trip.
+        {
+            std::lock_guard<std::mutex> lk(mtx_);
+            long long now_ms = (long long)std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count();
+            if (now_ms - rate_win_start_ms_ >= 1000) { rate_win_start_ms_ = now_ms; rate_win_count_ = 0; }
+            if (++rate_win_count_ > MAX_ORDERS_PER_SEC) {
+                trip_circuit_("global rate > " + std::to_string(MAX_ORDERS_PER_SEC) + " orders/sec");
+                return -1;
+            }
+            if (++unfilled_by_sym_[omega_sym] > MAX_UNFILLED_PER_SYM) {
+                trip_circuit_(omega_sym + ": " + std::to_string(unfilled_by_sym_[omega_sym]) +
+                              " orders sent, 0 fills (runaway loop)");
+                return -1;
+            }
+        }
         long oid = next_id_.fetch_add(1);
         client_->placeOrder(oid, c, o);
         std::printf("[IBKR-EXEC] %s %s %s qty=%.0f (eng=%.2f) type=%s px=%.2f oid=%ld%s\n",
@@ -514,6 +559,9 @@ struct IbkrExecutionEngine : public DefaultEWrapper {
                     f.omega_symbol.c_str(), f.ibkr_symbol.c_str(), f.side.c_str(),
                     f.qty, f.price, f.order_id, f.exec_id.c_str());
         std::fflush(stdout);
+        // CIRCUIT-BREAKER: a real fill clears this symbol's unfilled counter so
+        // normal filling trades never approach the per-symbol cap.
+        { std::lock_guard<std::mutex> lk(mtx_); unfilled_by_sym_[f.omega_symbol] = 0; }
         if (on_fill) on_fill(f);
     }
 
