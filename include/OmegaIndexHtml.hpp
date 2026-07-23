@@ -560,25 +560,15 @@ var TKS=[['gold','XAUUSD','xau'],['sp','US500','sp'],['nq','USTEC','nq'],/* NAS1
 )OMEGAD2"
 R"OMEGAD3(   S-2026-07-12c: +XRP/XLM/GRT/AVAX/LINK/BCH/UNI/LDO — the consolidation/universe-scan engines'
    symbols (operator asked twice; they traded on josgp1 with no top-bar tile). */
-var CTKS=[['BTC','BTCUSDT'],['ETH','ETHUSDT'],['SOL','SOLUSDT'],['BNB','BNBUSDT'],['DOGE','DOGEUSDT'],
- ['ADA','ADAUSDT'],['TRX','TRXUSDT'],['XRP','XRPUSDT'],['XLM','XLMUSDT'],['NEAR','NEARUSDT'],
- ['AVAX','AVAXUSDT'],['LINK','LINKUSDT'],['BCH','BCHUSDT'],['UNI','UNIUSDT'],['GRT','GRTUSDT'],
- ['LDO','LDOUSDT'],['AAVE','AAVEUSDT'],['OP','OPUSDT'],
- /* S-2026-07-13: TSMOM/Donchian slot-engine coins — TRADED on josgp1 but had no tile
-    (TIA banked +7.65 invisible). Full traded set = 27 symbols, all displayed. */
- ['TIA','TIAUSDT'],['SUI','SUIUSDT'],['APT','APTUSDT'],['ARB','ARBUSDT'],['FET','FETUSDT'],
- ['HBAR','HBARUSDT'],['INJ','INJUSDT'],['ONDO','ONDOUSDT'],['SEI','SEIUSDT'],
- /* PHASE3 2026-07-13: REGIME_SWITCH core-basket coins (NEAR/ADA already tiled) —
-    DOT/THETA/SUSHI now TRADED on josgp1, display-truth [SYMBOL-COV] demands tiles. */
- ['DOT','DOTUSDT'],['THETA','THETAUSDT'],['SUSHI','SUSHIUSDT'],
- /* S-2026-07-17: roster grew to 26 coins; ATOM/LTC TRADED on josgp1 with no tile
-    (display-truth [SYMBOL-COV] RED). Add both -> full traded set tiled. */
- ['ATOM','ATOMUSDT'],['LTC','LTCUSDT'],
- /* S-2026-07-18i: XSEC-universe remainder — live pilot allowlist widened to 41 (operator:
-    all viable coins tradeable); these 9 rank in the live-routed XSEC top-3 basket, so
-    display-truth [SYMBOL-COV] wants tiles before their first live pick. */
- ['FIL','FILUSDT'],['ICP','ICPUSDT'],['SAND','SANDUSDT'],['MANA','MANAUSDT'],
- ['CRV','CRVUSDT'],['COMP','COMPUSDT'],['ETC','ETCUSDT'],['VET','VETUSDT'],['RUNE','RUNEUSDT']];
+/* S-2026-07-23 LIVE-ONLY CULL — tiles trimmed to the LIVE-TRADED crypto set only.
+   The ~33 removed (BNB TRX NEAR AVAX LINK BCH UNI LDO AAVE OP TIA SUI APT ARB FET HBAR INJ ONDO SEI
+   THETA SUSHI LTC FIL ICP SAND MANA CRV COMP ETC VET RUNE) were the culled TSMOM/MIMIC/XSEC/UpJump
+   zoo (CryptoLiveOnlyCull, running 231cbc2) — no live engine trades them, so no tile (operator: "remove
+   all the coins we do not use"). LIVE-TRADED = 17-leg TRENDROSTER (BTC/ETH/SOL/XRP/XLM/ADA/GRT) + 2
+   RSIREV (SOL/XRP) + 7 DOGE BECASC mimic = 8 distinct symbols. ATOM/DOT kept: active RSIrev expansion
+   (arming this session, null 91st/97th). Re-add a coin here only when a live engine trades it. */
+var CTKS=[['BTC','BTCUSDT'],['ETH','ETHUSDT'],['SOL','SOLUSDT'],['XRP','XRPUSDT'],['XLM','XLMUSDT'],
+ ['ADA','ADAUSDT'],['GRT','GRTUSDT'],['DOGE','DOGEUSDT'],['ATOM','ATOMUSDT'],['DOT','DOTUSDT']];
 /* last-close SEED — baked from the Tick daily files at desk build time (Fri 2026-07-03 closes).
    Floor UNDER the localStorage last-tick cache so a COLD browser over a weekend shows a dimmed
    last-close instead of '—' (operator 2026-07-04: 57cb0ed0 was localStorage-only and failed on a
