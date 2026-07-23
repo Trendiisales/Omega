@@ -542,7 +542,10 @@ def vps_position_parity() -> tuple[str, str]:
                 engine_open[m.group(2).upper()] = f"Stock{'Dip' if m.group(1).lower()=='dip' else 'Turtle'}"
         elif parts[0] == "DM" and len(parts) >= 2:
             toks = parts[1].split()
-            if len(toks) == 4 and not toks[0].isdigit():   # "SYM entry entry_ts token"
+            # DualMom rows: OLD "SYM entry ts token" (4) OR NEW "SYM entry ts peak token"
+            # (5, S-2026-07-23u profit-lock peak column). RETRY/STAYOUT rows (2 toks) and the
+            # leading day_no line (1 numeric tok) are skipped by the len + isdigit guards.
+            if len(toks) in (4, 5) and not toks[0].isdigit() and toks[0] not in ("RETRY", "STAYOUT"):
                 engine_open[toks[0].upper()] = "DualMom"
         elif parts[0] == "FILL" and len(parts) >= 2:
             saw_fills_file = True
