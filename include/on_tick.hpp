@@ -79,7 +79,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             const int n_dm  = omega::dual_momentum_engine().kill_all(0.0, now);              // S-23a dual-momentum
             const int n_dm7 = omega::day_mover7_engine().kill_all(0.0, now);                 // S-23 day-mover-7
             const int n_b3  = omega::bigcap3_g4_engine().kill_all(0.0, now);                 // S-23 bigcap-3g4
-            const int n_mm  = omega::dual_mom_mimic_book().kill_all(0.0, now);               // S-23 dualmom-mimic x2
+            const int n_mm  = omega::dualmom_mimic_book().kill_all(0.0, now);               // S-23 dualmom-mimic x2
             // S-23a: ConnorsRSI2 family (direct globals, no singleton accessor) --
             // real-exec since S-22j; force_close routes each book's own close/ledger
             // path (and the live token close via set_exec close_fn).

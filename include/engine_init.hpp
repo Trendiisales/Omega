@@ -3369,7 +3369,7 @@ static void init_engines(const std::string& cfg_path)
                 //    INDEPENDENT book: reads collect_positions() only, never touches the
                 //    parent. Honest tails: floor is DESIGN, gap-through books the real close.
                 {
-                    auto& mm = omega::dual_mom_mimic_book();
+                    auto& mm = omega::dualmom_mimic_book();
                     mm.cfg.enabled = true; mm.cfg.live_book = true;
                     mm.cfg.notional_usd = 4000.0;   // plain x2 of the certified $2k cell
                     mm.set_exec(
@@ -3394,7 +3394,7 @@ static void init_engines(const std::string& cfg_path)
                         });
                     mm.load_state();
                     g_open_positions.register_source("DualMomMimic",
-                        []() { return omega::dual_mom_mimic_book().collect_positions(); });
+                        []() { return omega::dualmom_mimic_book().collect_positions(); });
                     g_engine_heartbeat.register_engine("DualMomMimic", true, 86400, 0, 24);
                     g_engine_heartbeat.pulse("DualMomMimic");
                     // own 15-min poller: parent snapshot (source-watch) + daily closes for
@@ -3404,7 +3404,7 @@ static void init_engines(const std::string& cfg_path)
                         std::string last_row;
                         for (;;) {
                             std::this_thread::sleep_for(std::chrono::minutes(15));
-                            auto& m2 = omega::dual_mom_mimic_book();
+                            auto& m2 = omega::dualmom_mimic_book();
                             const int64_t now_s = (int64_t)std::chrono::duration_cast<std::chrono::seconds>(
                                 std::chrono::system_clock::now().time_since_epoch()).count();
                             m2.on_parent_snapshot(omega::dual_momentum_engine().collect_positions(), now_s);

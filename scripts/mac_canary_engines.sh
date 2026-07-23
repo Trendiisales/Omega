@@ -374,4 +374,15 @@ bash "$(dirname "$0")/killall_coverage_audit.sh" || {
   exit 1
 }
 
+# ── accessor-resolution audit (S-2026-07-23w): OmegaBacktest never compiles the
+#    Windows-only TU headers (engine_init/on_tick/omega_main), so a typo'd or
+#    missing omega::accessor() sails past this canary and dies at MSVC on the
+#    VPS (3 deploy failures on 2026-07-23 alone). Grep-level resolution check.
+echo ""
+echo "[mac-canary-engines] accessor-resolution audit (Windows-only TU omega::fn() calls resolve)..."
+bash "$(dirname "$0")/accessor_resolution_audit.sh" || {
+  echo "[mac-canary-engines] FAIL: an omega::accessor() call in a Windows-only TU header has no declaration -- MSVC C2039 on deploy."
+  exit 1
+}
+
 exit 0
