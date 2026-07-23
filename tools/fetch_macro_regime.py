@@ -61,19 +61,26 @@ def main():
     # (data/spy_close_hist.csv, "ts_sec,close" rows, full rewrite nightly; the
     # engine FREEZES — holds members, blocks rebals — if this goes stale >6d,
     # so a failed pull degrades gracefully, never liquidates the book).
-    try:
-        spy = yf.download("SPY", period="400d", interval="1d", progress=False, auto_adjust=False)["Close"].dropna()
-        if hasattr(spy, "squeeze"):
-            spy = spy.squeeze()
-        if len(spy) >= 250:
-            with open(os.path.join(DATA, "spy_close_hist.csv"), "w") as f:
-                for ts_i, px in spy.items():
-                    f.write(f"{int(ts_i.timestamp())},{float(px):.4f}\n")
-            print(f"[fetch_macro_regime] spy_close_hist.csv: {len(spy)} rows, last={float(spy.iloc[-1]):.2f}")
-        else:
-            print(f"[fetch_macro_regime] SPY pull too short ({len(spy)}) — spy_close_hist NOT rewritten", file=sys.stderr)
-    except Exception as e:
-        print(f"[fetch_macro_regime] SPY pull failed ({e}) — spy_close_hist NOT rewritten", file=sys.stderr)
+    # S-2026-07-23: + NDX/SPX INDEX close histories for the index-ladder 200DMA
+    # bull gates (gate-source robustness fix: ONE consistent nightly-refreshed
+    # single-source series per index, same contract as spy_close_hist — full
+    # rewrite so there is never a scale seam; gates fail-CLOSED on stale/short).
+    for tick, fname in (("SPY", "spy_close_hist.csv"),
+                        ("^NDX", "ndx_close_hist.csv"),
+                        ("^GSPC", "spx_close_hist.csv")):
+        try:
+            s = yf.download(tick, period="400d", interval="1d", progress=False, auto_adjust=False)["Close"].dropna()
+            if hasattr(s, "squeeze"):
+                s = s.squeeze()
+            if len(s) >= 250:
+                with open(os.path.join(DATA, fname), "w") as f:
+                    for ts_i, px in s.items():
+                        f.write(f"{int(ts_i.timestamp())},{float(px):.4f}\n")
+                print(f"[fetch_macro_regime] {fname}: {len(s)} rows, last={float(s.iloc[-1]):.2f}")
+            else:
+                print(f"[fetch_macro_regime] {tick} pull too short ({len(s)}) — {fname} NOT rewritten", file=sys.stderr)
+        except Exception as e:
+            print(f"[fetch_macro_regime] {tick} pull failed ({e}) — {fname} NOT rewritten", file=sys.stderr)
 
 if __name__ == "__main__":
     main()
