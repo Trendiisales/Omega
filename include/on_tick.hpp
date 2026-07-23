@@ -16,6 +16,7 @@
 #include "BigCap2pctImpulseCompanion.hpp"  // bi (bigcap 2pct impulse + BE-mimic book)
 #include "DayMover7Engine.hpp"             // dm7 (S-23m; MSVC: on_tick TU needs it directly -- Mac canary blind, deploy 0d7f87e4 C2039)
 #include "Bigcap3G4Engine.hpp"             // b3  (S-23q; same include-order class)
+#include "DualMomMimicBook.hpp"            // mm  (S-23; same include-order class)
 #include "XagBeFloorCompanion.hpp"// XAGPos/XAGNeg SILVER BE-floor companion H1 feed (fed from XAGUSD DOM mid below)
 #include "UsoilBeFloorCompanion.hpp"// USOILPos/USOILNeg WTI BE-floor companion H1 feed (fed from USOIL.F DOM mid below)
 // (JumpRiderEngine.hpp include REMOVED — engine culled/tombstoned S-2026-07-10)
@@ -78,6 +79,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             const int n_dm  = omega::dual_momentum_engine().kill_all(0.0, now);              // S-23a dual-momentum
             const int n_dm7 = omega::day_mover7_engine().kill_all(0.0, now);                 // S-23 day-mover-7
             const int n_b3  = omega::bigcap3_g4_engine().kill_all(0.0, now);                 // S-23 bigcap-3g4
+            const int n_mm  = omega::dual_mom_mimic_book().kill_all(0.0, now);               // S-23 dualmom-mimic x2
             // S-23a: ConnorsRSI2 family (direct globals, no singleton accessor) --
             // real-exec since S-22j; force_close routes each book's own close/ledger
             // path (and the live token close via set_exec close_fn).
@@ -96,8 +98,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 }
             }
             printf("[KILL-ALL] book families flattened: gm=%d sdm=%d sdt=%d fl=%d il=%d "
-                   "sl=%d bi=%d gd=%d gdm=%d dm=%d dm7=%d b3=%d cn=%d (booked closes + disarmed pendings)\n",
-                   n_gm, n_sdm, n_sdt, n_fl, n_il, n_sl, n_bi, n_gd, n_gdm, n_dm, n_dm7, n_b3, n_cn);
+                   "sl=%d bi=%d gd=%d gdm=%d dm=%d dm7=%d b3=%d mm=%d cn=%d (booked closes + disarmed pendings)\n",
+                   n_gm, n_sdm, n_sdt, n_fl, n_il, n_sl, n_bi, n_gd, n_gdm, n_dm, n_dm7, n_b3, n_mm, n_cn);
         }
         printf("[KILL-ALL] manual panic flatten on trading thread -- %d position(s) "
                "flattened (opposing MKT) + engine slots cleared\n", n_flat);

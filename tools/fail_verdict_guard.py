@@ -77,6 +77,10 @@ KNOWN_NONGLOBAL_SHAPES = [
      "DayMover7Engine local ref (auto& dm7 = omega::day_mover7_engine(), engine_init S-23m "
      "block); CERTIFIED PASS thr8/cap32 DD-min cell (BULLGATE_PROTECTION_SWEEPS_2026-07-23.md "
      "PF 4.34, 2022 TRADED +164, ex-WDC PASS), no FAIL verdict exists for it"),
+    (re.compile(r'^mm\.cfg$'),
+     "DualMomMimicBook local ref (auto& mm = omega::dual_mom_mimic_book(), engine_init S-23 "
+     "block); CERTIFIED PASS vs the TRAILED parent (32/128 all-6, cell cf3 PF 1.91 2022 "
+     "+429bp), no FAIL verdict exists for it"),
     (re.compile(r'^b3\.cfg$'),
      "Bigcap3G4Engine local ref (auto& b3 = omega::bigcap3_g4_engine(), engine_init S-23 "
      "block); CERTIFIED PASS G4+VS cell (same doc: PF 1.29 MAR 8.3, 2022 TRADED +23.5 "

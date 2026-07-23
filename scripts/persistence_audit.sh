@@ -95,6 +95,7 @@ allow="$allow StockDipTurtle DualMom"
 # state files (daymover7_live.txt / bigcap3g4_live.txt, tmp+rename, load_state at
 # boot incl. RETRY rows), DualMom pattern verbatim.
 allow="$allow DayMover7 Bigcap3G4"
+allow="$allow DualMomMimic"   # S-23: same self-persisting class (dualmommimic_live.txt atomic)
 while read -r tag; do
   [ -z "$tag" ] && continue
   printf '%s\n' "$pers" | grep -qx "$tag" && continue

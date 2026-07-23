@@ -31,6 +31,7 @@
 #include "StockDipTurtleEngine.hpp" // per-name US-stock StockDip (ConnorsRSI2 archetype) + StockTurtle (Donchian 20/10) daily-close books (S-2026-07-08c)
 #include "DayMover7Engine.hpp"      // thr7 day-mover momentum continuation, 60-bar time-stop (S-2026-07-23 build; cert BULLGATE_PROTECTION_SWEEPS_2026-07-23.md §A)
 #include "Bigcap3G4Engine.hpp"      // 3% day-mover, G4 composite gate (SPY>200 AND vol<20) + vol-shorten-hold (S-2026-07-23 build; the rdagent-basket signal's certified honest descendant)
+#include "DualMomMimicBook.hpp"     // DualMom BE-floored mimic companion x2 (S-2026-07-23 cert cf3/rev5d|5%/oneclip vs TRAILED parent; independent, source-watch)
 #include "Dma200GateFeed.hpp"     // hysteresis 200DMA index gate feed (S-2026-07-23r NAS100 ladder cell)
 #include "BigCapHi52Engine.hpp"     // 52wk-high-proximity BIGCAP-45 portfolio book, SPY-200DMA gated, weekly rebal (S-2026-07-17k scan candidate C)
 #include "BigCap2pctImpulseCompanion.hpp"  // per-name BIGCAP +2%-impulse / 20d-breakout LONG-only LOOSE-RIDE book (S-2026-07-09) -> /api/bigcap2pct_companion
@@ -3358,6 +3359,84 @@ static void init_engines(const std::string& cfg_path)
                 else
                     printf("[PROFIT-LOCK-GATE] VIOLATION: DualMom trail DISABLED (trail_g_pct=0) -- "
                            "profit-lock mandate unmet on a live book\n");
+
+                // ── DualMom BE-FLOORED MIMIC x2 (S-2026-07-23, operator: "aggressive,
+                //    relatively safe" + explicit x2). CERT vs the TRAILED parent (the S-23u
+                //    kill-premise change): 32/128 cells all-6; cell cf3/g10/rev5d|5%/oneclip
+                //    n299 +$8038 PF 1.91 mDD $1312 2022 +429bp 2x PF 1.70 (per $2k leg).
+                //    PLAIN x2 = notional $4k (operator choice; staged cascade certified too
+                //    but MAR-inferior 5.09 vs 6.13 -- n_legs=2 is one config flip away).
+                //    INDEPENDENT book: reads collect_positions() only, never touches the
+                //    parent. Honest tails: floor is DESIGN, gap-through books the real close.
+                {
+                    auto& mm = omega::dual_mom_mimic_book();
+                    mm.cfg.enabled = true; mm.cfg.live_book = true;
+                    mm.cfg.notional_usd = 4000.0;   // plain x2 of the certified $2k cell
+                    mm.set_exec(
+                        [](const std::string& sym, bool is_long, double lots, double px) -> std::string {
+                            return send_live_order(sym, is_long, lots, px);
+                        },
+                        [](const std::string& sym, bool orig_is_long, double lots, double px, const std::string& token) {
+                            send_live_order(sym, !orig_is_long, lots, px, token);
+                        },
+                        [](const std::string& sym, double tp_dist_pts, double lots) -> bool {
+                            return ExecutionCostGuard::is_viable(sym.c_str(), 0.02, tp_dist_pts, lots);
+                        },
+                        [](const std::string& engine, const std::string& sym, bool is_long,
+                           double entry_px, double exit_px, double lots,
+                           int64_t entry_ts, int64_t exit_ts, const char* reason) {
+                            omega::TradeRecord tr;
+                            tr.engine = engine; tr.symbol = sym; tr.side = is_long ? "LONG" : "SHORT";
+                            tr.entryPrice = entry_px; tr.exitPrice = exit_px; tr.size = lots;
+                            tr.entryTs = entry_ts; tr.exitTs = exit_ts; tr.exitReason = reason;
+                            tr.pnl = (is_long ? (exit_px - entry_px) : (entry_px - exit_px)) * lots;
+                            handle_closed_trade(tr);
+                        });
+                    mm.load_state();
+                    g_open_positions.register_source("DualMomMimic",
+                        []() { return omega::dual_mom_mimic_book().collect_positions(); });
+                    g_engine_heartbeat.register_engine("DualMomMimic", true, 86400, 0, 24);
+                    g_engine_heartbeat.pulse("DualMomMimic");
+                    // own 15-min poller: parent snapshot (source-watch) + daily closes for
+                    // the parent universe (same wide csv; separate thread so either engine
+                    // can be culled without touching the other).
+                    std::thread([]() {
+                        std::string last_row;
+                        for (;;) {
+                            std::this_thread::sleep_for(std::chrono::minutes(15));
+                            auto& m2 = omega::dual_mom_mimic_book();
+                            const int64_t now_s = (int64_t)std::chrono::duration_cast<std::chrono::seconds>(
+                                std::chrono::system_clock::now().time_since_epoch()).count();
+                            m2.on_parent_snapshot(omega::dual_momentum_engine().collect_positions(), now_s);
+                            static const std::set<std::string> uni = [] {
+                                auto& u = omega::dual_momentum_engine().cfg.universe;
+                                return std::set<std::string>(u.begin(), u.end());
+                            }();
+                            std::ifstream wf(omega::resolve_seed_path("data/rdagent/sp500_long_close.csv"));
+                            if (!wf.is_open()) continue;
+                            std::string hdr, ln, lastln;
+                            std::getline(wf, hdr);
+                            while (std::getline(wf, ln)) if (!ln.empty()) lastln = ln;
+                            if (lastln.empty() || lastln == last_row) { g_engine_heartbeat.pulse("DualMomMimic"); continue; }
+                            last_row = lastln;
+                            std::vector<std::string> cols; { std::stringstream hs(hdr); std::string t;
+                                while (std::getline(hs, t, ',')) cols.push_back(t); }
+                            std::stringstream ls(lastln); std::string tok; size_t ci = 0;
+                            while (std::getline(ls, tok, ',')) {
+                                if (ci > 0 && ci < cols.size() && !tok.empty() && uni.count(cols[ci])) {
+                                    const double v = atof(tok.c_str());
+                                    if (v > 0) m2.on_daily_close(cols[ci], now_s, v);
+                                }
+                                ++ci;
+                            }
+                            g_engine_heartbeat.pulse("DualMomMimic");
+                        }
+                    }).detach();
+                    printf("[OMEGA-INIT][SEED] DualMomMimic wired: BE-floor cf3 confirm+3%%, rev5d|5%% + "
+                           "parent-exit source-watch, oneclip, PLAIN x2 $4k/leg (cert PF1.91 2022 +429bp "
+                           "2x PF1.70; independent standalone book), deploy-forward\n");
+                    fflush(stdout);
+                }
                 fflush(stdout);
             }
 
