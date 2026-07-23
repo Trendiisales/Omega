@@ -2469,7 +2469,7 @@ static void init_engines(const std::string& cfg_path)
                     handle_closed_trade(tr);
                 });
             il.finalize_all();
-            printf("[OMEGA-INIT][SEED] INDEX mimic LADDER wired: US500(W24/2.0) NAS100(W24/1.5) GER40(W12/1.5 BULL-GATED) M2K(W24/1.0 BULL-GATED, feed via bridge --symbols M2K), ALL IBKR-futures seed+live (S-2026-07-09 complete migration), %zu H1 warmup bars seeded, %zu forward bars restored, LC5thr+trail+window-flush, LIVE-EXEC (send_live_order, S-22c live-only), deploy-forward\n",
+            printf("[OMEGA-INIT][SEED] INDEX mimic LADDER wired: US500(W24/2.0) NAS100(W48/2.0 FLOORED cm1.0 hyst-ndx200 S-23r) GER40(W12/1.5 BULL-GATED) M2K(W24/1.0 BULL-GATED, feed via bridge --symbols M2K), ALL IBKR-futures seed+live (S-2026-07-09 complete migration), %zu H1 warmup bars seeded, %zu forward bars restored, LC5thr+trail+window-flush, LIVE-EXEC (send_live_order, S-22c live-only), deploy-forward\n",
                    ilseeded, ilrestored);
             fflush(stdout);
         }
