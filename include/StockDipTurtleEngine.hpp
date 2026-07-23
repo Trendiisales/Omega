@@ -105,6 +105,14 @@ public:
         int    dip_max_hold  = 10;
         int    tur_hi_n      = 20;
         int    tur_lo_n      = 10;
+        // S-2026-07-23 DISASTER STOP (operator "protection on every engine"; certified
+        // scratchpad disaster/stockdipturtle): daily-close-checked catastrophe cap that
+        // takes priority over the family exit. DIP -25% (mDD 133->119, worst -41->-33, PF
+        // unchanged, 0.9 fires/yr); TURTLE -15% (worst -21->-16, PF 2.12->2.11). Tighter
+        // levels REJECTED (cut the dip/breakout the book is paid for). Set per-family at
+        // wiring; 0 = off. Honest-fill note: a daily close below the level books at that
+        // close -- a stop caps continuation + multi-day bleed, NOT the open gap itself.
+        double dstop_pct     = 0.0;
         double retire_usd    = -9500.0;  // AUTO-RETIREMENT bar (family default set at wiring)
         double rt_cost_bp    = 8.0;      // validated RT cost debit (bp of entry)
         double notional      = 10000.0;  // $ per position; USD = return * notional
@@ -443,7 +451,12 @@ private:
         if (pos_.active) {
             pos_.held += 1;
             bool do_exit = false; const char* reason = "";
-            if (cfg_.family == DIP) {
+            // DISASTER STOP (S-23, certified) — takes PRIORITY over the family exit so a
+            // catastrophe caps before the slower SMA5/CH10/time-stop fires.
+            if (cfg_.dstop_pct > 0 && pos_.epx > 0 &&
+                cur < pos_.epx * (1.0 - cfg_.dstop_pct / 100.0)) {
+                do_exit = true; reason = "DSTOP";
+            } else if (cfg_.family == DIP) {
                 const double s5 = sma_incl_(cfg_.dip_exit_sma);
                 if (s5 > 0 && cur > s5)               { do_exit = true; reason = "SMA5_BOUNCE"; }
                 else if (pos_.held >= cfg_.dip_max_hold) { do_exit = true; reason = "TIME_STOP"; }

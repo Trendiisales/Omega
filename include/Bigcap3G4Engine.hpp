@@ -39,7 +39,7 @@
 //     (last = min(e_idx+hh, n-1), j==last -> exit_px=cj, L129). h3 -> close of
 //     the 3rd row after entry; VS -> close of the next row.
 //
-// ADVERSE-PROTECTION: time-stop h3 + vol-shorten-hold certified; LC not
+// ADVERSE-PROTECTION: S-23 DISASTER STOP -20% (dstop_pct, cert worst -41.5->-29.6, PF -0.014 noise, 2022 identical) + cap30 ceiling. time-stop h3 + vol-shorten-hold certified; LC not
 //   load-bearing under G4+VS (swept 5/8/12% — sweep3pct.py PROTS grid; inert on
 //   daily bars, gap-through); gate REFUSAL is the protection (2022: gate admits
 //   ~9% of bear signals, traded slice +23.5% PF 1.10).
@@ -88,7 +88,8 @@ public:
         double vol_gate_pct   = 20.0;   // G4: SPY 20d realized vol must be < this (annualized %)
         double vol_median_pct = 11.8;   // VS: hold->1 when vol > this (harness full-sample
                                         // median; live should periodically re-derive)
-        int    max_names      = 0;      // 0 = uncapped (harness has no cap); >0 = live safety cap
+        double dstop_pct      = 20.0;   // S-23 disaster stop (cert -20%; 0=off)
+        int    max_names      = 30;     // S-23 book ceiling (cert: 30 clips <5% of trade-days; 0=uncapped)
         int    retry_rows     = 3;      // refused-buy retry TTL in daily rows
         double lot            = 1.0;    // shares per entry when notional_usd==0
         // S-2026-07-23 COMMISSION-WALL FIX (the reason live_book shipped false): at 1 share
@@ -272,7 +273,14 @@ private:
         for (auto it = open_.begin(); it != open_.end();) {
             if (it->sym != sym) { ++it; continue; }
             ++it->held;                                    // held = j - e_idx
-            if (it->held >= it->hold_tgt) {
+            // DISASTER STOP (S-23, certified -20%: worst -41.5->-29.6, PF -0.014 noise,
+            // 2022 identical, ~7 fires/yr) — priority over the time-stop; caps a crash
+            // before the h3/h1 bar count expires. Daily-close grade (books at this close).
+            if (cfg.dstop_pct > 0 && it->entry > 0 &&
+                c < it->entry * (1.0 - cfg.dstop_pct / 100.0)) {
+                close_pos_(*it, c, ts, "DSTOP20");
+                it = open_.erase(it); changed = true;
+            } else if (it->held >= it->hold_tgt) {
                 close_pos_(*it, c, ts, it->hold_tgt == 1 ? "TIME_STOP_VS1" : "TIME_STOP");
                 it = open_.erase(it); changed = true;
             } else ++it;

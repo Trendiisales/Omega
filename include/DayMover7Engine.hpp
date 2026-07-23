@@ -34,7 +34,11 @@
 //     the certified cell; default OFF. Exposed only because it is a real harness
 //     lever — do not enable without its own cert.
 //
-// ADVERSE-PROTECTION: trail-only/threshold certified (BULLGATE_PROTECTION_SWEEPS
+// ADVERSE-PROTECTION: S-23 DISASTER STOP -36% wired (dstop_pct, cert: worst -41->-37,
+//   mDD + 2022 IMPROVE, PF 4.34->4.15; a CATASTROPHE cap, NOT the tight init-stops the
+//   cert rejected -- those were -12/-16 and flipped 2022 negative; -36 is far outside
+//   normal excursion so it only caps a crash) + cap18 book ceiling. Baseline still:
+//   trail-only/threshold certified (BULLGATE_PROTECTION_SWEEPS
 //   _2026-07-23.md §A): init-stops REJECTED — hard init-stops flip 2022 negative;
 //   BE-and-ride floor kills 2022; rev3d-12 optional certified at thr6; the ENTRY
 //   THRESHOLD IS the bear protection (2022 monotone g3 −992 -> g8 +164; thr7
@@ -81,7 +85,8 @@ public:
         double rev3d_cut_pct = 0.0;   // 0 = OFF (cert at thr7); 12.0 = the thr6-certified variant
         int    rev_days      = 3;     // rev-cut window (harness rev_days=3)
         double trail_pct     = 0.0;   // 0 = OFF (cert); harness L94 lever, uncertified at thr7
-        int    max_names     = 32;    // concurrent cap (DD-min cert cap32; only valid at thr8)
+        double dstop_pct     = 36.0;  // S-23 disaster stop (cert -36%, operator-approved tail cap; 0=off)
+        int    max_names     = 18;    // S-23 book ceiling (cert: 18 concurrent clips <5% of trade-days; was 32)
         int    retry_rows    = 3;     // refused-buy retry TTL in daily rows (see retry note below)
         double lot           = 1.0;   // shares per entry (proving size)
         std::string engine_tag = "DayMover7";
@@ -227,7 +232,12 @@ private:
             const char* why = nullptr;
             // order matches the harness loop: rev-cut (L93), trail vs OLD peak
             // (L94), THEN peak update (L95), then time exit (L99).
-            if (cfg.rev3d_cut_pct > 0 && it->held <= cfg.rev_days &&
+            // DISASTER STOP (S-23, certified -36%: worst -41.3->-37.0, mDD 190->185 +
+            // 2022 +164->+169 IMPROVE, PF 4.34->4.15 -0.04, ~0.6 fires/yr; operator-
+            // approved tail cap). Highest priority — a crash caps before rev/trail/time.
+            if (cfg.dstop_pct > 0 && fav <= -cfg.dstop_pct / 100.0)
+                why = "DSTOP36";
+            else if (cfg.rev3d_cut_pct > 0 && it->held <= cfg.rev_days &&
                 fav <= -cfg.rev3d_cut_pct / 100.0)
                 why = "REV3D_CUT";
             else if (cfg.trail_pct > 0 && c <= it->peak * (1.0 - cfg.trail_pct / 100.0))

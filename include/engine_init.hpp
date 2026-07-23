@@ -2980,7 +2980,7 @@ static void init_engines(const std::string& cfg_path)
                 c.sym = nm; c.live_sym = nm; c.family = omega::StockDipTurtleSym::DIP;
                 // AUTO-RETIREMENT: -$9,500 = ~2x the worst BT per-name banked-curve
                 // DD episode (MU -47.6% of $10k = -$4,756; engine header).
-                c.retire_usd = -9500.0;
+                c.retire_usd = -9500.0; c.dstop_pct = 25.0;  // DIP disaster stop (cert S-23)
                 sdt.add(std::move(c)); ++n_dip;
             }
             for (const char* nm : TUR_NAMES) {
@@ -2988,21 +2988,21 @@ static void init_engines(const std::string& cfg_path)
                 c.sym = nm; c.live_sym = nm; c.family = omega::StockDipTurtleSym::TURTLE;
                 // AUTO-RETIREMENT: -$8,500 = ~2x the worst BT per-name banked-curve
                 // DD episode (TPR -41.3% of $10k = -$4,130; engine header).
-                c.retire_usd = -8500.0;
+                c.retire_usd = -8500.0; c.dstop_pct = 15.0;  // TURTLE disaster stop (cert S-23)
                 sdt.add(std::move(c)); ++n_tur;
             }
             for (const char* nm : DIP_EXT) {
                 omega::StockDipTurtleSym::Config c;
                 c.sym = nm; c.live_sym = nm; c.family = omega::StockDipTurtleSym::DIP;
                 c.rt_cost_bp = 16.0;        // scan certification cost basis (ext set)
-                c.retire_usd = -9700.0;     // 2x WDC -$4,841 (ext_retire_thresholds.py)
+                c.retire_usd = -9700.0; c.dstop_pct = 25.0;   // 2x WDC + DIP disaster stop (cert S-23)
                 sdt.add(std::move(c)); ++n_dip;
             }
             for (const char* nm : TUR_EXT) {
                 omega::StockDipTurtleSym::Config c;
                 c.sym = nm; c.live_sym = nm; c.family = omega::StockDipTurtleSym::TURTLE;
                 c.rt_cost_bp = 16.0;        // scan certification cost basis (ext set)
-                c.retire_usd = -23000.0;    // 2x MU -$11,557 (ext_retire_thresholds.py)
+                c.retire_usd = -23000.0; c.dstop_pct = 15.0;  // 2x MU + TURTLE disaster stop (cert S-23)
                 sdt.add(std::move(c)); ++n_tur;
             }
             // exec wiring BEFORE seeding (cutover-#9: live logic hard-returns when
@@ -3582,7 +3582,7 @@ static void init_engines(const std::string& cfg_path)
                     }
                 }).detach();
                 printf("[OMEGA-INIT][SEED] DayMover7 wired: thr8/cap32 DD-min cell new-20d-high next-close entry, "
-                       "60-bar time-stop exit (cert PF4.34 $DD296@10k 2022 +164, ex-WDC 3.54; thr7 max-net alt PF3.27), "
+                       "60-bar time-stop exit + DSTOP-36 disaster cap + cap18 ceiling (cert PF4.34 $DD296@10k 2022 +164, ex-WDC 3.54; thr7 max-net alt PF3.27), "
                        "LIVE 1 share/name, deploy-forward\n");
                 fflush(stdout);
             }
@@ -3699,7 +3699,7 @@ static void init_engines(const std::string& cfg_path)
                     }
                 }).detach();
                 printf("[OMEGA-INIT][SEED] Bigcap3G4 wired: thr3 G4-gate(SPY>200 AND vol<20) + VS hold, "
-                       "time-stop h3/h1 (cert PF1.29 MAR8.3 2022 +23.5 PF1.10 TRADED), "
+                       "time-stop h3/h1 + DSTOP-20 disaster cap + cap30 ceiling (cert PF1.29 MAR8.3 2022 +23.5 PF1.10 TRADED), "
                        "LIVE $2k/name equal-$ sizing, deploy-forward\n");
                 fflush(stdout);
             }
@@ -3754,7 +3754,7 @@ static void init_engines(const std::string& cfg_path)
                     }
                     return v;
                 });
-            printf("[OMEGA-INIT][SEED] StockDip/StockTurtle books wired: %d dip + %d turtle names (incl S-17k ext-11 dip @16bp retire -$9.7k + ext-14 turtle @16bp retire -$23k), %zu seed rows, %zu forward bars restored, %zu open entry_ts exempted from phantom-drop, $10k notional, live-11 rt 8bp retire dip -$9.5k / turtle -$8.5k, LONG-only, LIVE in mode=LIVE (S-2026-07-19t: parent 1-share/name real money) else PRE-TRADE, deploy-forward, daily-CSV-polled\n",
+            printf("[OMEGA-INIT][SEED] StockDip/StockTurtle books wired: %d dip + %d turtle names (incl S-17k ext-11 dip @16bp retire -$9.7k + ext-14 turtle @16bp retire -$23k), %zu seed rows, %zu forward bars restored, %zu open entry_ts exempted from phantom-drop, $10k notional, live-11 rt 8bp retire dip -$9.5k / turtle -$8.5k, LONG-only, DSTOP dip-25/turtle-15 disaster cap (S-23), LIVE in mode=LIVE (S-2026-07-19t: parent 1-share/name real money) else PRE-TRADE, deploy-forward, daily-CSV-polled\n",
                    n_dip, n_tur, sdt_seeded, sdt_restored, sdt_exempt);
             fflush(stdout);
         }
@@ -7906,8 +7906,10 @@ static void init_engines(const std::string& cfg_path)
                         for (;;) {
                             std::this_thread::sleep_for(std::chrono::minutes(30));
                             if (g_gold_daily_cbe.use_mgc.load()) {
-                                // switched — keep a slow heartbeat probe as a capability watchdog
-                                omega::ibkr_exec::preflight("XAUUSD.M", true, 1.0);
+                                // switched — keep a slow heartbeat probe on the ACTIVE venue
+                                // (XAUUSD.O = the 1OZ the engine now trades, S-23bb) as a
+                                // capability watchdog (a margin/permission lapse prints within 30m).
+                                omega::ibkr_exec::preflight("XAUUSD.O", true, 1.0);
                                 continue;
                             }
                             std::printf("[GOLD-PROBE] 30-min recheck: MGC margin (GLD->MGC auto-switch armed)\n");
@@ -7924,11 +7926,16 @@ static void init_engines(const std::string& cfg_path)
                             const long ooid = omega::ibkr_exec::preflight("XAUUSD.O", true, 1.0);
                             std::this_thread::sleep_for(std::chrono::seconds(8));
                             if (ooid >= 0 && !omega::ibkr_exec::preflight_rejected(ooid)) {
-                                // S-23a operator 0.005-lot cap: 1OZ future minimum (1 oz) EXCEEDS
-                                // the cap -> futures flip DISABLED, report-only. GLD 5 shares
-                                // (~0.46 oz) is the venue. Size-up = explicit operator order.
-                                std::printf("[GOLD-VENUE] 1OZ future viable -- holding GLD per operator "
-                                            "0.005-lot cap (1OZ min = 1 oz = 2x the cap)\n");
+                                // S-2026-07-23bb OPERATOR SIZE-UP ORDER ("the money is into ibkr so it
+                                // should allow gold now", funding landed + 1OZ margin $683 VIABLE):
+                                // the S-23a 0.005-lot report-only hold is LIFTED -- first clean 1OZ
+                                // whatIf FLIPS the engine off GLD onto the 1-oz future (eff_sym
+                                // XAUUSD.O, 23h session, true minimum futures lot). New entries only;
+                                // any open GLD position keeps its venue until its own exit.
+                                g_gold_daily_cbe.use_mgc.store(true);
+                                std::printf("[GOLD-VENUE] SWITCHED: 1OZ future margin fits -- GoldDailyCbe "
+                                            "now trades XAUUSD.O (1 oz/contract; operator size-up order "
+                                            "S-23bb; GLD retired for new entries)\n");
                                 std::fflush(stdout);
                             }
                         }
