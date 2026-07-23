@@ -31,6 +31,7 @@
 #include "StockDipTurtleEngine.hpp" // per-name US-stock StockDip (ConnorsRSI2 archetype) + StockTurtle (Donchian 20/10) daily-close books (S-2026-07-08c)
 #include "DayMover7Engine.hpp"      // thr7 day-mover momentum continuation, 60-bar time-stop (S-2026-07-23 build; cert BULLGATE_PROTECTION_SWEEPS_2026-07-23.md §A)
 #include "Bigcap3G4Engine.hpp"      // 3% day-mover, G4 composite gate (SPY>200 AND vol<20) + vol-shorten-hold (S-2026-07-23 build; the rdagent-basket signal's certified honest descendant)
+#include "Dma200GateFeed.hpp"     // hysteresis 200DMA index gate feed (S-2026-07-23r NAS100 ladder cell)
 #include "BigCapHi52Engine.hpp"     // 52wk-high-proximity BIGCAP-45 portfolio book, SPY-200DMA gated, weekly rebal (S-2026-07-17k scan candidate C)
 #include "BigCap2pctImpulseCompanion.hpp"  // per-name BIGCAP +2%-impulse / 20d-breakout LONG-only LOOSE-RIDE book (S-2026-07-09) -> /api/bigcap2pct_companion
 #include "StallCompanion.hpp"       // 25 gold/index giveback-clip books (native C++ port of stall_accountant.py) -> /api/companion
@@ -2324,8 +2325,15 @@ static void init_engines(const std::string& cfg_path)
                 // all-6 PASS PF 1.73 DD 21.3) is BLOCKED on a daily-NDX-close gate feed the
                 // binary doesn't have yet (and the US500 twin showed gate-SOURCE fragility:
                 // own-H1 vs external daily flips all-6 — needs a robustness cert before wire).
-                // Re-enable ONLY as the W48 floored cell once the gate infra + robustness cert land.
-                // {"NAS100", "NAS100",  24, 1.5, 3.0, false, "phase1/signal_discovery/warmup_NAS100_H1.csv"},
+                // RE-ENABLED S-2026-07-23r as the W48 FLOORED cell — gate infra + robustness
+                // cert BOTH landed same session: Dma200GateFeed (data/ndx_close_hist.csv,
+                // nightly OmegaMacroRegime rewrite, seed-audit-owned) + DECISIVE CERT 6/6
+                // all-6 across every gate source x lag WITH HYSTERESIS (scratchpad
+                // decisive_matrix_out.txt; plain-MA failed 3 H1-derived cells -> hysteresis
+                // is the shipped form). Cert: n=435 +88.4% PF 1.664 DD 21.3 2022 +5.8
+                // WF 52.3/36.2 clip 64.3/24.2 date, worst -2.53, 2x PF 1.578. Load-bearing
+                // levers: W=48, be_entry=1.0, floor ON. Per-cell overrides below.
+                {"NAS100", "NAS100",  48, 2.0, 3.0, false, "phase1/signal_discovery/warmup_NAS100_H1.csv"},
                 {"GER40",  "GER40",   12, 1.5, 2.0, true,  "phase1/signal_discovery/warmup_GER40_H1.csv"},
                 // S-2026-07-09: M2K micro E-mini Russell 2000 (CME), IBKR-only L1 feed.
                 // rt=4.0 conservative (micro Russell < ES/NQ liquidity). BULL-GATED: the 2yr
@@ -2397,9 +2405,28 @@ static void init_engines(const std::string& cfg_path)
                 // cell above (FX_CATCHUP_OUTAGE_CERT — index cells certified in the same
                 // harness run: US500/NAS100/GER40/M2K surgical 0 mismatch + grid gates).
                 c.catchup_max_age_bars = 24;
-                // (NAS100 arm0/g10 opt-in REMOVED with the cell S-2026-07-23: the +34.4% claim
-                //  predates honest-fill accounting — on the certified-clean 2022-26 file it is
-                //  -35% PF 0.88. See the disabled IL[] row above for the full basis.)
+                // (NAS100 arm0/g10 opt-in REMOVED S-2026-07-23: the +34.4% claim predates
+                //  honest-fill accounting — on the certified-clean 2022-26 file it is -35%
+                //  PF 0.88.) S-23r: the re-enabled NAS100 cell runs the DECISIVE-CERT W48
+                //  FLOORED config instead — per-cell overrides:
+                if (std::string(ic.tag) == "NAS100") {
+                    c.be_entry_pct = 1.0;          // confirm 0.5*thr — THE load-bearing lever (0.5/1.5 both FAIL)
+                    c.pend_bars    = 48;           // deep confirm needs the full window (pend>=48 inert, pend4 kills)
+                    c.wide_gb_frac = 0.50;         // (inert lever, cert value)
+                    c.wide_arm_pct = -1.0;         // legacy 2.7*thr engage (arm0/arm0.5 not the cert)
+                    c.cap          = 1;            // no reclips (cert "cap0"; inert but cert-exact)
+                    c.pre_arm_floor_stop = true;   // LOAD-BEARING: DD 31.4 -> 21.3, worst -3.75 -> -2.53
+                    c.block_weekend_arms = false;  // cert form = weekend layers OFF for this cell
+                    c.weekend_carry_frac = 1.0;    //   (weekend ON variant still all-6: PF 1.609 — operator may flip)
+                    // HYSTERESIS ndx200 gate (the robustness fix): ON above MA200*1.01, OFF
+                    // below MA200*0.99, prior-day close from data/ndx_close_hist.csv (nightly
+                    // OmegaMacroRegime rewrite; fail-CLOSED blocks new windows on stale/missing).
+                    static omega::Dma200GateFeed ndx_gate(
+                        omega::resolve_seed_path("data/ndx_close_hist.csv"), 1.01, 0.99);
+                    c.block_new_windows_fn = [] {
+                        return !ndx_gate.bull((int64_t)std::time(nullptr));
+                    };
+                }
                 il.add(std::move(c));
             }
             // S-2026-07-09 COMPLETE FEED-MIGRATION — FULL revert of the c1a83306 seam fix.
