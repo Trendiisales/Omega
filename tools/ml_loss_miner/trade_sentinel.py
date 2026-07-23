@@ -61,6 +61,26 @@ GIVEBACK_MFE_MIN = 5.0          # min MFE (native pnl units) before a neg trade 
 CAPTURE_MIMIC_THRESHOLD = 0.55  # median winner capture below this -> giveback-clip mimic candidate
 MIN_WINS_FOR_CANDIDACY = 8      # wins needed before win-side candidacy is proposed
 
+# ── EXECUTION-OUTCOME guard (S-2026-07-24) ────────────────────────────────────
+# THE BLIND SPOT this closes: a loss-miner/sentinel that only ingests CLOSED TRADES
+# is blind exactly when the failure PRODUCES no trades. Overnight 2026-07-23 the crypto
+# engines fired order intents but every Binance order bounced off a -1013 LOT_SIZE filter
+# -> 0 fills, 0 closed trades, and this sentinel (which needs trades to triage) stayed
+# silent. "What use is the ML if nothing is done." So we add an OUTCOME check that reads
+# the live executor log and compares INTENTS vs FILLS vs REJECTS directly — it fires on
+# "intents>0 but fills==0" and on a reject-rate spike, with NO closed trade required.
+CHIMERA_EXEC_LOG = "~/ChimeraCrypto/logs/chimera.log"   # LiveMimic/TrendRoster + Binance executor
+EXEC_EVENT_TAIL = 600           # scan the last N order-lifecycle events (bounds the tick flood out)
+REJECT_RATE_RED = 0.5           # order-reject rate at/above this (with >= MIN_INTENTS) = spike RED
+MIN_INTENTS_FOR_RATE = 3        # need this many intents before a reject-RATE means anything
+# Real log markers (verified against chimera.log 2026-07-24 — lines 8423-8435 = the incident):
+#   intent:  "[TRENDROSTER-INTENT] tag=SOL-EMAX-TRENDROSTER sym=solusdt side=BUY qty=... notional=..."
+#   reject:  "[TRENDROSTER-INTENT] submit failed tag=... err={...-1013...}" / "[REST] order rejected"
+#            / "[EXECUTOR] Order failed: {...}"  (three lines per failed order; submit-failed = per-order)
+#   fill:    "[EXECUTOR] FILLED BTCUSDT BUY | id=... status=FILLED qty=... avg_px=..."
+_EXEC_GREP = (r'INTENT\] (tag=|submit failed)|order rejected|Order failed'
+              r'|EXECUTOR\] FILLED|"code":-1013')
+
 
 # ── data pulls (read-only) ────────────────────────────────────────────────────
 def _run(cmd: list[str], timeout: int = 60) -> str | None:
@@ -477,7 +497,90 @@ def mine_wins(df: pd.DataFrame) -> list[dict]:
     return out
 
 
+# ── execution-outcome check (no-fill / reject storm) ──────────────────────────
+def pull_exec_events(local_file: str | None = None, tail: int = EXEC_EVENT_TAIL) -> list[str]:
+    """Read-only pull of the last `tail` ORDER-LIFECYCLE lines from the crypto executor log
+    (grep filters the per-tick flood out server-side so we never haul the whole log). Read-only
+    grep only (feedback-audit-read-only-never-mutate). `local_file` is a test hook (offline)."""
+    if local_file:
+        try:
+            return [l for l in Path(local_file).read_text().splitlines() if l.strip()]
+        except Exception as e:  # noqa: BLE001
+            print(f"  WARN: exec events file {local_file} unreadable: {e}", file=sys.stderr)
+            return []
+    sh = f"grep -aE '{_EXEC_GREP}' {CHIMERA_EXEC_LOG} 2>/dev/null | tail -{tail}"
+    raw = _run(["ssh", CHIMERA_SSH_HOST, sh], timeout=45)
+    if raw is None:
+        print("  WARN: exec-log pull failed (chimera-direct) — outcome check UNVERIFIABLE this run",
+              file=sys.stderr)
+        return []
+    return [l for l in raw.splitlines() if l.strip()]
+
+
+def classify_exec_events(lines: list[str]) -> dict:
+    """Count order intents / rejects / fills in a slice of executor-log lines.
+    reject_orders counts one per failed order (the 'submit failed' line); reject_signals counts
+    every corroborating reject marker (REST rejected / Order failed / -1013 / LOT_SIZE)."""
+    intents = fills = reject_orders = reject_signals = lot1013 = 0
+    ex: dict = {"intents": [], "rejects": [], "fills": []}
+    for ln in lines:
+        is_intent = ("INTENT]" in ln and " tag=" in ln and "submit failed" not in ln)
+        is_submit_fail = "submit failed" in ln
+        is_reject_sig = is_submit_fail or ("order rejected" in ln) or ("Order failed" in ln) \
+            or ("-1013" in ln) or ("LOT_SIZE" in ln)
+        is_fill = ("EXECUTOR] FILLED" in ln) or ("status=FILLED" in ln)
+        if is_intent:
+            intents += 1; ex["intents"].append(ln)
+        if is_submit_fail:
+            reject_orders += 1; ex["rejects"].append(ln)
+        elif is_reject_sig:
+            ex["rejects"].append(ln)
+        if is_reject_sig:
+            reject_signals += 1
+        if ("-1013" in ln) or ("LOT_SIZE" in ln):
+            lot1013 += 1
+        if is_fill:
+            fills += 1; ex["fills"].append(ln)
+    return {"intents": intents, "fills": fills, "reject_orders": reject_orders,
+            "reject_signals": reject_signals, "lot1013": lot1013, "ex": ex}
+
+
+def check_execution_outcome(new_lines: list[str]) -> tuple[list[dict], dict]:
+    """The OUTCOME check. Returns (alerts, counts). An alert here needs NO closed trade — it fires
+    precisely on the no-trade-despite-signals condition the loss-miner is blind to."""
+    c = classify_exec_events(new_lines)
+    intents, fills = c["intents"], c["fills"]
+    ro, rs, lot = c["reject_orders"], c["reject_signals"], c["lot1013"]
+    alerts: list[dict] = []
+    if intents > 0 and fills == 0:
+        detail = f"{intents} order intent(s) fired, 0 FILLS"
+        if ro or rs:
+            detail += f", {ro or rs} rejected order(s)"
+        if lot:
+            detail += f" [{lot}x LOT_SIZE/-1013 filter]"
+        alerts.append({"level": "RED", "code": "NO_FILL_DESPITE_INTENTS", "counts": c,
+            "msg": detail + " over the recent window. Engines are SIGNALLING but NOTHING is "
+            "trading, so the loss-miner has 0 closed trades to mine and would stay silent — this "
+            "is the exact overnight blind spot. FIX the executor path (for -1013: floor order qty "
+            "to the symbol's stepSize/minQty before submit, then retry) BEFORE relying on any "
+            "trade-based monitor. Not a strategy loss — an execution outage."})
+    elif intents >= MIN_INTENTS_FOR_RATE and ro / max(intents, 1) >= REJECT_RATE_RED:
+        rate = ro / intents
+        detail = f"{ro}/{intents} order intents rejected ({rate:.0%})"
+        if lot:
+            detail += f" [{lot}x LOT_SIZE/-1013]"
+        alerts.append({"level": "RED", "code": "REJECT_RATE_SPIKE", "counts": c,
+            "msg": detail + " — reject storm; fills are leaking even though some got through. "
+            "Check the executor/venue filter (LOT_SIZE/minNotional) and the qty-flooring path."})
+    return alerts, c
+
+
 # ── state ─────────────────────────────────────────────────────────────────────
+def _exec_sig(ln: str) -> str:
+    import hashlib
+    return hashlib.md5(ln.encode("utf-8", "replace")).hexdigest()[:16]
+
+
 def load_state() -> dict:
     if STATE_PATH.exists():
         try:
@@ -560,7 +663,9 @@ def aggregate_losses(triage: list[tuple]) -> list[dict]:
 
 
 def render(new_neg: pd.DataFrame, triage: list[tuple], win_ideas: list[dict],
-           n_new: int, n_total: int, out_path: Path) -> None:
+           n_new: int, n_total: int, out_path: Path,
+           outcome_alerts: list[dict] | None = None, exec_counts: dict | None = None) -> None:
+    outcome_alerts = outcome_alerts or []
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     L: list[str] = []
     L.append(f"# Trade Sentinel Report — {now}")
@@ -568,6 +673,31 @@ def render(new_neg: pd.DataFrame, triage: list[tuple], win_ideas: list[dict],
     L.append(f"Scanned {n_total} closed trades across both systems; **{n_new} new since last run**, "
              f"of which **{len(triage)} negative** (triaged below). Every suggestion is a PROPOSAL — "
              "backtest-certify before wiring anything (standing doctrine).")
+
+    # ── EXECUTION OUTCOME — the no-trade-despite-signals guard (ACT FIRST) ──
+    # This section fires even when there are ZERO closed trades, closing the loss-miner's
+    # blind spot (signals fire, orders bounce off a venue filter, 0 fills, nothing to mine).
+    if exec_counts is not None:
+        L.append("")
+        c = exec_counts
+        if outcome_alerts:
+            L.append("## 🚨 EXECUTION OUTAGE — signals fired but orders are NOT filling (ACT FIRST)")
+            L.append("")
+            L.append(f"Executor window (last {EXEC_EVENT_TAIL} order-lifecycle events, NEW since last "
+                     f"run): **{c['intents']} intents · {c['fills']} fills · {c['reject_orders']} "
+                     f"rejected orders · {c['lot1013']}× LOT_SIZE/-1013**.")
+            L.append("")
+            for a in outcome_alerts:
+                L.append(f"- **[{a['level']}] {a['code']}** — {a['msg']}")
+                worst = a["counts"]["ex"]["rejects"][:3]
+                for r in worst:
+                    L.append(f"    - `{r.strip()[:160]}`")
+            L.append("")
+        else:
+            L.append("")
+            L.append(f"_Execution outcome OK: {c['intents']} new intents → {c['fills']} fills, "
+                     f"{c['reject_orders']} rejected ({c['lot1013']}× LOT_SIZE/-1013). No no-fill / "
+                     "reject-storm condition._")
     cov = globals().get("SYS_COVERAGE", "")
     if cov:
         L.append("")
@@ -632,6 +762,14 @@ def notify_mac(n_neg: int, worst: float, report: Path) -> None:
                    capture_output=True)
 
 
+def notify_mac_outcome(alerts: list[dict], report: Path) -> None:
+    a = alerts[0]
+    msg = f"EXECUTION {a['code']}: signals firing but not filling — {report.name}"
+    subprocess.run(["osascript", "-e",
+                    f'display notification "{msg}" with title "Omega Sentinel — EXEC OUTAGE"'],
+                   capture_output=True)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--csv", help="offline CSV instead of live ssh pull")
@@ -640,14 +778,51 @@ def main() -> None:
     ap.add_argument("--notify", action="store_true", help="macOS notification when new negatives found")
     ap.add_argument("--out", default=None)
     ap.add_argument("--state", default=None, help="override state file path (tests)")
+    ap.add_argument("--exec-events-file", default=None,
+                    help="offline executor-log slice for the outcome check (tests); skips ssh")
+    ap.add_argument("--no-exec-check", action="store_true",
+                    help="skip the execution-outcome (no-fill/reject) check")
     args = ap.parse_args()
 
     global STATE_PATH
     if args.state:
         STATE_PATH = Path(args.state)
 
+    # ── EXECUTION-OUTCOME check runs FIRST and INDEPENDENTLY of the trade ledger, because its
+    # whole purpose is to catch the case where the ledger is EMPTY (0 fills despite signals).
+    state = load_state()
+    outcome_alerts: list[dict] = []
+    exec_counts: dict | None = None
+    if not args.no_exec_check and (args.exec_events_file or not args.csv):
+        exec_lines = pull_exec_events(args.exec_events_file)
+        seen_exec = set(state.get("seen_exec_sigs", [])) if not args.full else set()
+        new_exec = [l for l in exec_lines if _exec_sig(l) not in seen_exec]
+        outcome_alerts, exec_counts = check_execution_outcome(new_exec)
+        # persist seen exec sigs (bounded) unless this is an offline test slice
+        if not args.exec_events_file:
+            allsig = {_exec_sig(l) for l in exec_lines} | seen_exec
+            state["seen_exec_sigs"] = sorted(allsig)[-5000:]
+
     df = load_all(args.csv, args.system)
     if df.empty:
+        # CRITICAL: an empty ledger is no longer a silent exit. If the outcome check found a
+        # no-fill/reject condition, that is the whole story — surface it, alert, and exit RED.
+        if outcome_alerts:
+            out_path = Path(args.out) if args.out else (
+                REPO / "outputs" / f"TRADE_SENTINEL_REPORT_{datetime.now(timezone.utc).date().isoformat()}.md")
+            render(pd.DataFrame(), [], [], 0, 0, out_path, outcome_alerts, exec_counts)
+            ALERT_LOG.parent.mkdir(parents=True, exist_ok=True)
+            with ALERT_LOG.open("a") as fh:
+                for a in outcome_alerts:
+                    fh.write(f"{datetime.now(timezone.utc).isoformat()} {a['level']} OUTCOME "
+                             f"{a['code']} {a['msg'][:140]}\n")
+            if args.exec_events_file is None and not args.full:
+                save_state(state)
+            if args.notify:
+                notify_mac_outcome(outcome_alerts, out_path)
+            print(f"OUTCOME-RED: {len(outcome_alerts)} execution alert(s) with 0 closed trades — "
+                  "the no-trade-despite-signals blind spot is now surfaced.", file=sys.stderr)
+            sys.exit(2)
         print("No data loaded. Nothing to triage.", file=sys.stderr)
         sys.exit(1)
 
@@ -659,8 +834,8 @@ def main() -> None:
     global SYS_COVERAGE
     SYS_COVERAGE = ", ".join(f"{s}={n}" for s, n in sorted(sys_counts.items()))
 
-    state = load_state()
-    seen = set(state["seen_keys"]) if not args.full else set()
+    # state already loaded above (carries the exec-outcome seen_exec_sigs) — do NOT reload.
+    seen = set(state.get("seen_keys", [])) if not args.full else set()
     new_mask = ~df["key"].isin(seen)
     n_new = int(new_mask.sum())
 
@@ -676,26 +851,38 @@ def main() -> None:
 
     out_path = Path(args.out) if args.out else (
         REPO / "outputs" / f"TRADE_SENTINEL_REPORT_{datetime.now(timezone.utc).date().isoformat()}.md")
-    render(new_neg, triage, win_ideas, n_new, len(df), out_path)
+    render(new_neg, triage, win_ideas, n_new, len(df), out_path, outcome_alerts, exec_counts)
 
-    if triage:
+    if triage or outcome_alerts:
         ALERT_LOG.parent.mkdir(parents=True, exist_ok=True)
         with ALERT_LOG.open("a") as fh:
+            for a in outcome_alerts:  # execution-outcome RED lands in the SAME alert path
+                fh.write(f"{datetime.now(timezone.utc).isoformat()} {a['level']} OUTCOME "
+                         f"{a['code']} {a['msg'][:140]}\n")
             for row, verdict, flags, _, score in triage:
                 fh.write(f"{datetime.now(timezone.utc).isoformat()} {verdict} "
                          f"{row['system']}/{row['book']} {row['engine']} {row['symbol']} "
                          f"{row['net_pnl']:+.2f} reason={row['exit_reason']} "
                          f"flags={','.join(flags) or '-'} anomaly={score:.2f}\n")
         if args.notify:
-            notify_mac(len(triage), float(new_neg["net_pnl"].min()), out_path)
+            if outcome_alerts:
+                notify_mac_outcome(outcome_alerts, out_path)
+            if triage:
+                notify_mac(len(triage), float(new_neg["net_pnl"].min()), out_path)
 
     if not args.csv:  # never advance state on offline test data
-        state["seen_keys"] = sorted(set(state["seen_keys"]) | set(df["key"].tolist()))
+        state["seen_keys"] = sorted(set(state.get("seen_keys", [])) | set(df["key"].tolist()))
         state["last_run_utc"] = datetime.now(timezone.utc).isoformat()
         save_state(state)
 
-    print(f"triage: {len(triage)} new negative | new trades {n_new}/{len(df)} | "
+    exec_note = ""
+    if exec_counts is not None:
+        exec_note = (f" | exec: {exec_counts['intents']}int/{exec_counts['fills']}fill/"
+                     f"{exec_counts['reject_orders']}rej ({len(outcome_alerts)} RED)")
+    print(f"triage: {len(triage)} new negative | new trades {n_new}/{len(df)}{exec_note} | "
           f"win-idea engines: {len(win_ideas)}", file=sys.stderr)
+    if outcome_alerts:
+        sys.exit(2)
 
 
 if __name__ == "__main__":

@@ -14,6 +14,22 @@
 #
 # RED (exit 2) = a box's auto-reboot protection is weakened -> re-lock it.
 # WARN (still green) = a reboot is PENDING somewhere -> plan a manual window.
+#
+# ── INPUT / STATE / OUTCOME classification (S-2026-07-24 audit) ──────────────
+#   INPUT   : registry/config/apt values pulled read-only (AUOptions, NoAutoReboot,
+#             Automatic-Reboot, AutomaticallyInstallMacOSUpdates, reboot-required).
+#   STATE   : the CONFIGURED posture — will a box auto-reboot; is the service *enabled*.
+#   OUTCOME : does live trading actually SURVIVE / is it RUNNING right now?
+#
+# THE OUTCOME GAP this audit closed: the guard verified `systemctl is-enabled chimera`
+# and the Windows auto-reboot registry — both are CONFIG PROXIES for "trading survives a
+# reboot". Neither proves the trading process is ACTUALLY RUNNING. `is-enabled` != `is-active`:
+# a box can have flawless no-auto-reboot posture AND an enabled unit while the trading
+# process crashed/stopped hours ago (cf. the josgp1 mode-conflict crash-loop and the
+# omega service left Stopped/Manual after the 07-07 migration) — and the OLD guard would
+# print GREEN over dead trading. FIX: each remote box now also asserts the OUTCOME —
+# chimera `is-active`==active (not merely enabled) and omega-new's Omega.exe process is
+# actually running — so a passing guard means "protected AND trading now", not just "config ok".
 # ============================================================================
 import subprocess, sys
 
@@ -41,7 +57,10 @@ def win():
     ps = (r"$au=Get-ItemProperty 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU' "
           r"-ErrorAction SilentlyContinue; "
           r"Write-Output ('AUO='+$au.AUOptions+' NAR='+$au.NoAutoRebootWithLoggedOnUsers+' RBP='"
-          r"+(Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired'))")
+          r"+(Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired')); "
+          # OUTCOME: is the Omega trading process ACTUALLY running now? (config posture is only a
+          # proxy for 'trading survives a reboot' — this asserts the live outcome directly.)
+          r"$op=Get-Process Omega -ErrorAction SilentlyContinue; Write-Output ('OMEGARUN='+[bool]$op)")
     o = run(["ssh", "omega-new", 'powershell -NoProfile -Command "' + ps + '"'])
     if "__ERR__" in o:
         warns.append(f"omega-new: unreachable — update posture unverifiable ({o.strip()[:60]})"); return
@@ -51,19 +70,31 @@ def win():
         fails.append(f"omega-new: NoAutoRebootWithLoggedOnUsers is not 1 (auto-reboot risk) -> {o.strip()}")
     if "RBP=True" in o:
         warns.append("omega-new: Windows reboot PENDING (plan a manual window)")
+    if "OMEGARUN=True" not in o:
+        fails.append("omega-new: Omega.exe is NOT running now — the no-auto-reboot config is only a "
+                     "PROXY for 'trading survives'; the live OUTCOME is that Omega is DOWN (not "
+                     "trading). Investigate/restart before trusting a green update posture.")
 
 def lin():
     o = run(["ssh", "chimera-direct",
              "grep -rhE 'Automatic-Reboot' /etc/apt/apt.conf.d/ 2>/dev/null | grep -v '^//'; echo ---; "
-             "[ -f /var/run/reboot-required ] && echo REBOOT_PENDING; systemctl is-enabled chimera 2>/dev/null"])
+             "[ -f /var/run/reboot-required ] && echo REBOOT_PENDING; "
+             # STATE (config): is the unit enabled -> would auto-start after a reboot.
+             "echo ENABLED=$(systemctl is-enabled chimera 2>/dev/null); "
+             # OUTCOME (live): is chimera ACTUALLY running now. enabled != active — a crashed/
+             # stopped unit stays 'enabled' while trading is dead (the proxy-vs-outcome gap).
+             "echo ACTIVE=$(systemctl is-active chimera 2>/dev/null)"])
     if "__ERR__" in o:
         warns.append(f"josgp1: unreachable — update posture unverifiable ({o.strip()[:60]})"); return
     if 'automatic-reboot "true"' in o.lower():
         fails.append("josgp1: apt unattended Automatic-Reboot=true — auto-reboot RE-ENABLED")
     if "REBOOT_PENDING" in o:
         warns.append("josgp1: reboot PENDING (plan a window; chimera is systemd-enabled so it recovers, but interrupts trading)")
-    if "enabled" not in o.split("---")[-1]:
+    if "ENABLED=enabled" not in o:
         fails.append("josgp1: chimera service NOT enabled — would NOT auto-start after a reboot")
+    if "ACTIVE=active" not in o:
+        fails.append("josgp1: chimera enabled but NOT RUNNING now (is-active != active) — the "
+                     "auto-reboot config is a PROXY; the live OUTCOME is DEAD trading. Restart chimera.")
 
 for fn in (mac, win, lin):
     try: fn()
