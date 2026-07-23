@@ -85,12 +85,21 @@ $EmptyStateFile  = 'C:\Omega\logs\ibkr_l2_empty_restart.state'
 # healthcheck.ps1 raises to a desk-RED+beep FAIL (the push channel the operator
 # actually sees). A gateway bounce needs the operator to approve 2FA, so the alert
 # is the load-bearing fix; the auto-bounce is best-effort recovery.
-$StaleEscalateN     = 3        # consecutive STALE runs (~6 min) before bouncing the gateway
+$StaleEscalateN     = 3        # consecutive STALE runs (~6 min) before ALERTING (was: bouncing)
 $StaleCountFile     = 'C:\Omega\logs\ibkr_l2_stale_count.state'
-$GwBounceBackoffSec = 1500     # >= 25 min between gateway bounces (2FA-gated; must not loop)
+$GwBounceBackoffSec = 1500     # >= 25 min between gateway bounces (only if auto-bounce enabled)
 $GwBounceStateFile  = 'C:\Omega\logs\ibkr_gw_bounce.state'
 $HealthFlagDir      = 'C:\Omega\logs\health'
 $HealthFlag         = 'C:\Omega\logs\health\ibkr_feed_stale.flag'
+# S-2026-07-24: AUTO-BOUNCE DISABLED by default. A gateway bounce starts a NEW IB session, which
+# REQUIRES 2FA — and 2FA cannot be approved headless (IBC only prompts). When the auto-bounce fired
+# on a stale feed, each bounce triggered a 2FA prompt; the feed stayed stale through the re-login, so
+# the watchdog kept re-bouncing => a 2FA-reset STORM (operator: "ibkr keeps asking for 2fa, stop
+# resetting"). The load-bearing recovery is the PUSH ALERT (health flag -> desk RED+beep) so the
+# operator bounces + approves 2FA ONCE, deliberately; a healthy session then persists ~24h with no
+# further 2FA. Set $AutoBounceGateway=$true ONLY if a headless 2FA-less login (IB read-only / paper /
+# IBKR-Mobile seamless auto-approve) is configured so a bounce won't hang on the 2FA dialog.
+$AutoBounceGateway  = $false   # detect + alert only; NEVER auto-kill the gateway (2FA storm cause)
 
 # ---- guard: skip outside market hours ---------------------------------------
 # IBKR L2 dries up overnight + on weekends. Don't alarm during known-quiet
@@ -231,22 +240,28 @@ if ($hasRestartFixable) {
     } catch { }
 
     if (($sc -ge $StaleEscalateN) -or $gwHung) {
-        $last = 0
-        if (Test-Path $GwBounceStateFile) { try { $last = [int64]((Get-Content $GwBounceStateFile -Raw).Trim()) } catch { $last = 0 } }
-        $nowEpoch = [int64][DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
-        if (($nowEpoch - $last) -ge $GwBounceBackoffSec) {
-            $nowEpoch | Out-File -Encoding ascii $GwBounceStateFile
-            $reason = if ($gwHung) { "gateway JVM NOT RESPONDING (hung)" } else { "${sc} consecutive STALE runs -- bridge restart is not clearing it (upstream/gateway)" }
-            Add-Content -Path $AlertLog -Value "  ESCALATE: $reason -> bouncing IB Gateway (kill java + relaunch IbkrGateway task)"
-            try {
-                @(Get-Process java -EA SilentlyContinue) | ForEach-Object { Stop-Process -Id $_.Id -Force -EA SilentlyContinue }
-                Start-Sleep -Seconds 3
-                Start-ScheduledTask -TaskName 'IbkrGateway' -EA SilentlyContinue
-                Add-Content -Path $AlertLog -Value "  ESCALATE: IbkrGateway relaunch triggered -- OPERATOR MUST APPROVE 2FA on the IBKR mobile app"
-            } catch { Add-Content -Path $AlertLog -Value "  ESCALATE ERROR: $($_.Exception.Message)" }
-            $sc = 0; $sc | Out-File -Encoding ascii $StaleCountFile   # reset after a bounce; give the fresh gateway time
+        $reason = if ($gwHung) { "gateway JVM NOT RESPONDING (hung)" } else { "${sc} consecutive STALE runs -- bridge restart is not clearing it (upstream/gateway)" }
+        if (-not $AutoBounceGateway) {
+            # DEFAULT: alert only. The HEALTH flag (set above) drives the desk-RED+beep push; the
+            # operator bounces the gateway + approves 2FA deliberately. NEVER auto-kill (2FA storm).
+            Add-Content -Path $AlertLog -Value "  ESCALATE (ALERT-ONLY): $reason -> desk RED. Operator: bounce IB Gateway + approve 2FA once. Auto-bounce DISABLED (headless 2FA cannot be cleared)."
         } else {
-            Add-Content -Path $AlertLog -Value ("  ESCALATE SUPPRESSED: gateway bounced " + ($nowEpoch - $last) + "s ago (< ${GwBounceBackoffSec}s backoff; awaiting login/2FA) -- HEALTH flag stays RED")
+            $last = 0
+            if (Test-Path $GwBounceStateFile) { try { $last = [int64]((Get-Content $GwBounceStateFile -Raw).Trim()) } catch { $last = 0 } }
+            $nowEpoch = [int64][DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+            if (($nowEpoch - $last) -ge $GwBounceBackoffSec) {
+                $nowEpoch | Out-File -Encoding ascii $GwBounceStateFile
+                Add-Content -Path $AlertLog -Value "  ESCALATE: $reason -> bouncing IB Gateway (kill java + relaunch IbkrGateway task)"
+                try {
+                    @(Get-Process java -EA SilentlyContinue) | ForEach-Object { Stop-Process -Id $_.Id -Force -EA SilentlyContinue }
+                    Start-Sleep -Seconds 3
+                    Start-ScheduledTask -TaskName 'IbkrGateway' -EA SilentlyContinue
+                    Add-Content -Path $AlertLog -Value "  ESCALATE: IbkrGateway relaunch triggered -- OPERATOR MUST APPROVE 2FA on the IBKR mobile app"
+                } catch { Add-Content -Path $AlertLog -Value "  ESCALATE ERROR: $($_.Exception.Message)" }
+                $sc = 0; $sc | Out-File -Encoding ascii $StaleCountFile   # reset after a bounce; give the fresh gateway time
+            } else {
+                Add-Content -Path $AlertLog -Value ("  ESCALATE SUPPRESSED: gateway bounced " + ($nowEpoch - $last) + "s ago (< ${GwBounceBackoffSec}s backoff; awaiting login/2FA) -- HEALTH flag stays RED")
+            }
         }
     }
 }
