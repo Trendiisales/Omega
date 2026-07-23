@@ -13,8 +13,17 @@ and cross-checks every LIVE (shadow=0) engine against CERTIFIED_LIVE below.
 
 RED if:
   - exec is not on the expected live account (4001 / paper_only=0), OR
+  - ORDER-EXECUTION OUTCOME (S-2026-07-24): orders are not LANDING -- a reject storm
+    (>=3 IBKR err 201/460/10289), a block storm (>=5 [IBKR-EXEC] BLOCKED + 0 fills, e.g.
+    exec socket "not connected"), or intents-sent-but-0-fills. This is the missing OUTCOME
+    check: config can say paper_only=0 while EVERY order bounces/blocks and nothing trades
+    (the Omega twin of the overnight crypto LOT_SIZE storm), OR
   - an engine routes REAL money (shadow=0) but is NOT in CERTIFIED_LIVE, OR
   - a CERTIFIED_LIVE engine is sitting in shadow (shadow=1) i.e. not actually live.
+
+Cron: tools/install_live_routing_cron.sh (every 15 min, macOS banner on RED via
+monitor_crashsafe_wrap.sh). Previously session-only -- a check nobody ran was part
+of the problem: the 2026-07-24 disconnected-exec block-storm ran all day unseen.
 
 CERTIFIED_LIVE is the allowlist of engines with a current PASS verdict. Editing it is
 the ONLY way to bless a live engine -- so a stale/uncertified engine on real money
@@ -50,6 +59,48 @@ SCRAPPED = {
 def sh(cmd):
     return subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=60)
 
+def order_execution_health(host):
+    """OUTCOME check (S-2026-07-24): are orders actually LANDING at the broker?
+    The exec can be configured-live (port 4001, paper_only=0) yet route NOTHING:
+    the broker socket drops and EVERY order is BLOCKED "not connected", or an IBKR
+    filter rejects each order (code 201/460/10289) -- signals fire all day, 0 fills,
+    nothing trades, and every INPUT (feeds) / STATE (exec up, no halt) check stays
+    GREEN. This is the Omega twin of the overnight crypto LOT_SIZE reject storm.
+
+    Reads a RECENT window of the live stdout log (NOT the closed-trades ledger,
+    which lags and shows yesterday's fills) and counts, across ALL engines (every
+    engine funnels through the one IbkrExecutionEngine.place_order -> [IBKR-EXEC]):
+      placed  = order sent to broker      [IBKR-EXEC] ... (eng=...
+      fills   = real broker fill          [IBKR-EXEC] FILL ...
+      rejects = IBKR order reject         [IBKR-EXEC] err 201|460|10289
+      blocked = never even sent           [IBKR-EXEC] BLOCKED <sym> -- <reason>
+    Returns dict or None on unreadable. intents = placed+blocked (a signal that
+    TRIED to route). A quiet market (intents==0) is not a failure."""
+    ps = (r"$f='C:\Omega\logs\omega_service_stdout.log'; "
+          r"$s = Get-Content $f -Tail 4000 -ErrorAction SilentlyContinue; "
+          r"if (-not $s) { Write-Output 'EXEC UNREADABLE'; exit } "
+          r"$placed  = ($s | Select-String -Pattern 'IBKR-EXEC.*\(eng=').Count; "
+          r"$fills   = ($s | Select-String -SimpleMatch '[IBKR-EXEC] FILL ').Count; "
+          r"$rejects = ($s | Select-String -Pattern 'IBKR-EXEC. err (201|460|10289)').Count; "
+          r"$blocked = ($s | Select-String -SimpleMatch '[IBKR-EXEC] BLOCKED').Count; "
+          r"$rl = ($s | Select-String -SimpleMatch '[IBKR-EXEC] BLOCKED' | Select-Object -Last 1).Line; "
+          r"Write-Output ('EXEC placed=' + $placed + ' fills=' + $fills + ' rejects=' + $rejects + "
+          r"' blocked=' + $blocked + ' last=' + $rl)")
+    b64 = base64.b64encode(ps.encode("utf-16-le")).decode()
+    r = sh(f'ssh {host} powershell -NoProfile -EncodedCommand {b64}')
+    m = re.search(r'EXEC placed=(\d+) fills=(\d+) rejects=(\d+) blocked=(\d+)(?: last=(.*))?', r.stdout)
+    if not m:
+        return None
+    reason = ""
+    if m.group(5):
+        # "[IBKR-EXEC] BLOCKED NAS100 -- not connected" -> "not connected"
+        rm = re.search(r'--\s*(.+)$', m.group(5).strip())
+        reason = rm.group(1).strip() if rm else m.group(5).strip()
+    d = dict(placed=int(m.group(1)), fills=int(m.group(2)),
+             rejects=int(m.group(3)), blocked=int(m.group(4)), reason=reason)
+    d["intents"] = d["placed"] + d["blocked"]
+    return d
+
 def broker_fill_stats(host):
     """UN-FAKEABLE money check: count rows in the live trade ledger that actually
     hit the broker (broker_entry_filled=1 OR broker_close_filled=1) vs total rows.
@@ -69,8 +120,15 @@ def broker_fill_stats(host):
     return (int(m.group(1)), int(m.group(2))) if m else (None, None)
 
 def main():
+    # S-2026-07-24: the dated log was hardcoded 'omega_2026-07-20.log' -> it rotted
+    # stale in 4 days and the exec/init boot lines aged out of the stdout tail, so
+    # this whole grep returned nothing and RED'd on "no exec line" (a MONITOR-BLIND
+    # state, not the truth). Derive TODAY's dated log dynamically and search it too.
     ps = (r"cd C:\Omega; git rev-parse --short HEAD; "
-          r"Select-String -Path logs\omega_service_stdout.log,logs\omega_2026-07-20.log "
+          r"$today = (Get-Date).ToUniversalTime().ToString('yyyy-MM-dd'); "
+          r"$logs = @('logs\omega_service_stdout.log', ('logs\omega_' + $today + '.log')) "
+          r"| Where-Object { Test-Path $_ }; "
+          r"Select-String -Path $logs "
           r"-Pattern '\[IBKR-EXEC\].*paper_only|\[OMEGA-INIT\].*shadow=' -ErrorAction SilentlyContinue "
           r"| ForEach-Object { $_.Line.Trim() } | Sort-Object -Unique")
     # base64 UTF-16LE -EncodedCommand -- avoids the omega-new nested-quote mangle ($_ eaten)
@@ -113,6 +171,38 @@ def main():
             else:
                 print(f"EXEC: port={port} paper_only={po}, {fill}/{tot} ledger rows broker-filled "
                       f"->  LIVE REAL-MONEY TRADING CONFIRMED  [GREEN]")
+
+    # (a2) ORDER-EXECUTION OUTCOME -- the un-fakeable "are orders LANDING" check.
+    # Runs REGARDLESS of whether the [IBKR-EXEC] boot line was found above: the
+    # 2026-07-24 live failure was exactly "boot line aged out of the tail -> RED on
+    # 'no exec line'" while the REAL truth (every NAS100 order BLOCKED 'not connected',
+    # 0 fills) sat in the same log unread. This block reads that truth directly and
+    # covers ALL engines (they all funnel through the one IbkrExecutionEngine).
+    print("\n--- order-execution outcome (are orders actually landing at the broker?) ---")
+    oe = order_execution_health(HOST)
+    if oe is None:
+        print("  RED    exec stdout log UNREADABLE -- cannot prove orders are routing")
+        red.append("exec log unreadable -- order-routing outcome unknown")
+    else:
+        print(f"  window: placed={oe['placed']} fills={oe['fills']} rejects={oe['rejects']} "
+              f"blocked={oe['blocked']} (intents={oe['intents']})")
+        if oe["rejects"] >= 3:
+            print(f"  RED    REJECT STORM: {oe['rejects']} IBKR order rejects (code 201/460/10289) "
+                  f"in window -- orders bouncing off a broker filter, NOT filling")
+            red.append(f"reject-storm {oe['rejects']} IBKR rejects -- orders not landing")
+        if oe["blocked"] >= 5 and oe["fills"] == 0:
+            print(f"  RED    BLOCK STORM: {oe['blocked']} orders BLOCKED pre-send "
+                  f"(reason: {oe['reason'] or '?'}) with 0 fills -- exec socket down / "
+                  f"contract unresolved: every signal fires into a dead path, NOTHING trades")
+            red.append(f"block-storm {oe['blocked']} blocked ({oe['reason'] or '?'}) 0 fills -- exec not routing")
+        if oe["placed"] >= 3 and oe["fills"] == 0 and oe["rejects"] < 3:
+            print(f"  RED    ZERO-FILL: {oe['placed']} orders SENT to broker but 0 fills in window "
+                  f"-- effectively SHADOW despite configured-live; broker silently not filling")
+            red.append(f"zero-fill {oe['placed']} sent 0 filled -- effectively shadow")
+        if oe["intents"] == 0:
+            print("  (no order intents in window -- market quiet / no signals fired; not a failure)")
+        elif oe["fills"] > 0 and oe["rejects"] < 3 and not (oe["blocked"] >= 5):
+            print(f"  GREEN  {oe['fills']} broker fills in window -- orders ARE landing")
 
     # (b) per-engine routing
     print("\n--- per-engine routing (shadow=0 => routes REAL 4001 orders) ---")

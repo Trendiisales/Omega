@@ -17,8 +17,11 @@ CHECKS (all must pass in market hours):
   [3] BRIDGE-FRESH  today's bridge L1 csv for an IBKR-ONLY canary (USDCAD) is
                     growing (mtime <= 20 min in FX hours). IBKR-only symbols are the
                     canaries precisely because no fallback can mask them.
-  [4] DOWNSTREAM    /api/fxladder_companion USDCAD ts advances (<= 26 trading-hours
-                    lag) — proves bridge -> consumer -> dispatch -> H1 roll -> book.
+  [4] DOWNSTREAM    the FX-ladder book advances (bridge -> consumer -> dispatch -> H1
+                    roll -> book). S-2026-07-24: was a single HTTP endpoint that ROTTED
+                    (all 3 ladder panels 404 in the build) -> permanent false-RED. Now
+                    classifies: API OK+fresh=PASS; endpoint 404 but state file fresh=PASS
+                    (book alive, panel gone); API server unreachable OR state file stale=RED.
   [5] NO-FALLBACK   if [3] fresh but [2] fails => "PRIMARY DOWN — RUNNING ON
                     FALLBACK" (the exact silent state this test exists to kill).
   [6] BIGCAP-CONSUMER  the bigcap L1 bridge (:7784) heartbeat shows consumer=Y — the
@@ -27,15 +30,24 @@ CHECKS (all must pass in market hours):
                     mimic ladder silently stops firing (S-2026-07-16 root cause: the
                     Omega service env was missing OMEGA_BIGCAP_BRIDGE=1 — the SAME
                     missing-env failure class as [1], for a bridge nothing guarded).
+  [7] ORDER-ROUTE   OUTCOME (S-2026-07-24): do live orders actually REACH THE BROKER? The
+                    feed path is worthless if the exec socket (:4001, SEPARATE from the
+                    :9701 market-data bridge) is down. RED on an [IBKR-EXEC] reject storm
+                    (201/460/10289), a BLOCK storm ('not connected' + 0 fills), or intents-
+                    sent-but-0-fills. Caught the 2026-07-24 disconnected-exec state that ran
+                    all day with [1]-[6] GREEN. SKIP when no intents fired (quiet market).
 
 Exit 0 GREEN / 2 RED. Run from SessionStart hook + Mac cron (30 min, notification
 on RED via install_feedpath_cron.sh). FX weekend (Sat/Sun UTC + Fri>=22 UTC) skips
 freshness checks honestly (reports SKIP, not PASS).
 """
+import base64
 import datetime
 import json
+import re
 import subprocess
 import sys
+import urllib.error
 import urllib.request
 
 VPS = "omega-new"
@@ -81,6 +93,62 @@ def ssh(cmd, timeout=25):
         return r.stdout
     except Exception as e:
         return f"__SSH_ERR__ {e}"
+
+# S-2026-07-24 downstream state file: the /api/fxladder_companion HTTP endpoint was
+# UNREGISTERED in the running build (all three mimic-ladder panels 404) while the book
+# itself keeps writing this state file every bar. So the HTTP 404 was a ROTTED-PROXY
+# false-RED, not a routing break. The TRUE book-advance outcome is this file's mtime.
+FXLADDER_STATE = r"C:\Omega\fxladder_companion_state.json"
+
+def state_file_age_min(path):
+    """Age (minutes) of an on-box file's last-write, via dir (quoting-proof over ssh).
+    Returns float minutes, or None if the file is missing/unreadable."""
+    din = ssh("dir " + path + " 2>nul")
+    for ln in din.splitlines():
+        parts = ln.split()
+        if len(parts) >= 4 and (parts[-1].endswith(".json") or parts[-1].endswith(".csv")):
+            try:
+                ampm = parts[2] if parts[2] in ("AM", "PM") else ""
+                tstr = parts[1] + ((" " + ampm) if ampm else "")
+                fmt = "%m/%d/%Y %I:%M %p" if ampm else "%m/%d/%Y %H:%M"
+                mt = datetime.datetime.strptime(parts[0] + " " + tstr, fmt).replace(
+                    tzinfo=datetime.timezone.utc)
+                return (datetime.datetime.now(datetime.timezone.utc) - mt).total_seconds() / 60.0
+            except Exception:
+                return None
+    return None
+
+def exec_order_health():
+    """OUTCOME: are LIVE orders actually landing at the broker? The whole feed path is
+    pointless if the exec socket is down and every order blocks. S-2026-07-24: the IBKR
+    execution socket dropped and EVERY NAS100 order was BLOCKED 'not connected' (0 fills)
+    all day while feeds (this test's [1]-[6]) stayed GREEN — the market-data bridge (:9701)
+    is a SEPARATE socket from the exec broker socket (:4001). This is the 'to the point
+    orders can route' end-to-end check. Reads a recent window of the live stdout log for
+    [IBKR-EXEC] placed/fill/reject/blocked. Returns dict or None."""
+    ps = (r"$f='C:\Omega\logs\omega_service_stdout.log'; "
+          r"$s = Get-Content $f -Tail 4000 -ErrorAction SilentlyContinue; "
+          r"if (-not $s) { Write-Output 'EXEC UNREADABLE'; exit } "
+          r"$placed  = ($s | Select-String -Pattern 'IBKR-EXEC.*\(eng=').Count; "
+          r"$fills   = ($s | Select-String -SimpleMatch '[IBKR-EXEC] FILL ').Count; "
+          r"$rejects = ($s | Select-String -Pattern 'IBKR-EXEC. err (201|460|10289)').Count; "
+          r"$blocked = ($s | Select-String -SimpleMatch '[IBKR-EXEC] BLOCKED').Count; "
+          r"$rl = ($s | Select-String -SimpleMatch '[IBKR-EXEC] BLOCKED' | Select-Object -Last 1).Line; "
+          r"Write-Output ('EXEC placed=' + $placed + ' fills=' + $fills + ' rejects=' + $rejects + "
+          r"' blocked=' + $blocked + ' last=' + $rl)")
+    b64 = base64.b64encode(ps.encode("utf-16-le")).decode()
+    out = ssh("powershell -NoProfile -EncodedCommand " + b64, timeout=40)
+    m = re.search(r'EXEC placed=(\d+) fills=(\d+) rejects=(\d+) blocked=(\d+)(?: last=(.*))?', out)
+    if not m:
+        return None
+    reason = ""
+    if m.group(5):
+        rm = re.search(r'--\s*(.+)$', m.group(5).strip())
+        reason = rm.group(1).strip() if rm else m.group(5).strip()
+    d = dict(placed=int(m.group(1)), fills=int(m.group(2)),
+             rejects=int(m.group(3)), blocked=int(m.group(4)), reason=reason)
+    d["intents"] = d["placed"] + d["blocked"]
+    return d
 
 def fx_market_open(now=None):
     # FX week = Sun 17:00 -> Fri 17:00 America/New_York (5pm NY close, DST-aware).
@@ -180,19 +248,52 @@ def main():
             bridge_fresh = False
             rec("BRIDGE-FRESH", False, f"{CANARY_L1} L1 csv missing for {today} — bridge not subscribed/running")
 
-    # [4] downstream book advance
-    try:
-        with urllib.request.urlopen(f"{DESK}/api/fxladder_companion", timeout=10) as r:
-            j = json.load(r)
-        ts = next((p.get("ts", 0) for p in j.get("pairs", []) if p.get("pair") == LADDER_PAIR), 0)
-        lag_h = (datetime.datetime.now(datetime.timezone.utc).timestamp() - ts) / 3600.0
-        if not open_now:
-            rec("DOWNSTREAM", True, f"{LADDER_PAIR} ladder ts lag {lag_h:.0f}h (weekend) ", skip=True)
+    # [4] downstream book advance. S-2026-07-24 rewrite: the HTTP endpoint alone was a
+    # ROTTED PROXY — /api/fxladder_companion (and the other two ladder panels) 404 in the
+    # running build while the book's state file keeps advancing, so the old check sat
+    # PERMANENTLY false-RED on a 404 that does NOT block routing (a shadow display panel).
+    # A monitor that cries wolf gets ignored. Now we classify honestly:
+    #   * HTTP endpoint OK + ts fresh          -> PASS (full chain proven via API)
+    #   * HTTP 404/error BUT state file fresh   -> PASS (book IS advancing; endpoint just
+    #                                              unregistered in this build) + note it
+    #   * desk/API server unreachable (refused/timeout, NOT a 404) -> RED (infra down)
+    #   * endpoint down AND state file stale/missing -> RED (book genuinely stalled)
+    # The genuine ROUTING-block detection now lives in [7] ORDER-ROUTE (exec socket),
+    # which is where the operator's "to the point orders can route" concern truly belongs.
+    if not open_now:
+        rec("DOWNSTREAM", True, "FX closed (weekend) — book-advance not assessable", skip=True)
+    else:
+        http_lag_h, http_err, api_down = None, None, False
+        try:
+            with urllib.request.urlopen(f"{DESK}/api/fxladder_companion", timeout=10) as r:
+                j = json.load(r)
+            ts = next((p.get("ts", 0) for p in j.get("pairs", []) if p.get("pair") == LADDER_PAIR), 0)
+            http_lag_h = (datetime.datetime.now(datetime.timezone.utc).timestamp() - ts) / 3600.0
+        except urllib.error.HTTPError as e:
+            http_err = f"HTTP {e.code}"           # server is UP, this endpoint is gone (e.g. 404)
+        except Exception as e:
+            api_down = True; http_err = str(e)     # connection refused / timeout = server DOWN
+
+        if http_lag_h is not None:
+            ok = http_lag_h <= 26
+            rec("DOWNSTREAM", ok, f"{LADDER_PAIR} ladder last-bar lag {http_lag_h:.1f}h (<=26h) via API "
+                                  f"— full chain bridge->consumer->H1->book")
+        elif api_down:
+            rec("DOWNSTREAM", False, f"desk/API server ({DESK}) UNREACHABLE ({http_err}) — "
+                                     f"desk infra down, downstream unverifiable")
         else:
-            ok = lag_h <= 26
-            rec("DOWNSTREAM", ok, f"{LADDER_PAIR} ladder last-bar lag {lag_h:.1f}h (<=26h) — full chain bridge->consumer->H1->book")
-    except Exception as e:
-        rec("DOWNSTREAM", False, f"ladder api unreachable: {e}")
+            # endpoint 404'd but the server is up: fall back to the TRUE book-advance
+            # outcome = the state file's mtime on the box (un-proxied by the HTTP panel).
+            age = state_file_age_min(FXLADDER_STATE)
+            if age is None:
+                rec("DOWNSTREAM", False, f"fxladder endpoint {http_err} AND state file missing/unreadable "
+                                         f"— book genuinely stalled")
+            elif age <= 90:
+                rec("DOWNSTREAM", True, f"fxladder endpoint {http_err} (panel unregistered in build) but "
+                                        f"state file fresh ({age:.0f}min) — book IS advancing; feed->book chain OK")
+            else:
+                rec("DOWNSTREAM", False, f"fxladder endpoint {http_err} AND state file STALE ({age:.0f}min) "
+                                         f"— book stalled")
 
     # [5] the silent-fallback state itself
     if open_now and bridge_fresh and not consumer_ok:
@@ -233,6 +334,34 @@ def main():
             else "bigcap bridge :7784 consumer=N — binary NOT consuming; the mimic LADDER is BLIND (live-confirm "
                  "gate starved -> opens ZERO legs) and the daily-close writer is starved. Check OMEGA_BIGCAP_BRIDGE=1 "
                  "in the Omega service env + single bridge proc.")
+
+    # [7] ORDER-ROUTE — the OUTCOME the whole feed path exists to enable: do live orders
+    #     actually REACH THE BROKER? A perfect feed is worthless if the exec socket is down.
+    #     S-2026-07-24: [1]-[6] all GREEN while the IBKR EXEC socket (:4001, a SEPARATE socket
+    #     from the :9701 market-data bridge) was dropped and EVERY order blocked 'not
+    #     connected' — signals fired into a dead path, 0 fills, all day, unseen. This is the
+    #     "verify end-to-end to the point orders can route" check. Not market-gated on the
+    #     feed window: if intents fired at all and none landed, that is a real failure. A
+    #     quiet window (0 intents) can't fail -> SKIP so we never false-RED off-hours.
+    oe = exec_order_health()
+    if oe is None:
+        rec("ORDER-ROUTE", True, "exec stdout log unreadable — order-routing outcome not assessable", skip=True)
+    elif oe["rejects"] >= 3:
+        rec("ORDER-ROUTE", False, f"REJECT STORM: {oe['rejects']} IBKR order rejects (201/460/10289) — "
+                                  f"orders bouncing off a broker filter, NOT filling (the LOT_SIZE-storm class)")
+    elif oe["blocked"] >= 5 and oe["fills"] == 0:
+        rec("ORDER-ROUTE", False, f"BLOCK STORM: {oe['blocked']} orders BLOCKED pre-send (reason: "
+                                  f"{oe['reason'] or '?'}) + 0 fills — exec socket down: every signal fires "
+                                  f"into a dead path, NOTHING trades (feeds green, orders don't route)")
+    elif oe["placed"] >= 3 and oe["fills"] == 0:
+        rec("ORDER-ROUTE", False, f"ZERO-FILL: {oe['placed']} orders sent to broker, 0 fills — effectively "
+                                  f"SHADOW despite live feed path")
+    elif oe["intents"] == 0:
+        rec("ORDER-ROUTE", True, "no order intents in window (market quiet / no signals) — routing not exercised",
+            skip=True)
+    else:
+        rec("ORDER-ROUTE", True, f"{oe['fills']} broker fills in window (placed={oe['placed']} "
+                                 f"blocked={oe['blocked']} rejects={oe['rejects']}) — orders ARE landing")
 
     hdr = "FEED-PATH SELFTEST " + ("RED — PRIMARY FEED PATH BROKEN, fix before trusting any FX/MGC signal"
                                     if red else "GREEN — primary IBKR path live end-to-end")
