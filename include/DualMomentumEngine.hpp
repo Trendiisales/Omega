@@ -49,6 +49,15 @@ public:
         int    lb_abs    = 251;
         int    rebal_d   = 10;
         double stop_pct  = 20.0;   // per-name from entry
+        // S-2026-07-23 PROFIT-LOCK (operator "cannot give back so much profit"; certified
+        // sweep scratchpad dualmom_gb_final.py, 48 cells + honest ordering): trail
+        // g10/arm5/STAY-OUT = Sharpe 1.66->1.86, mdd 29.8->16.5 (-45%), 2022 -11.8->-7.6,
+        // per-trade giveback surrender -31%, both WF+, 16bp-stress identical, wide g10-g15
+        // plateau. STAY-OUT is LOAD-BEARING: re-entering after a trail-out drives mdd to
+        // 34-38% (WORSE than no trail). Alt frontier g20/arm0 (Sharpe 1.91, keeps 92% of
+        // total) available by config. trail_g_pct=0 disables.
+        double trail_g_pct   = 10.0;  // close when px < peak*(1-g/100), armed only after...
+        double trail_arm_pct = 5.0;   // ...fav >= +arm% from entry
         double voltgt    = 0.25;   // annualized; scales held-name count
         double lot       = 1.0;    // shares per name (proving size)
         std::string engine_tag = "DualMom";
@@ -148,8 +157,19 @@ public:
             // refused slot silently sits empty until the next rebalance
             // (ALAB/SNOW 2026-07-23: refusal 17:05Z, deploy restart 17:18Z wiped it).
             if (s == "RETRY") { std::string r; if (f >> r) retry_.insert(r); continue; }
+            if (s == "STAYOUT") { std::string r; if (f >> r) stayout_.insert(r); continue; }
             if (!(f >> e >> ts >> tok)) break;
             Pos p; p.entry = e; p.entry_ts = (int64_t)ts;
+            // format migration: NEW rows carry a numeric peak before the token; OLD 4-field
+            // rows have the token here. A fully-numeric field = peak, then read the token.
+            char* endp = nullptr;
+            double maybe_peak = std::strtod(tok.c_str(), &endp);
+            if (endp && *endp == '\0' && !tok.empty()) {
+                p.peak = maybe_peak;
+                if (!(f >> tok)) break;
+            } else {
+                p.peak = e;                       // old row: seed peak at entry
+            }
             p.token = (tok == "-") ? std::string() : tok;
             held_[s] = p;
         }
@@ -159,7 +179,7 @@ public:
     }
 
 private:
-    struct Pos { double entry = 0; int64_t entry_ts = 0; std::string token; };
+    struct Pos { double entry = 0; int64_t entry_ts = 0; double peak = 0; std::string token; };
     std::map<std::string, std::deque<double>> hist_;
     std::deque<double> spy_;
     std::map<std::string, Pos> held_;
@@ -168,6 +188,7 @@ private:
     double last_book_val_ = 0;
     int day_no_ = 0;
     std::set<std::string> retry_;   // broker-refused buys awaiting per-row re-attempt
+    std::set<std::string> stayout_; // trailed-out names: NO re-buy until a rebalance deselects them once
     std::mutex mu_;
     OpenFn open_fn_; CloseFn close_fn_; GateFn gate_fn_; LedgerFn ledger_fn_;
 
@@ -204,6 +225,20 @@ private:
                 it = held_.erase(it);
             } else ++it;
         }
+        // PROFIT-LOCK trail (S-23 certified g10/arm5/stayout; runs after the stop, every day)
+        if (cfg.trail_g_pct > 0) {
+            for (auto it = held_.begin(); it != held_.end();) {
+                double px = last_px_(it->first);
+                auto& p = it->second;
+                if (px > p.peak) p.peak = px;
+                const bool armed = p.peak >= p.entry * (1.0 + cfg.trail_arm_pct / 100.0);
+                if (px > 0 && armed && px < p.peak * (1.0 - cfg.trail_g_pct / 100.0)) {
+                    close_name_(it->first, p, px, ts, "TRAIL_G10");
+                    stayout_.insert(it->first);   // LOAD-BEARING: no re-buy until deselected once
+                    it = held_.erase(it);
+                } else ++it;
+            }
+        }
         // gate exit any day
         if (!gate_on() && !held_.empty()) {
             for (auto& [s, p] : held_) close_name_(s, p, last_px_(s), ts, "REGIME_CASH");
@@ -223,7 +258,7 @@ private:
                     tok = open_fn_(s, true, cfg.lot, px);
                     if (tok.empty()) { ++it; continue; }   // still refused, keep retrying
                 }
-                Pos p; p.entry = px; p.entry_ts = ts; p.token = tok;
+                Pos p; p.entry = px; p.entry_ts = ts; p.peak = px; p.peak = px; p.token = tok;
                 held_[s] = p;
                 std::printf("[DUALMOM] BUY %s @%.2f (RETRY after refusal) tok=%s\n",
                             s.c_str(), px, tok.empty() ? "(book-only)" : tok.c_str());
@@ -258,6 +293,10 @@ private:
         std::sort(sc.rbegin(), sc.rend());
         std::set<std::string> tgt;
         for (int i = 0; i < keff; ++i) tgt.insert(sc[i].second);
+        // stay-out release: a rebalance that DESELECTS a trailed-out name restores its
+        // eligibility (it can be bought at a LATER rebalance that selects it again)
+        for (auto it = stayout_.begin(); it != stayout_.end();)
+            it = tgt.count(*it) ? std::next(it) : stayout_.erase(it);
         // sells
         for (auto it = held_.begin(); it != held_.end();) {
             if (!tgt.count(it->first)) {
@@ -268,6 +307,7 @@ private:
         // buys
         for (const auto& s : tgt) {
             if (held_.count(s)) continue;
+            if (stayout_.count(s)) continue;   // trailed out + still selected -> blocked
             double px = last_px_(s); if (px <= 0) continue;
             Pos p; p.entry = px; p.entry_ts = ts;
             if (cfg.live_book && open_fn_) {
@@ -298,8 +338,9 @@ private:
           f << day_no_ << "\n";
           for (const auto& [s, p] : held_)
               f << s << " " << p.entry << " " << (long long)p.entry_ts << " "
-                << (p.token.empty() ? "-" : p.token) << "\n";
-          for (const auto& s : retry_) f << "RETRY " << s << "\n"; }
+                << p.peak << " " << (p.token.empty() ? "-" : p.token) << "\n";
+          for (const auto& s : retry_) f << "RETRY " << s << "\n";
+          for (const auto& s : stayout_) f << "STAYOUT " << s << "\n"; }
 #if defined(_WIN32)
         std::remove(cfg.state_path.c_str());
 #endif

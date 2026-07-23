@@ -3346,8 +3346,18 @@ static void init_engines(const std::string& cfg_path)
                 // never quote 1.86/21.5 as this engine's cert. Candidate upgrade needing its own
                 // cert: K5/rel63/rebal10 + gross-scaling overlay = 1.90/21.0/2022 -6.1.
                 printf("[OMEGA-INIT][SEED] DualMomentum wired: K8/rel63/abs251/rebal10 SPY-200 cash gate, "
-                       "stop20/name + volTgt25-keff (cert Sharpe 1.66 mdd 29.9 name-count mechanism; ctrl 1.34), "
-                       "LIVE 1 share/name, deploy-forward\n");
+                       "stop20/name + volTgt25-keff + TRAIL g10/arm5/stayout (cert Sharpe 1.86 mdd 16.5 "
+                       "2022 -7.6 gbcut -31%%; base 1.66/29.9; ctrl 1.34), LIVE 1 share/name, deploy-forward\n");
+                // PROFIT-LOCK boot gate (operator mandate feedback-profit-lock-mandatory;
+                // clears protection_selftest FAIL[9] for this book): loud armed line, and a
+                // loud VIOLATION if the certified trail is ever config-disabled.
+                if (dm.cfg.trail_g_pct > 0)
+                    printf("[PROFIT-LOCK-GATE] DualMom armed: trail g=%.0f%% arm=+%.0f%% stayout "
+                           "(certified S-23; giveback surrender -31%%)\n",
+                           dm.cfg.trail_g_pct, dm.cfg.trail_arm_pct);
+                else
+                    printf("[PROFIT-LOCK-GATE] VIOLATION: DualMom trail DISABLED (trail_g_pct=0) -- "
+                           "profit-lock mandate unmet on a live book\n");
                 fflush(stdout);
             }
 
