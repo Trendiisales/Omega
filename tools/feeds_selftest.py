@@ -67,6 +67,40 @@ TASK_RESULT_PASS_CODES = {0, 267009}
 # scheduler recomputing it, or while a run is in flight — allow this much slack before RED.
 TASK_OVERDUE_SLACK_MIN = 120
 
+# ── LIVE INTRADAY PRICE-TICK freshness (S-2026-07-24) ─────────────────────────────
+# THE BLIND SPOT THIS CLOSES: the FEEDS table above checks DAILY bar files
+# (2yr_XAUUSD_daily.csv, DJ30/SPX/NDX daily) at a 2-TRADING-DAY threshold. On
+# 2026-07-23 the IB Gateway JVM HUNG for 2h13min — ports still listened, farm status
+# frozen-green — so NO ticks flowed and gold+NAS prices froze mid-session, yet every
+# daily-file check stayed FRESH (yesterday's bar is <2td old) and feeds_selftest read
+# GREEN the whole outage. The live gold/index engines consume the INTRADAY tick, not
+# the daily bar. This adds a direct age-in-MINUTES check on the per-symbol L1 tick CSV
+# the desk actually consumes (logs\ibkr_l2\ibkr_l1_<SYM>_<utc-date>.csv, written by the
+# IBKR L1 recorder off the same gateway), so a mid-session feed death REDs within
+# minutes — the same fix healthcheck.ps1 got for XAUUSD (Fix A, 312ba57d), extended
+# here to every continuously-traded symbol so a whole-gateway hang OR a single-symbol
+# subscription death is caught. All age math is computed VPS-side (skew-free).
+#
+# Symbols: only ~24x5 continuously-traded instruments a LIVE book consumes AND that
+# share the one IBKR gateway (so any one is a valid canary for a gateway hang). Gold
+# (XAUUSD) is the live-money intraday engine; ES/EURUSD/GBPUSD are continuous feeds off
+# the same gateway. EU-cash symbols (DAX/ESTX50) are EXCLUDED — they stop ticking at the
+# European close (~15:30 UTC) and would false-RED all US-afternoon.
+LIVE_INTRADAY_L1_SYMS = ["XAUUSD", "ES", "EURUSD", "GBPUSD"]
+LIVE_INTRADAY_L1_DIR = r"C:\Omega\logs\ibkr_l2"
+# In-session a live tick feed refreshes every few seconds; 20min of silence during an
+# open, non-break session = the feed is dead (healthcheck uses 10min on a fixed cadence;
+# feeds_selftest runs ad-hoc at SessionStart, so a little more slack avoids flapping while
+# still alerting a 2h+ hang ~6x faster than one poll interval).
+INTRADAY_L1_MAX_AGE_MIN = 20
+# Daily maintenance break: CME futures (ES) break 21:00-22:00 UTC; spot gold (XAUUSD)
+# breaks 22:00-23:00 UTC. Across 20:45-23:15 UTC a stale L1 file is EXPECTED (no ticks),
+# so enforcement is skipped in that window — else it false-REDs every evening. A hang
+# OUTSIDE the break (the 07:35 UTC 2h13min incident) is still caught. Weekend is handled
+# by the shared market_closed_weekend() gate.
+INTRADAY_BREAK_START_MIN = 20 * 60 + 45   # 20:45 UTC
+INTRADAY_BREAK_END_MIN   = 23 * 60 + 15   # 23:15 UTC
+
 # S-2026-07-18ah: WATCHDOG RELAUNCH-LOOP detector (operator ask after the 07-18 incident:
 # gateway_watchdog probed paper port 4002 while the gateway ran LIVE on 4001, so every
 # 5-min tick relaunched IBC against a healthy session for ~20min with NO alarm — the
@@ -615,6 +649,61 @@ def vps_stock_book_health() -> tuple[str, str]:
     return ("PASS", f"feed row {d} (<=1td behind {ltd}), {cols} name-cols")
 
 
+def intraday_feed_in_break(now_utc: dt.datetime) -> bool:
+    """True during the daily futures/gold maintenance break (20:45-23:15 UTC) when the
+    monitored L1 tick files legitimately stop refreshing -> skip enforcement (see the
+    LIVE_INTRADAY_L1 block above). Weekend closure is handled separately by
+    market_closed_weekend()."""
+    m = now_utc.hour * 60 + now_utc.minute
+    return INTRADAY_BREAK_START_MIN <= m < INTRADAY_BREAK_END_MIN
+
+
+def vps_intraday_l1_ages(syms: list[str], now_utc: dt.datetime) -> dict[str, float] | None:
+    """ONE batched `ssh omega-new` call. Returns {sym: age_min} for the live INTRADAY
+    L1 tick file each engine consumes, computed ON the VPS (skew-free). age is measured
+    off the NEWEST of today's and yesterday's per-symbol file so a UTC-midnight rollover
+    (new dated file not yet created for the first tick of the day) does not false-RED.
+    A symbol whose file is absent both days => very large age (REDs against the cap).
+    None if the ssh call fails entirely (=> caller REDs: an unverifiable live tick is
+    not GREEN). ssh MUST start literally `ssh omega-new` (classifier rule)."""
+    today = now_utc.strftime("%Y-%m-%d")
+    yest = (now_utc - dt.timedelta(days=1)).strftime("%Y-%m-%d")
+    # For each symbol emit "<SYM>\t<age_min>" using the newest LastWriteTime among the two
+    # candidate dated files. [char]9 tab + no pipes = survives ssh->cmd.exe (same discipline
+    # as vps_live_dump_ages). -EncodedCommand keeps it immune to every quoting layer.
+    lines = [r"$d='" + LIVE_INTRADAY_L1_DIR + r"';$now=Get-Date;"]
+    for s in syms:
+        lines.append(
+            f"$c=@();"
+            f"$a=Join-Path $d 'ibkr_l1_{s}_{today}.csv';if(Test-Path $a){{$c+=(Get-Item $a)}};"
+            f"$b=Join-Path $d 'ibkr_l1_{s}_{yest}.csv';if(Test-Path $b){{$c+=(Get-Item $b)}};"
+            f"if($c.Count -gt 0){{"
+            f"$n=($c|Sort-Object LastWriteTime -Descending)[0];"
+            f"$m=[math]::Round((($now-$n.LastWriteTime).TotalMinutes),1);"
+            f"Write-Output ('{s}'+[char]9+$m)}}"
+            f"else{{Write-Output ('{s}'+[char]9+999999)}};"
+        )
+    ps = "".join(lines)
+    enc = base64.b64encode(ps.encode("utf-16-le")).decode()
+    try:
+        r = subprocess.run(["ssh", VPS_HOST, "powershell", "-NoProfile", "-EncodedCommand", enc],
+                           capture_output=True, text=True, timeout=45)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if r.returncode != 0:
+        return None
+    ages: dict[str, float] = {}
+    for ln in r.stdout.splitlines():
+        parts = ln.strip().split("\t")
+        if len(parts) != 2:
+            continue
+        try:
+            ages[parts[0].strip()] = float(parts[1].strip())
+        except ValueError:
+            continue
+    return ages if ages else None
+
+
 # ── SHARED FEED THRESHOLD REGISTRY — SINGLE SOURCE OF TRUTH (S-2026-07-14 sweep item 9) ──
 # tools/data_health_monitor.py monitors the SAME files as the FEEDS table below. The two
 # tables were hand-synced duplicates and drifted CONTRADICTORY (this file: 2 trading-days;
@@ -934,6 +1023,36 @@ def main() -> int:
     if stock_row[0] != "PASS":
         live_red += 1
 
+    # ── LIVE INTRADAY tick freshness (S-2026-07-24: the 2h13min gateway-hang blind spot) ──
+    # The daily-file rows above stay FRESH through an intraday feed death; this checks the
+    # per-symbol L1 tick the live engines actually consume, age in MINUTES, session-aware.
+    # Skipped on weekend + the 20:45-23:15 UTC maintenance break (ticks legitimately stop);
+    # a mid-session hang REDs within INTRADAY_L1_MAX_AGE_MIN.
+    intraday_rows: list[tuple[str, str, str]] = []   # (sym, status, detail)
+    if market_closed_weekend(now_utc):
+        for s in LIVE_INTRADAY_L1_SYMS:
+            intraday_rows.append((s, "SKIP", "weekend (market closed) -- intraday tick not enforced"))
+    elif intraday_feed_in_break(now_utc):
+        for s in LIVE_INTRADAY_L1_SYMS:
+            intraday_rows.append((s, "SKIP", "daily maintenance break 20:45-23:15 UTC -- ticks paused, not enforced"))
+    else:
+        l1_ages = vps_intraday_l1_ages(LIVE_INTRADAY_L1_SYMS, now_utc)
+        if l1_ages is None:
+            live_red += len(LIVE_INTRADAY_L1_SYMS)
+            for s in LIVE_INTRADAY_L1_SYMS:
+                intraday_rows.append((s, "RED", f"VPS UNREACHABLE (ssh {VPS_HOST} failed) -- live tick unverifiable"))
+        else:
+            for s in LIVE_INTRADAY_L1_SYMS:
+                age_min = l1_ages.get(s)
+                if age_min is None:
+                    live_red += 1
+                    intraday_rows.append((s, "RED", "no age returned -- L1 recorder path missing"))
+                elif age_min > INTRADAY_L1_MAX_AGE_MIN:
+                    live_red += 1
+                    intraday_rows.append((s, "RED", f"age={age_min:.0f}min > {INTRADAY_L1_MAX_AGE_MIN}min in-session -- LIVE TICK FROZEN (IBKR gateway/bridge hung?)"))
+                else:
+                    intraday_rows.append((s, "PASS", f"age={age_min:.1f}min (max {INTRADAY_L1_MAX_AGE_MIN}min) live tick flowing"))
+
     # ── VPS producer scheduled-task health (catches a silent DISABLE at the source) ──
     # Runs every day incl. weekend: a task Disabled on Saturday is still a Monday-morning
     # stale feed. This is the guard the operator asked for after the 07-13 StockMoverFeed
@@ -982,6 +1101,8 @@ def main() -> int:
         if exec_row:
             print(f"  {exec_row[0]:7} [vps-exec] {'ibkr_exec_status':24} {exec_row[1]}")
         print(f"  {stock_row[0]:7} [vps-stock] {'stock_daily_book':24} {stock_row[1]}")
+        for sym, istat, idetail in intraday_rows:
+            print(f"  {istat:7} [vps-l1tik] {('ibkr_l1_' + sym):24} {idetail}")
         for tname, tstat, tdetail in task_rows:
             print(f"  {tstat:7} [vps-task ] {tname:24} {tdetail}")
         for wname, wstat, wdetail in wdog_rows:

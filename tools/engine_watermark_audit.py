@@ -39,18 +39,38 @@ from feeds_selftest import last_trading_day, trading_days_between, market_closed
 
 VPS = "omega-new"                       # LIVE box (never omega-vps/185); classifier needs literal prefix
 VPS_OMEGA = "C:/Omega"
+VPS_STDOUT_LOG = "C:/Omega/logs/omega_service_stdout.log"  # runtime stdout (boot self-test lives here)
 MAX_LAG_TD = 1                          # RED once an enabled engine is >=1 trading day behind the feed
 
 # engine -> (lastseen_file under C:/Omega, feed CSV under C:/Omega, ENABLED)
 # ENABLED mirrors engine_init.hpp: AULAD + bigcap2pct are #if 0 (S-2026-07-16l) => frozen-by-design.
 # When an engine is re-enabled or a new polled engine ships, ADD it here (that is the gate:
 # a live polled book with no watermark-audit entry is the silent-staleness hole this prevents).
+# NB: ONLY the StockDip/Turtle family persists an advancing *_lastseen.txt watermark (the S-07-08c
+# catch-up watermark). The OTHER live daily books (DualMom/DayMover7/Bigcap3G4/DualMomMimic) dedupe
+# with an in-memory cursor and persist NO processed-date file, so a file-watermark lag check is
+# structurally impossible for them without an engine change -> they are covered by the boot-
+# consumption (STARTUP-SELFTEST) check below instead. Do NOT invent a watermark row for them.
 REGISTRY = [
     # name,                 lastseen_file,                         feed_csv,                           enabled
     ("StockDip/Turtle",     "stockdipturtle_lastseen.txt",         "data/rdagent/sp500_long_close.csv", True),
     ("StockDayMoverLadder",  "stockladder_companion_lastseen.txt",  "data/rdagent/sp500_long_close.csv", False),  # #if 0 S-07-16l
     ("BigCap2pctImpulse",    "bigcap2pct_companion_lastseen.txt",   "data/rdagent/sp500_long_close.csv", False),  # #if 0 S-07-16l
 ]
+
+# S-2026-07-24 — CLOSE THE NEWLY-LIVE-ENGINE COVERAGE HOLE. These daily-close books went LIVE
+# S-2026-07-23 (disaster-stops commit aefaab73) but persist NO *_lastseen.txt, so the file-
+# watermark REGISTRY above cannot see them: if one's 15-min poller thread never started (dispatch/
+# init failure), it would silently consume NOTHING while the feed and StockDip both stay fresh, and
+# NOTHING here would flag it — the exact "a new live engine not in the watched set" failure. Each
+# calls g_engine_heartbeat.pulse(<name>) on boot + on every poll, and the boot self-test
+# (EngineHeartbeat::run_startup_self_test, 60s post-init) emits `[STARTUP-SELFTEST] silent engines:
+# ...` naming any live_required engine that NEVER pulsed = its poller never ran = it will never
+# consume the feed. We RED a covered engine that appears in the most-recent silent list. This is the
+# deterministic boot-time "engine actually started consuming" outcome check — no weekend/overnight
+# false-positive class (unlike raw HEARTBEAT-MISS, which fires benignly in the gap between daily
+# rows). Exact names must match the register_engine("<name>", ...) literals in engine_init.hpp.
+HEARTBEAT_LIVE_ENGINES = ["DualMom", "DayMover7", "Bigcap3G4", "DualMomMimic"]
 
 
 def _ssh_probe() -> dict[str, str] | None:
@@ -74,6 +94,18 @@ def _ssh_probe() -> dict[str, str] | None:
             f"if($last){{$d=($last -split ',')[0]}}}};"
             f"Write-Output ('feed:{fd}' + [char]9 + $d);"
         )
+    # Boot-consumption verdict for the newly-live daily books (no watermark file): the most-recent
+    # `[STARTUP-SELFTEST] silent engines: A, B, ...` line names every live_required engine whose
+    # poller never pulsed at boot. Emit it verbatim (or empty if none) for Python to match names.
+    ps_lines.append(
+        f"$sl='';$m=Select-String -Path '{VPS_STDOUT_LOG}' -Pattern 'STARTUP-SELFTEST\\] silent engines:' "
+        f"-ErrorAction SilentlyContinue;if($m){{$sl=$m[-1].Line.Trim()}};"
+        f"Write-Output ('selftest_silent' + [char]9 + $sl);"
+        # also confirm the self-test ran at all (last summary line) so a MISSING log != false GREEN
+        f"$su='';$m2=Select-String -Path '{VPS_STDOUT_LOG}' -Pattern 'STARTUP-SELFTEST\\] live_required' "
+        f"-ErrorAction SilentlyContinue;if($m2){{$su=$m2[-1].Line.Trim()}};"
+        f"Write-Output ('selftest_ran' + [char]9 + $su);"
+    )
     ps = "".join(ps_lines)
     # -EncodedCommand (UTF-16LE base64) so the PS survives ssh + the remote shell verbatim —
     # passing raw $/;/quotes through subprocess+ssh mangles them (they get re-parsed remotely).
@@ -159,6 +191,32 @@ def main() -> int:
             red += 1
         else:
             print(f"  PASS [{name:22}] current: wm={wm_d} feed={feed_d} (lag {lag}td, ltd={ltd}).")
+
+    # ── Boot-consumption check for the newly-live daily books (no watermark file) ──────────
+    # RED a covered live engine that the most-recent boot self-test marked SILENT (its poller
+    # never pulsed = it never started consuming the feed). This closes the "new live engine not
+    # in the watched set" hole for DualMom/DayMover7/Bigcap3G4/DualMomMimic.
+    silent_line = probe.get("selftest_silent", "")
+    ran_line = probe.get("selftest_ran", "")
+    # names after the "silent engines:" prefix, comma+space separated
+    silent_names: set[str] = set()
+    if "silent engines:" in silent_line:
+        tail = silent_line.split("silent engines:", 1)[1]
+        silent_names = {t.strip() for t in tail.split(",") if t.strip()}
+    if not ran_line:
+        # self-test always runs 60s post-boot; its total absence = log unreadable/rotated ->
+        # cannot verify boot consumption. Surface as unverifiable (not a silent GREEN), not RED.
+        print(f"  INFO [{'boot-consumption':22}] no [STARTUP-SELFTEST] line in runtime log — "
+              f"boot consumption UNVERIFIABLE (log rotated?); file-watermark checks still authoritative.")
+    else:
+        for name in HEARTBEAT_LIVE_ENGINES:
+            if name in silent_names:
+                print(f"  RED  [{name:22}] LIVE but SILENT at last boot ({ran_line.split(']',1)[-1].strip()}) — "
+                      f"poller never pulsed => never consumed the feed; dispatch/init failure, no trades will book.")
+                red += 1
+            else:
+                print(f"  PASS [{name:22}] booted+pulsing (not in silent set) — poller consuming the daily feed.")
+        checked += len(HEARTBEAT_LIVE_ENGINES)
 
     if red:
         print(f"-> {red} engine(s) STALE/unverifiable. A restart ate the feed row -> no trades booked. "
