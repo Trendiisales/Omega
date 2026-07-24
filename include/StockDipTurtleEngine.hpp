@@ -779,7 +779,13 @@ private:
         std::ostringstream o;
         int64_t last_ts = 0; double tot = 0.0, tot_real = 0.0;
         for (const auto& s : syms_) { last_ts = std::max(last_ts, s.last_ts()); tot += s.book_usd(); tot_real += s.book_usd_real(); }
-        o << "{\"engine\":\"stock-dip-turtle\",\"shadow\":true,\"grade\":\"daily-close\",";
+        // shadow=false (2026-07-24 fix): this book was promoted to REAL-money live on
+        // S-2026-07-19t (engine_init "StockDip + ALL mimics trade real money") and places real
+        // orders (open_fn_/close_fn_), but this JSON label was a stale hardcoded "true" left over
+        // from its research-book origin -- it lied, making every check + reader treat a LIVE book
+        // as shadow. The desk folds usd_real directly (not gated on this flag), so the flip is
+        // PnL-neutral; it just stops the label from misreporting a live book as shadow.
+        o << "{\"engine\":\"stock-dip-turtle\",\"shadow\":false,\"grade\":\"daily-close\",";
         o.precision(0); o << std::fixed << "\"total_usd\":" << tot
                           << ",\"total_usd_real\":" << tot_real << ",\"books\":[";
         for (size_t i = 0; i < syms_.size(); ++i) { if (i) o << ","; o << syms_[i].sym_json(); }
