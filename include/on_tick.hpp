@@ -3,6 +3,7 @@
 #include <iostream>
 #include <unordered_map>
 #include <string>
+#include "broker_confirmed.hpp"  // omega::g_broker_confirmed — broker-fill gate for the register_source display path
 #include "PredictiveRanges.hpp"  // GUI predictive-range snapshot (parent-TU header; needs omega_types/omega_runtime first)
 #include "AccountingGuard.hpp"   // S-2026-06-13h independent runaway-position oversight (parent-TU header)
 #include "StallCompanion.hpp"    // giveback-clip companion zoo (native C++ port of stall_accountant.py)
@@ -1062,6 +1063,15 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                         }
                     }
                     if (dup) continue;
+                    // ── BROKER-FILL GATE (register_source path, 2026-07-24): a position
+                    //    shows on the LIVE desk ONLY if the broker actually holds the symbol.
+                    //    This is the path push_live_trade's gate MISSED — StockDip/shadow books
+                    //    leaked here (INTC/AAPL rendered as "LIVE OPEN TRADES" with no broker
+                    //    fill). Broker holds 0 for a shadow/unfilled position -> hidden. Real
+                    //    fills (execDetails/reqPositions -> g_broker_confirmed) still show.
+                    if (omega::display_broker_confirmed_only() &&
+                        !omega::g_broker_confirmed.holds(ps.symbol))
+                        continue;
                     const std::string key = ps.symbol + "|" + ps.engine;
                     int64_t first = now_s;
                     auto it = s_first_seen.find(key);
