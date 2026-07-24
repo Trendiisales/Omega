@@ -39,6 +39,7 @@
 
 #include "IbkrExec.hpp"   // omega::IbkrFill (shared, TWS-free)
 #include "broker_confirmed.hpp"   // omega::g_broker_confirmed — records real fills for the display gate
+#include "PortfolioGuard.hpp"     // omega::pg::daily_halted — B2 audit fix: daily-loss halt at the chokepoint
 
 #include <atomic>
 #include <chrono>
@@ -447,6 +448,18 @@ struct IbkrExecutionEngine : public DefaultEWrapper {
         // passes so a halt can never strand an open position (risk-reducing orders survive).
         if (external_halt_.load() && !omega::g_broker_confirmed.holds(omega_sym)) {
             std::printf("[IBKR-EXEC] BLOCKED %s -- EXTERNAL HALT active (entries only; held-symbol exits pass)\n",
+                        omega_sym.c_str());
+            std::fflush(stdout); return -1;
+        }
+        // B2 fix (2026-07-24 audit, CODE-4): DAILY-LOSS HARD HALT at the CHOKEPOINT.
+        // pg::daily_halted was only checked inside is_viable (per-engine call sites), so a
+        // book reaching place_order WITHOUT a preceding is_viable (mimic-ladder set_exec
+        // closures, direct sends) could open a NEW position through an active daily-loss
+        // halt. Gate every ENTRY here; held-symbol exits pass (same as the external halt),
+        // so the halt can never strand or block the close of an open position.
+        if (!omega::g_broker_confirmed.holds(omega_sym) &&
+            omega::pg::daily_halted(omega::pg::_pg_now_ms())) {
+            std::printf("[IBKR-EXEC] BLOCKED %s -- DAILY-LOSS HALT active (entries only; held-symbol exits pass)\n",
                         omega_sym.c_str());
             std::fflush(stdout); return -1;
         }
