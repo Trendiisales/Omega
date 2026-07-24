@@ -29,6 +29,7 @@
 // =============================================================================
 #include <string>
 #include <map>
+#include <set>
 #include <mutex>
 #include <cmath>
 #include <cctype>
@@ -78,13 +79,34 @@ struct BrokerConfirmedPositions {
     //    net fresh incrementally; the next snapshot corrects any drift (survives
     //    restart / missed fills). signed_qty>0 long, <0 short.
     std::map<std::string, double> staging;
+    std::map<std::string, int>    absent_streak_;   // canonical sym -> consecutive snapshots MISSING
+    static constexpr int          DROP_AFTER = 3;    // survive an incomplete reqPositions before dropping
     void begin_snapshot() { std::lock_guard<std::mutex> lk(m); staging.clear(); }
     void stage(const std::string& omega_sym, double signed_qty) {
         if (std::fabs(signed_qty) < 1e-9) return;
         std::lock_guard<std::mutex> lk(m);
         staging[canonical_sym(omega_sym)] = signed_qty;
     }
-    void commit_snapshot() { std::lock_guard<std::mutex> lk(m); net.swap(staging); staging.clear(); }
+    // Commit the reqPositions snapshot, but DEBOUNCE drops: a symbol held in the previous net
+    // that this snapshot did NOT report is CARRIED FORWARD for up to DROP_AFTER consecutive
+    // snapshots before being dropped. reqPositions can return an INCOMPLETE set (the BMY
+    // incident: broker-holds bounced 8->7->8, vanishing a real held position from the desk AND
+    // cancelling its native stop via positionEnd cancel-on-flat). One incomplete snapshot must
+    // not vaporize a held position; a genuine close (absent DROP_AFTER times) still drops.
+    void commit_snapshot() {
+        std::lock_guard<std::mutex> lk(m);
+        std::set<std::string> reported;                 // what reqPositions ACTUALLY reported
+        for (auto& kv : staging) reported.insert(kv.first);
+        for (auto& kv : net) {
+            if (reported.count(kv.first)) { absent_streak_[kv.first] = 0; continue; }  // reported -> fresh
+            if (++absent_streak_[kv.first] < DROP_AFTER) staging[kv.first] = kv.second; // carry forward
+            // else: absent >= DROP_AFTER consecutive snapshots -> let it drop (genuine close)
+        }
+        for (const auto& s : reported) absent_streak_[s] = 0;   // newly/again reported -> reset
+        net.swap(staging); staging.clear();
+        for (auto it = absent_streak_.begin(); it != absent_streak_.end();)  // prune dead streaks
+            (net.count(it->first) ? ++it : it = absent_streak_.erase(it));
+    }
 
     // True only when the broker actually holds a net position in this symbol.
     bool holds(const std::string& sym) {
