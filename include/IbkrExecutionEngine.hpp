@@ -118,6 +118,7 @@ struct IbkrExecutionEngine : public DefaultEWrapper {
     double                                  native_disaster_stop_pct_ = 15.0;  // % below entry
     std::map<std::string, long>             resting_stop_oid_;    // omega sym -> broker stop orderId
     std::map<std::string, Contract>         stop_contract_;       // omega sym -> contract (for cancel)
+    std::map<std::string, double>           resting_stop_qty_;    // omega sym -> qty the stop covers (CODE-5: partial-fill re-arm)
     std::map<std::string, double>           broker_avgcost_;      // omega sym -> avg entry (from reqPositions)
     std::map<std::string, Contract>         broker_contract_;     // omega sym -> contract (from reqPositions)
     std::map<std::string, double>           contract_min_tick_;   // omega sym -> minTick (contractDetails)
@@ -641,7 +642,26 @@ struct IbkrExecutionEngine : public DefaultEWrapper {
           auto a = broker_avgcost_.find(om); auto k = broker_contract_.find(om);
           if (a == broker_avgcost_.end() || k == broker_contract_.end() || a->second <= 0.0) return;
           entry = a->second; c = k->second; }
-        { std::lock_guard<std::mutex> lk(rej_mtx_); if (resting_stop_oid_.count(om)) return; }
+        // CODE-5 fix (2026-07-24 audit): re-arm if the resting stop's qty drifted from the
+        // held qty. A position filled in N partials previously kept a stop sized to the FIRST
+        // partial only (every later partial saw a stop already existed and skipped), leaving
+        // the remainder naked at the broker. Matching qty (within ~1%) => still good, return;
+        // drifted => cancel the mis-sized stop and fall through to re-arm at the held qty.
+        {
+            std::lock_guard<std::mutex> lk(rej_mtx_);
+            auto oit = resting_stop_oid_.find(om);
+            if (oit != resting_stop_oid_.end()) {
+                auto qit = resting_stop_qty_.find(om);
+                double sq = (qit != resting_stop_qty_.end()) ? qit->second : 0.0;
+                double held = std::fabs(qty);
+                if (sq > 0.0 && std::fabs(held - sq) / sq <= 0.01) return;   // stop already covers the held qty
+                if (client_) client_->cancelOrder(oit->second, OrderCancel());
+                std::printf("[IBKR-EXEC] native stop RE-ARM %s: covered qty %.0f -> held %.0f "
+                            "(partial-fill/add drift), cancel oid=%ld\n", om.c_str(), sq, held, oit->second);
+                std::fflush(stdout);
+                resting_stop_oid_.erase(oit); resting_stop_qty_.erase(om); stop_contract_.erase(om);
+            }
+        }
         const bool is_long = qty > 0.0;
         Order so;
         so.action        = is_long ? "SELL" : "BUY";                 // close side
@@ -667,7 +687,7 @@ struct IbkrExecutionEngine : public DefaultEWrapper {
         long soid = next_id_.fetch_add(1);
         client_->placeOrder(soid, c, so);
         { std::lock_guard<std::mutex> lk(rej_mtx_);
-          resting_stop_oid_[om] = soid; stop_contract_[om] = c; }
+          resting_stop_oid_[om] = soid; stop_contract_[om] = c; resting_stop_qty_[om] = std::fabs(qty); }
         std::printf("[IBKR-EXEC] NATIVE STOP (held) %s %s STP @ %.2f qty=%.0f oid=%ld "
                     "(broker-side GTC, survives Omega death)\n",
                     om.c_str(), so.action.c_str(), so.auxPrice, std::fabs(qty), soid);
@@ -694,7 +714,7 @@ struct IbkrExecutionEngine : public DefaultEWrapper {
             long oid;
             { std::lock_guard<std::mutex> lk(rej_mtx_);
               oid = resting_stop_oid_[sym];
-              resting_stop_oid_.erase(sym); stop_contract_.erase(sym); }
+              resting_stop_oid_.erase(sym); stop_contract_.erase(sym); resting_stop_qty_.erase(sym); }
             if (client_) client_->cancelOrder(oid, OrderCancel());
             std::printf("[IBKR-EXEC] native stop cancelled %s oid=%ld (broker flat)\n", sym.c_str(), oid);
             std::fflush(stdout);
@@ -728,7 +748,7 @@ struct IbkrExecutionEngine : public DefaultEWrapper {
         { std::lock_guard<std::mutex> lk(rej_mtx_);
           auto it = resting_stop_oid_.find(omega_sym);
           if (it != resting_stop_oid_.end()) { if (client_) client_->cancelOrder(it->second, OrderCancel());
-                                               resting_stop_oid_.erase(it); stop_contract_.erase(omega_sym); } }
+                                               resting_stop_oid_.erase(it); stop_contract_.erase(omega_sym); resting_stop_qty_.erase(omega_sym); } }
         Order o;
         o.action        = (net > 0.0) ? "SELL" : "BUY";
         o.orderType     = "MKT";
@@ -1005,6 +1025,7 @@ struct IbkrExecutionEngine : public DefaultEWrapper {
                     if (it->second == (long)id) {
                         naked_sym = it->first;
                         stop_contract_.erase(it->first);
+                        resting_stop_qty_.erase(it->first);
                         resting_stop_oid_.erase(it);
                         break;
                     }
