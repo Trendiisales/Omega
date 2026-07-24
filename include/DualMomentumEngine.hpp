@@ -214,18 +214,20 @@ public:
     // not an early-boot empty one), so it only clears genuinely-unheld names, never a real
     // holding (all real DualMom names appear in g_broker_confirmed). No close booked (nothing
     // filled = no PnL). Returns count cleared. Wired into the central reject/reconcile path.
-    int reconcile_phantoms(const char* why) {
-        if (omega::g_broker_confirmed.count() == 0) return 0;
+    int reconcile_phantoms(const std::map<std::string,double>& filled_net, int64_t now_sec, const char* why) {
         int n = 0;
         for (auto it = held_.begin(); it != held_.end();) {
-            if (!omega::g_broker_confirmed.holds(it->first)) {
-                std::printf("[DUALMOM][VOID-PHANTOM] %s entry=%.2f -- broker-flat (%s), clearing phantom open\n",
-                            it->first.c_str(), it->second.entry, why);
+            auto f = filled_net.find(it->first);
+            double net = (f != filled_net.end()) ? f->second : 0.0;
+            bool fresh = (it->second.entry_ts > 0 && now_sec - it->second.entry_ts < 600);  // fill may be pending
+            if (net <= 1e-9 && !fresh) {
+                std::printf("[DUALMOM][VOID-PHANTOM] %s entry=%.2f -- fill-log net=%.0f (%s): order never "
+                            "filled, clearing stale open\n", it->first.c_str(), it->second.entry, net, why);
                 std::fflush(stdout);
                 it = held_.erase(it); ++n;
             } else ++it;
         }
-        if (n) { save_(); std::printf("[DUALMOM] reconcile_phantoms: cleared %d (%s)\n", n, why); std::fflush(stdout); }
+        if (n) { save_(); std::printf("[DUALMOM] reconcile_phantoms: cleared %d never-filled (%s)\n", n, why); std::fflush(stdout); }
         return n;
     }
 
@@ -404,9 +406,10 @@ inline DualMomentumEngine& dual_momentum_engine() noexcept {
     return e;
 }
 
-// Free entry point for the central reject/reconcile path (2026-07-24 phantom class-fix).
-inline int reconcile_dualmom_phantoms(const char* why = "reconcile") {
-    return dual_momentum_engine().reconcile_phantoms(why);
+// Free entry point (2026-07-24 phantom class-fix, fills-net keyed).
+inline int reconcile_dualmom_phantoms(const std::map<std::string,double>& filled_net,
+                                      int64_t now_sec, const char* why = "reconcile") {
+    return dual_momentum_engine().reconcile_phantoms(filled_net, now_sec, why);
 }
 
 } // namespace omega

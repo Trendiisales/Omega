@@ -179,13 +179,22 @@ public:
     // booking a close (nothing filled = no PnL to book). SAFE by construction: only voids
     // when the broker snapshot is POPULATED (count>0, i.e. not an early-boot empty snapshot)
     // AND the broker does NOT hold this symbol -> it can never clear a real filled position.
-    bool void_unfilled_if_phantom(const char* why) noexcept {
+    // Void a stale engine open ONLY when the DURABLE broker fill log (ibkr_fills.csv net,
+    // passed in as broker_net_qty) shows this symbol was NEVER really bought (net<=0) -- a
+    // rejected/unfilled order left a stale open. Keying on the append-only fill log -- NOT the
+    // reqPositions cache -- is the whole point: reqPositions can return an INCOMPLETE set and
+    // commit_snapshot then blindly drops a REAL position (the BMY incident: net +1 in the fill
+    // log, but reqPositions momentarily reported 7 not 8, and the old code voided it). A filled
+    // position (net>0) can NEVER be voided here. AGE GUARD: only act once the open is >10 min old
+    // so a just-sent order whose fill has not yet hit the log is never voided (fills land in
+    // seconds; 10 min with no fill == genuinely rejected). No close booked (nothing filled).
+    bool void_if_never_filled(double broker_net_qty, int64_t now_sec, const char* why) noexcept {
         if (!pos_.active) return false;
-        if (omega::g_broker_confirmed.count() == 0) return false;          // no broker snapshot yet -> don't guess
-        if (omega::g_broker_confirmed.holds(cfg_.live_sym)) return false;  // broker HOLDS it -> real, keep it
-        std::printf("[SDT][VOID-PHANTOM] %s entry=%.2f held=%dd -- broker-flat (%s), clearing phantom open "
-                    "(engine claimed open, broker never filled)\n",
-                    engine_tag().c_str(), pos_.epx, pos_.held, why);
+        if (broker_net_qty > 1e-9) return false;                    // broker HOLDS a real qty -> keep
+        if (pos_.entry_ts > 0 && now_sec - pos_.entry_ts < 600) return false;  // too fresh -> fill may be pending
+        std::printf("[SDT][VOID-PHANTOM] %s entry=%.2f held=%dd -- fill-log net=%.0f (%s): order never "
+                    "filled, clearing stale engine open\n",
+                    engine_tag().c_str(), pos_.epx, pos_.held, broker_net_qty, why);
         std::fflush(stdout);
         pos_ = Pos{};              // reset to flat (active=false, token cleared)
         save_live_state_();        // rewrites live.txt with act=0 -> parity clears
@@ -624,15 +633,19 @@ public:
         return nullptr;
     }
 
-    // Sweep EVERY engine: void any UNFILLED phantom open (broker-flat) — the both-systems
-    // class fix (2026-07-24, operator: "make sure this cannot happen again ... applied to all
-    // engines"). A rejected/never-filled order can never leave a standing engine-open the
-    // broker doesn't hold. Safe (each void self-gates on a populated broker snapshot). Returns
-    // count cleared. Call on a broker reject and periodically from the reconcile path.
-    int reconcile_phantoms(const char* why) {
+    // Sweep EVERY engine: void an open ONLY when the DURABLE fill log (filled_net = symbol->
+    // signed BOT-SLD net from ibkr_fills.csv) shows it never filled (net<=0). Flicker-proof
+    // (append-only log, same source the parity check trusts) -- a filled position (net>0) is
+    // NEVER touched, which is what makes this safe after the BMY orphan incident. now_sec drives
+    // the per-open age guard. Returns count cleared.
+    int reconcile_phantoms(const std::map<std::string,double>& filled_net, int64_t now_sec, const char* why) {
         int n = 0;
-        for (auto& s : syms_) if (s.void_unfilled_if_phantom(why)) ++n;
-        if (n) { std::printf("[SDT] reconcile_phantoms: cleared %d phantom open(s) (%s)\n", n, why); std::fflush(stdout); }
+        for (auto& s : syms_) {
+            auto it = filled_net.find(s.live_symbol());
+            double net = (it != filled_net.end()) ? it->second : 0.0;
+            if (s.void_if_never_filled(net, now_sec, why)) ++n;
+        }
+        if (n) { std::printf("[SDT] reconcile_phantoms: cleared %d never-filled open(s) (%s)\n", n, why); std::fflush(stdout); }
         return n;
     }
 
@@ -900,10 +913,11 @@ inline StockDipTurtleBook& stock_dipturtle_book() noexcept {
     return inst;
 }
 
-// Free entry point for the central reject/reconcile path (2026-07-24 phantom-fix): void every
-// StockDip/StockTurtle phantom open the broker doesn't hold. Wired into set_on_reject.
-inline int reconcile_stockdip_phantoms(const char* why = "reconcile") {
-    return stock_dipturtle_book().reconcile_phantoms(why);
+// Free entry point (2026-07-24 phantom-fix, fills-net keyed): void every StockDip/StockTurtle
+// open the DURABLE fill log shows never filled. filled_net = symbol->signed net from ibkr_fills.csv.
+inline int reconcile_stockdip_phantoms(const std::map<std::string,double>& filled_net,
+                                       int64_t now_sec, const char* why = "reconcile") {
+    return stock_dipturtle_book().reconcile_phantoms(filled_net, now_sec, why);
 }
 
 } // namespace omega

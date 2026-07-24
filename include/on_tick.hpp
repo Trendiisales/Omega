@@ -610,13 +610,40 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     // so a restart within 12h loads them instantly (m1_ready=true immediately).
     // Previously only saved at midnight + shutdown -- a crash between saves
     // meant cold start, m1_ready=false, XAUUSD engines blocked for 15min+ every restart.
-    // ── PHANTOM RECONCILE REMOVED (2026-07-24): the periodic sweep-all keyed on
-    //    g_broker_confirmed (a live reqPositions cache that FLICKERS -- broker-holds count
-    //    dropped 8->7 transiently) WRONGLY voided a REAL position (StockTurtle_BMY, BOT 1 @
-    //    61.31 in ibkr_fills.csv) on a transient cache miss -> orphaned it. A cosmetic phantom
-    //    flag is far safer than voiding real positions. Voiding must key on DURABLE truth
-    //    (ibkr_fills.csv net) or a confirmed per-symbol reject, never a live cache sweep-all.
-    //    Redesign owed; the sweep is disabled meanwhile.
+    // ── PHANTOM RECONCILE (2026-07-24, FILLS-NET keyed — the SAFE redesign after the BMY
+    //    orphan). Every ~5 min, void an engine open the DURABLE fill log (ibkr_fills.csv net)
+    //    shows NEVER filled (net<=0). The append-only fill log is the same authority the parity
+    //    check trusts; it does NOT flicker like the reqPositions cache (which returned an
+    //    incomplete 7-of-8 set and made the old code void the REAL BMY position). A filled
+    //    position (net>0, e.g. BMY BOT 1) can NEVER be voided; a <10-min-old open is skipped
+    //    (its fill may not be in the log yet). This clears the INTC/AAPL never-filled phantoms
+    //    and is structurally incapable of orphaning a real position.
+    {
+        static int64_t s_last_phantom = 0;
+        const int64_t now_ph = nowSec();
+        if (now_ph - s_last_phantom >= 300) {
+            s_last_phantom = now_ph;
+            std::map<std::string,double> filled_net;   // UPPER sym -> signed BOT-SLD net
+            std::ifstream ff(log_root_dir() + "/trades/ibkr_fills.csv");
+            if (ff.is_open()) {
+                std::string ln;
+                while (std::getline(ff, ln)) {
+                    std::vector<std::string> col; std::stringstream ss(ln); std::string t;
+                    while (std::getline(ss, t, ',')) col.push_back(t);
+                    if (col.size() < 9 || col[0] == "ts_unix") continue;   // header/short
+                    std::string sym = col[4]; for (auto& ch : sym) ch = (char)std::toupper((unsigned char)ch);
+                    if (sym.find('.') != std::string::npos) continue;      // CMDTY/FX alias — skip
+                    double q = 0.0; try { q = std::stod(col[7]); } catch (...) { continue; }
+                    filled_net[sym] += (col[6] == "BOT") ? q : -q;
+                }
+                int voided = omega::reconcile_stockdip_phantoms(filled_net, now_ph, "periodic")
+                           + omega::reconcile_dualmom_phantoms(filled_net, now_ph, "periodic");
+                if (voided) { std::cout << "[PHANTOM-RECONCILE] periodic cleared " << voided
+                                        << " never-filled open(s) (fills-net keyed)\n"; std::cout.flush(); }
+            }   // no fills file yet -> do nothing (never void without the durable log)
+        }
+    }
+
     {
         static int64_t s_last_bar_save = 0;
         const int64_t now_bs = nowSec();
