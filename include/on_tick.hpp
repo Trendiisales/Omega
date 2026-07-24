@@ -610,6 +610,25 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     // so a restart within 12h loads them instantly (m1_ready=true immediately).
     // Previously only saved at midnight + shutdown -- a crash between saves
     // meant cold start, m1_ready=false, XAUUSD engines blocked for 15min+ every restart.
+    // ── PHANTOM RECONCILE (2026-07-24 both-systems class-fix; operator: "make sure this
+    //    cannot happen again ... applied to all engines"). Every ~5 min, void any engine open
+    //    the broker does NOT confirm -- a rejected/never-filled order (the INTC/AAPL StockDip
+    //    phantom) can never persist as engine-open/broker-flat and reload across restarts.
+    //    Independent of the reject event (a daily engine won't re-order an already-"held" name,
+    //    so the reject path alone can't clear a standing phantom). Each void self-gates on a
+    //    POPULATED broker snapshot (count>0), so it only clears genuinely-unheld names.
+    {
+        static int64_t s_last_phantom = 0;
+        const int64_t now_ph = nowSec();
+        if (now_ph - s_last_phantom >= 300) {
+            s_last_phantom = now_ph;
+            int voided = omega::reconcile_stockdip_phantoms("periodic")
+                       + omega::reconcile_dualmom_phantoms("periodic");
+            if (voided) { std::cout << "[PHANTOM-RECONCILE] periodic swept " << voided
+                                    << " phantom open(s)\n"; std::cout.flush(); }
+        }
+    }
+
     {
         static int64_t s_last_bar_save = 0;
         const int64_t now_bs = nowSec();

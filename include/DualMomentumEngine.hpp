@@ -36,6 +36,7 @@
 #include <string>
 #include <vector>
 #include "OpenPositionRegistry.hpp"
+#include "broker_confirmed.hpp"   // omega::g_broker_confirmed — phantom-void reconcile (2026-07-24)
 
 namespace omega {
 
@@ -204,6 +205,28 @@ public:
         if (!held_.empty() || !retry_.empty())
             std::printf("[DUALMOM] restored %zu holding(s), %zu retry slot(s), day_no=%d\n",
                         held_.size(), retry_.size(), day_no_);
+    }
+
+    // Phantom void (2026-07-24 both-systems class-fix): drop any HELD name the broker does
+    // NOT confirm -- a rejected/never-filled rebalance leg left the engine claiming an open
+    // (dualmom_live.txt) the broker never took, which the parity check flags as a phantom and
+    // which reloads across restarts. SAFE: self-gates on a POPULATED broker snapshot (count>0,
+    // not an early-boot empty one), so it only clears genuinely-unheld names, never a real
+    // holding (all real DualMom names appear in g_broker_confirmed). No close booked (nothing
+    // filled = no PnL). Returns count cleared. Wired into the central reject/reconcile path.
+    int reconcile_phantoms(const char* why) {
+        if (omega::g_broker_confirmed.count() == 0) return 0;
+        int n = 0;
+        for (auto it = held_.begin(); it != held_.end();) {
+            if (!omega::g_broker_confirmed.holds(it->first)) {
+                std::printf("[DUALMOM][VOID-PHANTOM] %s entry=%.2f -- broker-flat (%s), clearing phantom open\n",
+                            it->first.c_str(), it->second.entry, why);
+                std::fflush(stdout);
+                it = held_.erase(it); ++n;
+            } else ++it;
+        }
+        if (n) { save_(); std::printf("[DUALMOM] reconcile_phantoms: cleared %d (%s)\n", n, why); std::fflush(stdout); }
+        return n;
     }
 
 private:
@@ -379,6 +402,11 @@ private:
 inline DualMomentumEngine& dual_momentum_engine() noexcept {
     static DualMomentumEngine e;
     return e;
+}
+
+// Free entry point for the central reject/reconcile path (2026-07-24 phantom class-fix).
+inline int reconcile_dualmom_phantoms(const char* why = "reconcile") {
+    return dual_momentum_engine().reconcile_phantoms(why);
 }
 
 } // namespace omega

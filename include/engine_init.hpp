@@ -7832,6 +7832,16 @@ static void init_engines(const std::string& cfg_path)
                               << " -- re-syncing broker truth + surfacing (was silently logged)\n";
                     std::cout.flush();
                     omega::ibkr_exec::refresh_positions();
+                    // 2026-07-24 PHANTOM CLASS-FIX (operator: "make sure this cannot happen again ...
+                    // applied to all engines"): a rejected/never-filled order must NEVER leave an
+                    // engine claiming an open the broker doesn't hold (the INTC/AAPL StockDip phantom
+                    // that reloaded across restarts). Void every broker-mirrored book's phantom opens
+                    // against broker truth. Each void self-gates on a populated broker snapshot, so it
+                    // can only clear a genuinely-unfilled position, never a real one.
+                    int cleared = omega::reconcile_stockdip_phantoms("BROKER_REJECT");
+                    cleared    += omega::reconcile_dualmom_phantoms("BROKER_REJECT");
+                    if (cleared) { std::cout << "[PHANTOM-RECONCILE] voided " << cleared
+                                             << " engine phantom open(s) on reject of " << sym << "\n"; std::cout.flush(); }
                     std::ofstream rj("C:/Omega/logs/omega_rejects.log", std::ios::app);
                     if (rj) rj << sym << " REJECT-ACTED\n";
                 });

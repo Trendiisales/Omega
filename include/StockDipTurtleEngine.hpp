@@ -71,6 +71,7 @@
 #include <algorithm>
 #include <functional>
 #include <deque>
+#include "broker_confirmed.hpp"   // omega::g_broker_confirmed — phantom-void reconcile (2026-07-24)
 #include <unordered_map>
 #include <thread>
 #include <atomic>
@@ -167,6 +168,28 @@ public:
         std::fflush(stdout);
         save_live_state_();
         return pos_.token.empty() ? 0 : 1;
+    }
+
+    const std::string& live_symbol() const noexcept { return cfg_.live_sym; }
+
+    // Void an UNFILLED PHANTOM open (2026-07-24 phantom-fix, operator: "make sure this
+    // cannot happen again"). A live order the broker REJECTED (never filled) left
+    // pos_.active=1 forever -> live.txt writes act=1 -> the parity check flags "engine-open
+    // but broker-flat (PHANTOM)" and it reloads across every restart. Clear it WITHOUT
+    // booking a close (nothing filled = no PnL to book). SAFE by construction: only voids
+    // when the broker snapshot is POPULATED (count>0, i.e. not an early-boot empty snapshot)
+    // AND the broker does NOT hold this symbol -> it can never clear a real filled position.
+    bool void_unfilled_if_phantom(const char* why) noexcept {
+        if (!pos_.active) return false;
+        if (omega::g_broker_confirmed.count() == 0) return false;          // no broker snapshot yet -> don't guess
+        if (omega::g_broker_confirmed.holds(cfg_.live_sym)) return false;  // broker HOLDS it -> real, keep it
+        std::printf("[SDT][VOID-PHANTOM] %s entry=%.2f held=%dd -- broker-flat (%s), clearing phantom open "
+                    "(engine claimed open, broker never filled)\n",
+                    engine_tag().c_str(), pos_.epx, pos_.held, why);
+        std::fflush(stdout);
+        pos_ = Pos{};              // reset to flat (active=false, token cleared)
+        save_live_state_();        // rewrites live.txt with act=0 -> parity clears
+        return true;
     }
 
     explicit StockDipTurtleSym(Config c) : cfg_(std::move(c)) {
@@ -601,6 +624,18 @@ public:
         return nullptr;
     }
 
+    // Sweep EVERY engine: void any UNFILLED phantom open (broker-flat) — the both-systems
+    // class fix (2026-07-24, operator: "make sure this cannot happen again ... applied to all
+    // engines"). A rejected/never-filled order can never leave a standing engine-open the
+    // broker doesn't hold. Safe (each void self-gates on a populated broker snapshot). Returns
+    // count cleared. Call on a broker reject and periodically from the reconcile path.
+    int reconcile_phantoms(const char* why) {
+        int n = 0;
+        for (auto& s : syms_) if (s.void_unfilled_if_phantom(why)) ++n;
+        if (n) { std::printf("[SDT] reconcile_phantoms: cleared %d phantom open(s) (%s)\n", n, why); std::fflush(stdout); }
+        return n;
+    }
+
     void set_exec(StockDipTurtleSym::OpenFn o, StockDipTurtleSym::CloseFn c,
                   StockDipTurtleSym::GateFn g, StockDipTurtleSym::LedgerFn l) {
         for (auto& s : syms_) s.set_exec(o, c, g, l);
@@ -857,6 +892,12 @@ private:
 inline StockDipTurtleBook& stock_dipturtle_book() noexcept {
     static StockDipTurtleBook inst;
     return inst;
+}
+
+// Free entry point for the central reject/reconcile path (2026-07-24 phantom-fix): void every
+// StockDip/StockTurtle phantom open the broker doesn't hold. Wired into set_on_reject.
+inline int reconcile_stockdip_phantoms(const char* why = "reconcile") {
+    return stock_dipturtle_book().reconcile_phantoms(why);
 }
 
 } // namespace omega
