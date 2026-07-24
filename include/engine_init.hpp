@@ -7757,6 +7757,31 @@ static void init_engines(const std::string& cfg_path)
         fflush(stdout);
     }
 
+    // ── [FEED-AUDIT] STOP-BLACKBULL invariant (S-2026-07-24) ─────────────────────
+    // Operator hard rule "STOP BLACKBULL": no TRADED symbol may take an
+    // UNCONDITIONAL BlackBull FIX tick. fix_dispatch drops BlackBull for is_ibkr_hard
+    // + is_fx_major (unconditional) and freshness-gates is_ibkr_primary_index; a
+    // symbol in NONE of those three sets falls through to the unconditional
+    // engine_dispatch_post_tick -> silent CFD/stale feed. This asserts every traded
+    // FIX symbol is classified. Roster = the 13 bracket engines (engine_init ~L5687)
+    // + gold + the L1-migrated index/energy/vol/micro set (all live/shadow FIX-driven
+    // engines). DJ30.F was the historical hole (fixed same session). 0 VIOLATION =
+    // invariant holds; a NEW traded symbol added without routing = loud boot VIOLATION.
+    {
+        static const char* const kTradedSyms[] = {
+            // equity-index brackets (is_ibkr_hard / is_ibkr_primary_index)
+            "US500.F", "USTEC.F", "DJ30.F", "NAS100", "GER40", "UK100", "ESTX50",
+            // gold spot (is_ibkr_hard)
+            "XAUUSD",
+            // energy / commodity / vol / dollar / micro (is_ibkr_primary_index, gated)
+            "BRENT", "USOIL.F", "XAGUSD", "VIX.F", "DX.F", "NGAS.F", "M2K",
+            // FX majors (is_fx_major)
+            "EURUSD", "GBPUSD", "AUDUSD", "NZDUSD", "USDJPY", "USDCAD",
+        };
+        omega::ibkr::audit_blackbull_unconditional(
+            kTradedSyms, static_cast<int>(sizeof(kTradedSyms) / sizeof(kTradedSyms[0])));
+    }
+
     build_id_map();
 
     // Open log file and tee stdout into it

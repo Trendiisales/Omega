@@ -85,5 +85,17 @@ bool preflight_rejected(long oid);
 void   ensure_mktdata(const std::string& omega_sym);
 double last_price(const std::string& omega_sym);
 
+// ── SAFE TARGETED CLOSE (2026-07-24, gap 7): close EXACTLY the broker-confirmed
+// qty for one symbol (SELL a long / BUY a short), sized from g_broker_confirmed —
+// NEVER naked. Cancels the resting native stop first. Returns the close orderId,
+// or -1 if the broker holds nothing (so an "exit on nothing" / phantom flatten is
+// a safe no-op instead of a naked reverse). KILL-ALL routes exits through this.
+// Stub: -1.
+long close_broker_position(const std::string& omega_sym);
+
+// True when the broker actually holds a net position in this symbol (reqPositions
+// truth). Lets the exit path gate on broker reality, not engine intent. Stub: false.
+bool broker_holds(const std::string& omega_sym);
+
 } // namespace ibkr_exec
 } // namespace omega

@@ -225,6 +225,57 @@ inline bool is_ibkr_primary_index(const char* s) noexcept {
         || std::strcmp(s, "M2K")     == 0;  // 2026-07-09 micro Russell (CME), IBKR-only L1
 }
 
+// HARD-DROP set (operator "STOP BLACKBULL"): symbols where IBKR is entitled +
+// actively flowing and a BlackBull FIX tick must be dropped UNCONDITIONALLY --
+// no freshness fallback. If IBKR dies the tile goes DARK (honest) rather than
+// riding a stale/CFD price. Promoted from the local lambda in fix_dispatch.hpp
+// (S-2026-07-24) to a single shared definition so the boot feed-audit below can
+// reuse the SAME list (derive-don't-copy; a second copy would drift).
+//   DJ30.F added S-2026-07-24: it already rides a real IBKR YM/CBOT feed (the
+//   `dj30` L2 slot + the omega_main on_book synthetic-tick pump) and BlackBull
+//   streams ZERO DJ30 ticks, so hard-drop carries no dark-risk and closes the
+//   last BlackBull-UNCONDITIONAL traded symbol (it was in none of the routing
+//   sets -> fell through to the unconditional engine_dispatch_post_tick).
+inline bool is_ibkr_hard(const char* s) noexcept {
+    return std::strcmp(s, "XAUUSD")  == 0 || std::strcmp(s, "NAS100")  == 0
+        || std::strcmp(s, "USTEC.F") == 0 || std::strcmp(s, "US500.F") == 0
+        || std::strcmp(s, "XAGUSD")  == 0 || std::strcmp(s, "GER40")   == 0
+        || std::strcmp(s, "ESTX50")  == 0 || std::strcmp(s, "DJ30.F")  == 0;
+}
+
+// Boot-time feed-routing audit (S-2026-07-24). Asserts NO traded symbol can take
+// an UNCONDITIONAL BlackBull FIX tick (operator hard rule "STOP BLACKBULL"). Every
+// traded symbol must be classified into exactly one IBKR routing set:
+//   * is_ibkr_hard         -> BlackBull dropped unconditionally (dark on IBKR loss)
+//   * is_fx_major          -> BlackBull dropped unconditionally (dark on IBKR loss)
+//   * is_ibkr_primary_index-> BlackBull is a FRESHNESS-GATED fallback only (never
+//                             unconditional; UNENTITLED index/energy set keeps this
+//                             so it is not dark when IBKR has no data at all)
+// A symbol in NONE of the three sets reaches the unconditional post in fix_dispatch
+// -> a VIOLATION. Prints one summary line + a per-symbol VIOLATION line; returns the
+// violation count (0 = clean = STOP-BLACKBULL invariant holds). Read by boot/protection
+// monitors that assert "0 VIOLATION".
+inline int audit_blackbull_unconditional(const char* const* traded, int n) noexcept {
+    int viol = 0, hard = 0, fx = 0, gated = 0;
+    for (int i = 0; i < n; ++i) {
+        const char* s = traded[i];
+        if (is_ibkr_hard(s))                 { ++hard;  continue; }
+        if (is_fx_major(s))                  { ++fx;    continue; }
+        if (is_ibkr_primary_index(s))        { ++gated; continue; }
+        ++viol;
+        std::fprintf(stderr,
+            "[FEED-AUDIT] *** VIOLATION *** traded symbol '%s' is BlackBull-UNCONDITIONAL "
+            "(in no IBKR routing set) -- add to is_ibkr_hard or is_ibkr_primary_index\n", s);
+    }
+    std::printf(
+        "[FEED-AUDIT] BlackBull-unconditional traded symbols: %d VIOLATION (0=clean) "
+        "[%d hard-drop / %d fx-major / %d freshness-gated of %d traded]\n",
+        viol, hard, fx, gated, n);
+    std::fflush(stdout);
+    std::fflush(stderr);
+    return viol;
+}
+
 // Stats for /api/v1/omega health -- read by status endpoint if wired.
 struct ConsumerStats {
     std::atomic<int64_t> msgs_total{0};

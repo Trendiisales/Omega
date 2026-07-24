@@ -39,7 +39,17 @@ LOCK=/tmp/ibkr_login_watch.lock
 # down (service Stopped+Disabled, Gateway intentionally on paper 4002), the 4001-down /
 # PORT-FLIP / LOGIN-REQUIRED alarms are FALSE positives and spam every 15 min. Touch the flag
 # to silence; REMOVE it (rm ~/.omega_ibkr_watch_off) to re-arm the watch when going live again.
-[ -f "$HOME/.omega_ibkr_watch_off" ] && exit 0
+#
+# S-2026-07-24 (audit gap 13): the flag had NO expiry — a leftover file silenced login/2FA
+# alerts FOREVER (a dead exec path reads as "all healthy"). Two guards:
+#   (a) HARD TTL — auto-ignore (delete) the flag after 2h and re-arm the watch.
+#   (b) SUPPRESSED BANNER — while genuinely suppressed, emit a periodic "watch SUPPRESSED"
+#       notification so the silence can never be invisible.
+# Deps (now_e/ts/notify) are defined below; this block sits after them (moved down).
+SUPPRESS_FLAG="$HOME/.omega_ibkr_watch_off"
+SUPPRESS_TTL=$((2*3600))        # leftover flag auto-expires after 2h
+SUPPRESS_BANNER_S=$((60*60))    # remind hourly while suppressed
+SUPPRESS_BSTATE=/tmp/ibkr_watch_suppress_banner.epoch
 # S-2026-07-20o: 6h -> 15min. The 2026-07-19 23:48Z LOGIN-REQUIRED banner fired once and
 # was missed; the gateway sat 2FA-blocked 14 min (exec + IBKR L1 feed dead) until the
 # operator noticed the STALE chart himself. A dead exec path is live-money exposure —
@@ -51,6 +61,34 @@ ts() { date -u '+%Y-%m-%d %H:%MZ'; }
 notify() {  # $1 title  $2 body
   /usr/bin/osascript -e "display notification \"$2\" with title \"$1\" sound name \"Basso\"" 2>/dev/null
 }
+
+# DEAD-MAN'S SWITCH — proof-of-life (audit gap 13). Every completed tick of this
+# 1-min cron stamps a heartbeat; a stale heartbeat means the ALERTING ITSELF is dead
+# (Mac asleep, cron stopped, launchd broken) — the universal false-green. A checker
+# proves the alerting is alive; see tools/deadman_check.sh (local now; off-box hosting
+# is the robust form and is OWED — a same-Mac checker can't catch its own Mac sleeping).
+HEARTBEAT=/tmp/omega_alerting_heartbeat.epoch
+echo "$now_e" > "$HEARTBEAT" 2>/dev/null
+
+# SUPPRESS handling with TTL + banner (vars set above).
+if [ -f "$SUPPRESS_FLAG" ]; then
+  fage=$(( now_e - $(stat -f %m "$SUPPRESS_FLAG" 2>/dev/null || echo "$now_e") ))
+  if [ "$fage" -ge "$SUPPRESS_TTL" ]; then
+    rm -f "$SUPPRESS_FLAG" "$SUPPRESS_BSTATE"
+    notify "IBKR watch RE-ARMED" "suppress flag ~/.omega_ibkr_watch_off expired (>2h) and was auto-removed — login/2FA alerts are LIVE again. Re-touch it if the desk is still intentionally down."
+    echo "[$(ts)] SUPPRESS flag expired (${fage}s >= TTL) -> auto-removed, watch re-armed" >> "$LOG"
+    # fall through to normal watch
+  else
+    lastb=$(cat "$SUPPRESS_BSTATE" 2>/dev/null || echo 0)
+    if [ $(( now_e - lastb )) -ge "$SUPPRESS_BANNER_S" ]; then
+      left=$(( (SUPPRESS_TTL - fage) / 60 ))
+      notify "🔇 IBKR watch SUPPRESSED" "Login/2FA alerts silenced by ~/.omega_ibkr_watch_off (${left} min to auto-expire). rm it to re-arm now."
+      echo "$now_e" > "$SUPPRESS_BSTATE"
+      echo "[$(ts)] SUPPRESSED banner (flag age ${fage}s, ${left}min to TTL)" >> "$LOG"
+    fi
+    exit 0
+  fi
+fi
 
 # Overlap guard: skip this tick if a previous run still holds the lock (hung ssh).
 # Stale locks (>5 min, crashed run) are reclaimed.

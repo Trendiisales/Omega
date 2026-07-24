@@ -42,8 +42,10 @@
 
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <functional>
 #include <map>
 #include <memory>
@@ -94,6 +96,16 @@ struct IbkrExecutionEngine : public DefaultEWrapper {
     // already held (manage/close) always pass. Generous default; raise explicitly.
     int                                     max_book_positions_ = 12;
 
+    // ── PER-ORDER $ NOTIONAL CAP (gap 8, 2026-07-24). The lot-COUNT size cap clamps
+    //    contract count; this bounds DOLLARS. The real "25K" incident was a $ problem
+    //    (mis-mapped instrument -> huge notional). A single order whose notional
+    //    (send_qty * last_px * multiplier) exceeds this ceiling is REFUSED, not clamped
+    //    -- a $-blowout means the sizing/mapping is wrong and the order must not fire.
+    //    Default $50k allows one legit future (1 MGC ~$26k, 1 MNQ ~$40k) and blocks 2x+.
+    //    Raise explicitly per operator instruction. 0 = disabled. Priced from last_px_;
+    //    if no price is known yet the cap FAILS SAFE (blocks) rather than passing blind.
+    double                                  max_order_notional_usd_ = 50000.0;
+
     // ── NATIVE BROKER STOP-ON-FILL (2026-07-24, operator: protections must survive
     //    Omega death). On every OPENING fill, place a RESTING STP order AT THE BROKER
     //    at fill_px*(1-pct). The broker holds it -> it fires autonomously even if Omega
@@ -107,6 +119,18 @@ struct IbkrExecutionEngine : public DefaultEWrapper {
     std::map<std::string, Contract>         stop_contract_;       // omega sym -> contract (for cancel)
     std::map<std::string, double>           broker_avgcost_;      // omega sym -> avg entry (from reqPositions)
     std::map<std::string, Contract>         broker_contract_;     // omega sym -> contract (from reqPositions)
+    std::map<std::string, double>           contract_min_tick_;   // omega sym -> minTick (contractDetails)
+
+    // Snap a stop trigger price to the contract's minTick so IBKR never rejects it
+    // (error 110: "price does not conform to the minimum price variation"). Rounds
+    // AWAY from entry (long stop -> floor, short stop -> ceil) so snapping never makes
+    // the disaster stop tighter than intended. Unknown tick (0) -> pass through raw.
+    double snap_stop_px_(const std::string& om, double px, bool is_long) const {
+        auto it = contract_min_tick_.find(om);
+        if (it == contract_min_tick_.end() || it->second <= 0.0) return px;
+        const double t = it->second;
+        return is_long ? std::floor(px / t) * t : std::ceil(px / t) * t;
+    }
 
     // ---- TWS plumbing ----
     EReaderOSSignal               signal_{2000};
@@ -193,16 +217,25 @@ struct IbkrExecutionEngine : public DefaultEWrapper {
             if (now_ms - last_halt_check_ms_ < 1000) return;   // throttle to ~1/sec
             last_halt_check_ms_ = now_ms;
         }
-        std::FILE* f = std::fopen(halt_flag_path_.c_str(), "r");
-        if (f) {
-            std::fclose(f);
+        // Halt on EITHER the sentinel flag OR the operator's manual KILL_SWITCH.lock.
+        // 2026-07-24b (audit gap #4): the KILL_SWITCH used to be checked ONLY inside
+        // PortfolioGuard::can_open_new_position, which the live equity/index books never
+        // call -> the panic button did NOT stop the live stock trades. Checking it HERE,
+        // at the exec chokepoint, makes it halt EVERY order regardless of engine.
+        std::FILE* f  = std::fopen(halt_flag_path_.c_str(), "r");
+        std::FILE* ks = std::fopen("C:/Omega/KILL_SWITCH.lock", "r");
+        const bool halt_now = (f != nullptr) || (ks != nullptr);
+        if (f)  std::fclose(f);
+        if (ks) std::fclose(ks);
+        if (halt_now) {
             if (!external_halt_.exchange(true)) {
-                std::printf("[IBKR-EXEC] *** EXTERNAL HALT *** flag %s present -- blocking new "
-                            "entries until cleared (sentinel_act.py)\n", halt_flag_path_.c_str());
+                std::printf("[IBKR-EXEC] *** EXTERNAL HALT *** (%s) -- blocking ALL new orders "
+                            "at the exec chokepoint until cleared\n",
+                            ks ? "KILL_SWITCH.lock" : "sentinel halt_omega.flag");
                 std::fflush(stdout);
             }
         } else if (external_halt_.exchange(false)) {
-            std::printf("[IBKR-EXEC] external halt flag cleared -- new entries re-enabled\n");
+            std::printf("[IBKR-EXEC] halt cleared -- new orders re-enabled\n");
             std::fflush(stdout);
         }
     }
@@ -495,6 +528,33 @@ struct IbkrExecutionEngine : public DefaultEWrapper {
             std::fflush(stdout);
             return -1;
         }
+        // ── PER-ORDER $ NOTIONAL CAP (gap 8): bound DOLLARS, not just contract count.
+        //    notional = send_qty * ref_px * multiplier. ref_px = order px (LMT/STP) or
+        //    the last traded px. FAILS SAFE: if the ceiling is armed but no price is
+        //    known yet, REFUSE (a blind order at unknown notional is exactly the class
+        //    that let the 25K through). A close/manage order is NOT exempt -- a $-blowout
+        //    on any side is a mapping bug.
+        if (max_order_notional_usd_ > 0.0) {
+            double ref_px = (px > 0.0) ? px : last_price(omega_sym);
+            double mult   = 1.0;
+            if (!c.multiplier.empty()) { double m = std::atof(c.multiplier.c_str()); if (m > 0.0) mult = m; }
+            if (ref_px <= 0.0) {
+                std::printf("[NOTIONAL-CAP] BLOCKED %s -- no price known, cannot bound "
+                            "notional (fail-safe)\n", omega_sym.c_str());
+                std::fflush(stdout);
+                return -1;
+            }
+            const double notional = send_qty * ref_px * mult;
+            if (notional > max_order_notional_usd_) {
+                std::printf("[NOTIONAL-CAP] BLOCKED %s -- order notional $%.0f > cap $%.0f "
+                            "(qty=%.4f px=%.2f mult=%.0f); raise max_order_notional_usd_ "
+                            "explicitly to change\n",
+                            omega_sym.c_str(), notional, max_order_notional_usd_,
+                            send_qty, ref_px, mult);
+                std::fflush(stdout);
+                return -1;
+            }
+        }
         long oid = next_id_.fetch_add(1);
         { std::lock_guard<std::mutex> lk(rej_mtx_);            // gap 3: for reject reconcile
           oid_to_sym_[oid] = omega_sym;
@@ -545,25 +605,34 @@ struct IbkrExecutionEngine : public DefaultEWrapper {
 
     // Place a resting native disaster stop for a held LONG that has none. Uses the
     // broker's avg entry. Direct placeOrder (bypasses size cap; stop matches the qty).
+    // Place a resting native disaster stop for a held position that has none. Handles
+    // BOTH sides (2026-07-24b, audit gap: was long-only -> live shorts were naked):
+    //   long  (qty>0) -> SELL STP at entry*(1-pct)   below the market
+    //   short (qty<0) -> BUY  STP at entry*(1+pct)   above the market
     void ensure_native_stop_(const std::string& om, double qty) {
-        if (!native_stops_enabled_ || qty <= 0.0) return;   // long-only for now
+        if (!native_stops_enabled_ || std::fabs(qty) < 1e-9) return;
         double entry = 0.0; Contract c;
         { std::lock_guard<std::mutex> lk(mtx_);
           auto a = broker_avgcost_.find(om); auto k = broker_contract_.find(om);
           if (a == broker_avgcost_.end() || k == broker_contract_.end() || a->second <= 0.0) return;
           entry = a->second; c = k->second; }
         { std::lock_guard<std::mutex> lk(rej_mtx_); if (resting_stop_oid_.count(om)) return; }
+        const bool is_long = qty > 0.0;
         Order so;
-        so.action = "SELL"; so.orderType = "STP";
-        so.auxPrice = entry * (1.0 - native_disaster_stop_pct_ / 100.0);
-        so.totalQuantity = DecimalFunctions::doubleToDecimal(qty);
-        so.tif = "GTC";
+        so.action        = is_long ? "SELL" : "BUY";                 // close side
+        so.orderType     = "STP";
+        so.auxPrice      = is_long ? entry * (1.0 - native_disaster_stop_pct_ / 100.0)
+                                   : entry * (1.0 + native_disaster_stop_pct_ / 100.0);
+        so.auxPrice      = snap_stop_px_(om, so.auxPrice, is_long);   // conform to minTick (err 110)
+        so.totalQuantity = DecimalFunctions::doubleToDecimal(std::fabs(qty));
+        so.tif           = "GTC";
         long soid = next_id_.fetch_add(1);
         client_->placeOrder(soid, c, so);
         { std::lock_guard<std::mutex> lk(rej_mtx_);
           resting_stop_oid_[om] = soid; stop_contract_[om] = c; }
-        std::printf("[IBKR-EXEC] NATIVE STOP (held) %s SELL STP @ %.2f qty=%.0f oid=%ld "
-                    "(broker-side GTC, survives Omega death)\n", om.c_str(), so.auxPrice, qty, soid);
+        std::printf("[IBKR-EXEC] NATIVE STOP (held) %s %s STP @ %.2f qty=%.0f oid=%ld "
+                    "(broker-side GTC, survives Omega death)\n",
+                    om.c_str(), so.action.c_str(), so.auxPrice, std::fabs(qty), soid);
         std::fflush(stdout);
     }
     void positionEnd() override {
@@ -573,7 +642,7 @@ struct IbkrExecutionEngine : public DefaultEWrapper {
         //    existed, and re-arms if a stop was lost). This is what makes "protections
         //    survive Omega death" true for ALL open trades, not just future fills.
         for (const auto& kv : omega::g_broker_confirmed.all())
-            if (kv.second > 0.0) ensure_native_stop_(kv.first, kv.second);
+            if (std::fabs(kv.second) > 1e-9) ensure_native_stop_(kv.first, kv.second);  // long AND short
         // ── CANCEL NATIVE STOP ON FLAT: for any symbol we placed a resting stop on but
         //    the broker NO LONGER holds (position closed), cancel the stop so a stale
         //    resting order can't fire later into a reverse (naked) position.
@@ -646,6 +715,7 @@ struct IbkrExecutionEngine : public DefaultEWrapper {
             (!exp.empty() && exp < existing->second.lastTradeDateOrContractMonth)) {
             resolved_[om] = cd.contract;
         }
+        if (cd.minTick > 0.0) contract_min_tick_[om] = cd.minTick;  // for stop-price tick-snap
     }
 
     void contractDetailsEnd(int reqId) override {
@@ -803,20 +873,24 @@ struct IbkrExecutionEngine : public DefaultEWrapper {
         // ONLY broker-confirmed positions (never engine intent). This is the truth
         // source that ends the phantom-position display.
         omega::g_broker_confirmed.on_fill(f.omega_symbol, f.side, f.qty);
-        // ── NATIVE STOP-ON-FILL: a fresh opening LONG fill gets a RESTING broker STP
-        //    (GTC) at fill_px*(1-pct). Placed DIRECTLY (bypasses the size cap — the stop
-        //    must match the position qty, and must place even during a halt: it is
-        //    protective). The broker holds it -> it fires autonomously even if Omega dies.
-        //    Cancelled on flat in positionEnd. Long-only (BOT->SELL) for now.
-        if (native_stops_enabled_ && f.side == "BOT" && f.price > 0.0 &&
+        // ── NATIVE STOP-ON-FILL: a fresh opening fill gets a RESTING broker STP (GTC).
+        //    BOTH sides (2026-07-24b): long (BOT) -> SELL STP at fill*(1-pct) below;
+        //    short (SLD) -> BUY STP at fill*(1+pct) above. Placed DIRECTLY (bypasses the
+        //    size cap — the stop must match the position qty, and must place even during a
+        //    halt: it is protective). The broker holds it -> fires even if Omega dies.
+        //    Cancelled on flat in positionEnd.
+        if (native_stops_enabled_ && (f.side == "BOT" || f.side == "SLD") && f.price > 0.0 &&
             omega::g_broker_confirmed.holds(f.omega_symbol)) {
             bool have;
             { std::lock_guard<std::mutex> lk(rej_mtx_); have = resting_stop_oid_.count(f.omega_symbol) > 0; }
             if (!have) {
+                const bool is_long = (f.side == "BOT");
                 Order so;
-                so.action        = "SELL";
+                so.action        = is_long ? "SELL" : "BUY";
                 so.orderType     = "STP";
-                so.auxPrice      = f.price * (1.0 - native_disaster_stop_pct_ / 100.0);
+                so.auxPrice      = is_long ? f.price * (1.0 - native_disaster_stop_pct_ / 100.0)
+                                           : f.price * (1.0 + native_disaster_stop_pct_ / 100.0);
+                so.auxPrice      = snap_stop_px_(f.omega_symbol, so.auxPrice, is_long);  // minTick (err 110)
                 so.totalQuantity = execution.shares;
                 so.tif           = "GTC";     // survive across sessions until hit or cancelled
                 long soid = next_id_.fetch_add(1);
@@ -824,9 +898,9 @@ struct IbkrExecutionEngine : public DefaultEWrapper {
                 { std::lock_guard<std::mutex> lk(rej_mtx_);
                   resting_stop_oid_[f.omega_symbol] = soid;
                   stop_contract_[f.omega_symbol]    = contract; }
-                std::printf("[IBKR-EXEC] NATIVE STOP %s SELL STP @ %.2f qty=%.0f oid=%ld "
+                std::printf("[IBKR-EXEC] NATIVE STOP %s %s STP @ %.2f qty=%.0f oid=%ld "
                             "(broker-side GTC, survives Omega death)\n",
-                            f.omega_symbol.c_str(), so.auxPrice, f.qty, soid);
+                            f.omega_symbol.c_str(), so.action.c_str(), so.auxPrice, f.qty, soid);
                 std::fflush(stdout);
             }
         }

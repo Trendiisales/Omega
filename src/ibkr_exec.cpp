@@ -52,6 +52,8 @@ long preflight(const std::string& omega_sym, bool is_long, double qty) {
 bool preflight_rejected(long oid) { return eng().preflight_rejected(oid); }
 void   ensure_mktdata(const std::string& omega_sym) { eng().ensure_mktdata(omega_sym); }
 double last_price(const std::string& omega_sym)     { return eng().last_price(omega_sym); }
+long   close_broker_position(const std::string& omega_sym) { return eng().close_broker_position(omega_sym); }
+bool   broker_holds(const std::string& omega_sym)   { return omega::g_broker_confirmed.holds(omega_sym); }
 
 } // namespace ibkr_exec
 } // namespace omega
@@ -77,6 +79,8 @@ long preflight(const std::string&, bool, double) { return -1; }
 bool preflight_rejected(long) { return true; }
 void   ensure_mktdata(const std::string&) {}
 double last_price(const std::string&) { return 0.0; }
+long   close_broker_position(const std::string&) { return -1; }
+bool   broker_holds(const std::string&) { return false; }
 } // namespace ibkr_exec
 } // namespace omega
 

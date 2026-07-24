@@ -358,6 +358,28 @@ class DomRecorder:
 
     def start(self):
         self.last_event_mono = time.monotonic()
+        self.last_resub_mono = 0.0
+        self.ticker = self.ib.reqMktDepth(
+            self.contract, numRows=self.max_levels, isSmartDepth=True
+        )
+        self.ticker.updateEvent += self._on_update
+
+    def resubscribe(self):
+        """In-process re-subscribe for the silence watchdog. cancelMktDepth +
+        reqMktDepth WITHOUT tearing down the whole bridge. Used when a depth
+        stream goes silent while ib.isConnected() stays true (dead subscription).
+        Detaches the old handler first so _on_update never double-registers.
+        Does NOT reset last_event_mono -- silence duration must keep accruing so
+        the reconnect escalation can still fire if the resub does not restore it."""
+        if self.ticker is not None:
+            try:
+                self.ticker.updateEvent -= self._on_update
+            except Exception:
+                pass
+            try:
+                self.ib.cancelMktDepth(self.contract, isSmartDepth=True)
+            except Exception:
+                pass
         self.ticker = self.ib.reqMktDepth(
             self.contract, numRows=self.max_levels, isSmartDepth=True
         )
@@ -564,7 +586,24 @@ class L1Recorder:
 
     def start(self):
         self.last_event_mono = time.monotonic()
+        self.last_resub_mono = 0.0
         # snapshot=False -> streaming; regulatory/genericTicks empty = plain quote.
+        self.ticker = self.ib.reqMktData(self.contract, "", False, False)
+        self.ticker.updateEvent += self._on_update
+
+    def resubscribe(self):
+        """In-process re-subscribe for the silence watchdog. cancelMktData +
+        reqMktData WITHOUT a full bridge reconnect. Used when this L1 stream goes
+        silent while ib.isConnected() stays true (a dead subscription the reconnect
+        loop can't see -- the case that needed a manual restart). Detaches the old
+        handler first so _on_update never double-fires. Does NOT reset
+        last_event_mono so silence duration keeps accruing for the reconnect
+        escalation if the resub does not restore ticks."""
+        if self.ticker is not None:
+            try: self.ticker.updateEvent -= self._on_update
+            except Exception: pass
+            try: self.ib.cancelMktData(self.contract)
+            except Exception: pass
         self.ticker = self.ib.reqMktData(self.contract, "", False, False)
         self.ticker.updateEvent += self._on_update
 
@@ -611,6 +650,77 @@ class L1Recorder:
 # now returns a DIFFERENT conId -- so genuine quiet windows (CME daily halt,
 # weekend close) never trigger a needless resubscribe; only an actual roll does.
 FUT_ROLL_STALE_SEC = 30 * 60
+
+
+# ---- L1/L2 SILENCE WATCHDOG (2026-07-24) ------------------------------------
+# ib.isConnected() stays TRUE through a DEAD market-data subscription -- the
+# socket is up but the farm stopped pushing. The supervise loop keyed reconnect
+# ONLY on isConnected(), so a dead subscription produced NOTHING written and NEVER
+# re-subscribed (needed a manual restart this session). check_rolls() only covers
+# FUT rolls (skips every FX/gold-spot/index L1 recorder). This watchdog covers
+# ALL recorders that carry a market-data stream (DomRecorder + L1Recorder):
+#   * silent past SILENCE_RESUB_SEC     -> in-process resubscribe (cancel+re-req,
+#                                          throttled per recorder; NO full reconnect)
+#   * EVERY md recorder silent past      -> a genuinely dead session -> signal a
+#     SILENCE_RECONNECT_SEC                full reconnect (the heavy lever)
+# A SINGLE quiet symbol only ever gets resubscribed -- it never triggers a full
+# reconnect (that would drop the healthy feeds). Skipped entirely during the
+# weekend-quiet window so legitimately-silent weekend feeds never churn (mirrors
+# the ibkr_l2_freshness_check.ps1 guard).
+SILENCE_RESUB_SEC     = 90     # per-recorder silence -> in-process resubscribe
+SILENCE_RECONNECT_SEC = 300    # ALL recorders silent this long -> full reconnect
+
+
+def _weekend_quiet():
+    """Coarse market-closed guard: Sat all day, Sun before 22:00 UTC, Fri after
+    22:00 UTC. Matches ibkr_l2_freshness_check.ps1 so the silence watchdog does
+    not churn on legitimately-quiet weekend feeds."""
+    u = datetime.now(timezone.utc)
+    dow = u.weekday()   # Mon=0 .. Sat=5, Sun=6
+    h = u.hour
+    return dow == 5 or (dow == 6 and h < 22) or (dow == 4 and h >= 22)
+
+
+def check_silence(ib, recorders):
+    """In-process silence watchdog (see block comment above). Resubscribes any
+    individually-silent market-data recorder; returns True to request a FULL
+    reconnect only when EVERY md recorder is silent past SILENCE_RECONNECT_SEC
+    (a dead session ib.isConnected() cannot see)."""
+    if _weekend_quiet():
+        return False
+    now = time.monotonic()
+    md = [r for r in recorders if hasattr(r, "resubscribe")]  # Dom + L1, not TradesRecorder
+    if not md:
+        return False
+    n_recon_silent = 0
+    for r in md:
+        age = now - getattr(r, "last_event_mono", now)
+        if age >= SILENCE_RESUB_SEC:
+            last_resub = getattr(r, "last_resub_mono", 0.0)
+            if now - last_resub >= SILENCE_RESUB_SEC:
+                r.last_resub_mono = now
+                try:
+                    r.resubscribe()
+                    print(
+                        f"[silence-watchdog] {r.sym} silent {int(age)}s "
+                        f"(> {SILENCE_RESUB_SEC}s) while connected -- "
+                        f"in-process resubscribe (cancel+re-req)",
+                        flush=True,
+                    )
+                except Exception as e:
+                    print(f"[silence-watchdog] {r.sym} resubscribe failed: {e}",
+                          file=sys.stderr)
+        if age >= SILENCE_RECONNECT_SEC:
+            n_recon_silent += 1
+    if n_recon_silent == len(md):
+        print(
+            f"[silence-watchdog] ALL {len(md)} market-data recorders silent "
+            f">{SILENCE_RECONNECT_SEC}s while ib.isConnected() -- dead session; "
+            f"forcing full reconnect",
+            file=sys.stderr,
+        )
+        return True
+    return False
 
 
 def check_rolls(ib, recorders):
@@ -833,6 +943,7 @@ def main():
             # pump the event loop until the session drops, stop, deadline, OR a
             # futures roll is detected (check_rolls breaks out -> resubscribe).
             next_roll_check = time.monotonic() + 60.0
+            next_silence_check = time.monotonic() + 30.0
             while not stop["now"] and ib.isConnected():
                 ib.sleep(0.5)
                 if deadline is not None and time.monotonic() >= deadline:
@@ -842,6 +953,13 @@ def main():
                     next_roll_check = time.monotonic() + 60.0
                     if check_rolls(ib, recorders):
                         break  # tear down + resubscribe re-resolves front month
+                # In-process silence watchdog (2026-07-24): resubscribe dead L1/L2
+                # streams without a full reconnect; only a whole-session silence
+                # escalates to reconnect (breaks the loop -> teardown + reconnect).
+                if time.monotonic() >= next_silence_check:
+                    next_silence_check = time.monotonic() + 30.0
+                    if check_silence(ib, recorders):
+                        break
 
             for r in recorders:
                 # DomRecorder has .events, TradesRecorder has .n -- fall back so

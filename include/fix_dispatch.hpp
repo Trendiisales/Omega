@@ -242,13 +242,12 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
         // froze/flickered between two scales. Unconditional drop kills the dual feed. These
         // symbols go QUIET (not BlackBull) if IBKR ever dies -- accepted per the zero-BlackBull
         // directive; a dark tile is loud/honest vs a silently wrong CFD price.
-        auto is_ibkr_hard = [](const char* s) noexcept {
-            return std::strcmp(s,"XAUUSD")==0 || std::strcmp(s,"NAS100")==0
-                || std::strcmp(s,"USTEC.F")==0 || std::strcmp(s,"US500.F")==0
-                || std::strcmp(s,"XAGUSD")==0 || std::strcmp(s,"GER40")==0
-                || std::strcmp(s,"ESTX50")==0;
-        };
-        if (is_ibkr_hard(sym.c_str())) return;   // never BlackBull, no freshness dependency
+        // HARD-DROP set now lives in omega::ibkr::is_ibkr_hard (IbkrDomConsumer.hpp)
+        // as a single shared definition so the boot [FEED-AUDIT] can reuse it
+        // (derive-don't-copy). S-2026-07-24 added DJ30.F: it rides a real IBKR YM
+        // feed (dj30 slot + on_book pump) and BlackBull streams zero DJ30 ticks, so
+        // it was the last BlackBull-UNCONDITIONAL traded symbol -- now hard-dropped.
+        if (omega::ibkr::is_ibkr_hard(sym.c_str())) return;   // never BlackBull, no freshness dependency
         // S-2026-07-13 (operator: "no blackbull fallback we are not using it for now"):
         // FX majors JOIN the hard-IBKR group -- NEVER take a BlackBull tick, no freshness
         // fallback. If the IBKR IDEALPRO slot dies, FX goes QUIET (dark tile) rather than

@@ -41,7 +41,26 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         for (const auto& ps : g_open_positions.snapshot_all()) {
             if (ps.size <= 0.0) continue;
             const bool buy_to_close = (ps.side == "SHORT");   // close SHORT => BUY
-            send_live_order(ps.symbol, buy_to_close, ps.size, ps.current, "KILLALL");
+            // ── gap 7 (2026-07-24): on the IBKR route, flatten from BROKER TRUTH, not
+            //    engine intent. A phantom (engine-open, broker-flat) fires NO order —
+            //    it clears the engine slot only, so KILL-ALL can never open a naked
+            //    reverse on a position the broker never held. A real position closes
+            //    its EXACT broker qty (close_broker_position bypasses the min-lot size
+            //    cap + cancels the resting native stop first). Non-IBKR route unchanged.
+            bool routed_ibkr = false;
+#ifdef OMEGA_WITH_IBKR
+            if (g_cfg.execution_broker == "IBKR") {
+                routed_ibkr = true;
+                if (omega::ibkr_exec::broker_holds(ps.symbol))
+                    omega::ibkr_exec::close_broker_position(ps.symbol);
+                else
+                    printf("[KILL-ALL][PHANTOM-SKIP] %s engine-open but broker-flat -- no "
+                           "order sent (would be naked); clearing engine slot only\n",
+                           ps.symbol.c_str());
+            }
+#endif
+            if (!routed_ibkr)
+                send_live_order(ps.symbol, buy_to_close, ps.size, ps.current, "KILLALL");
             // S-2026-07-20: a close_matching miss used to be SILENT — the broker
             // close fired but the engine slot stayed armed (book can re-manage a
             // position that no longer exists). Now loud so the operator sees it.

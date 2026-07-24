@@ -83,6 +83,28 @@ if (-not $svc) {
     Add-Check "service.running"  "OK"   "running"  "Omega service Running"
 }
 
+# ---------- 1b. Push channel MUST be configured (2026-07-24) ----------
+# The webhook POST at the bottom of this script is the ONLY channel that PUSHES an
+# alert to the operator when they are away from the desk -- including the
+# load-bearing "IB Gateway hung / manual login + 2FA needed" escalation (dropped as
+# a HEALTH flag by ibkr_l2_freshness_check.ps1 and surfaced as a FAIL here). If
+# HEALTHCHECK_WEBHOOK is unset, that alert only ever lands in status.json /
+# alerts.log -- a PULL channel the operator must be looking at. Treat an unset
+# webhook as a config FAIL so the desk badge goes RED until a push channel exists:
+# an un-pushable "manual login needed" is exactly the silent-failure class this
+# monitor exists to kill (a 2h13m gold+NAS outage screamed only into a log file).
+#
+# GATEWAY-STALL FIX NOTE (operator): the recurring gateway hang needs a manual
+# bounce + 2FA. Configure IB Key (IBKR Mobile) SEAMLESS / auto-2FA so the re-login
+# after a bounce does NOT stall on a 2FA dialog (the headless-2FA-storm cause behind
+# $AutoBounceGateway=$false in ibkr_l2_freshness_check.ps1). With seamless auto-2FA
+# the gateway can be bounced without a manual approval hanging the session.
+if (-not $Webhook) {
+    Add-Check "config.push_webhook" "FAIL" "unset" "HEALTHCHECK_WEBHOOK env var not set -- alerts (incl. 'IB Gateway hung / manual login + 2FA needed') CANNOT push to the operator; only status.json/alerts.log receive them. Set a Discord/Slack/Pushover webhook so escalations always reach the desk."
+} else {
+    Add-Check "config.push_webhook" "OK" "set" "Push webhook configured -- escalations will POST to the operator channel"
+}
+
 # ---------- 2. Omega exe matches origin/main hash ----------
 try {
     Push-Location $Root
@@ -280,23 +302,38 @@ foreach ($port in @(4001)) {
 # Add a DIRECT check on the live L1 price CSV the desk tiles actually use, with a
 # tight in-session threshold, and a real gateway-responsiveness check. Both FAIL
 # -> desk badge RED + beep within one poll, not 2 hours.
-$priceFeeds = @{
-    'feed.xauusd_l1' = "logs\ibkr_l2\ibkr_l1_XAUUSD_$todayUtc.csv"
-}
-foreach ($kv in $priceFeeds.GetEnumerator()) {
-    $p = Join-Path $Root $kv.Value
+# PER-FARM CANARY (2026-07-24): one L1 price feed per IBKR data farm, each
+# session-gated by its OWN market via Test-MarketOpen. WHY: the original single
+# XAUUSD check watched only the COMEX/metal farm, so a per-farm death -- e.g. the
+# COMEX (gold) or IDEALPRO (FX) farm frozen while usfarm (ES) recovered, this
+# week's incident -- was invisible on the fast 2-min channel and surfaced only at
+# the next SessionStart. Now each farm has a live canary:
+#   XAUUSD (COMEX/SMART metal) -- session CME (~23h COMEX)
+#   ES     (usfarm US futures) -- session CME
+#   EURUSD (IDEALPRO FX)       -- session FX (24x5)
+# A farm frozen while another recovers => that farm's canary FAILs while the
+# other stays OK => desk badge RED within one poll, per-farm attributable.
+# Each canary is judged ONLY when ITS market is open (no off-session false FAILs).
+$priceFeeds = @(
+    [PSCustomObject]@{ Name='feed.xauusd_l1'; Path="logs\ibkr_l2\ibkr_l1_XAUUSD_$todayUtc.csv"; Session='CME'; Farm='COMEX/SMART (gold)' }
+    [PSCustomObject]@{ Name='feed.es_l1';     Path="logs\ibkr_l2\ibkr_l1_ES_$todayUtc.csv";     Session='CME'; Farm='usfarm (ES/US futures)' }
+    [PSCustomObject]@{ Name='feed.eurusd_l1'; Path="logs\ibkr_l2\ibkr_l1_EURUSD_$todayUtc.csv"; Session='FX';  Farm='IDEALPRO (EURUSD/FX)' }
+)
+foreach ($feed in $priceFeeds) {
+    $open = Test-MarketOpen $feed.Session
+    $p = Join-Path $Root $feed.Path
     if (-not (Test-Path $p)) {
-        $sev = if ($isMarketHours) { 'FAIL' } else { 'OK' }
-        Add-Check $kv.Key $sev "missing" "$p does not exist (feed down?)"
+        $sev = if ($open) { 'FAIL' } else { 'OK' }
+        Add-Check $feed.Name $sev "missing" ("$($feed.Farm): $p does not exist (feed down?) [session=$($feed.Session) open=$open]")
     } else {
         $f = Get-Item $p
         $ageMin = ($now - $f.LastWriteTime).TotalMinutes
-        if ($isMarketHours -and $ageMin -gt 10) {
-            Add-Check $kv.Key "FAIL" "stale" ("{0:N0}m since last tick (live price feed frozen -- IBKR gateway/bridge)" -f $ageMin)
-        } elseif ($isMarketHours -and $ageMin -gt 3) {
-            Add-Check $kv.Key "WARN" "lagging" ("{0:N1}m since last tick" -f $ageMin)
+        if ($open -and $ageMin -gt 10) {
+            Add-Check $feed.Name "FAIL" "stale" ("$($feed.Farm): {0:N0}m since last tick (live price feed frozen -- IBKR gateway/farm/bridge)" -f $ageMin)
+        } elseif ($open -and $ageMin -gt 3) {
+            Add-Check $feed.Name "WARN" "lagging" ("$($feed.Farm): {0:N1}m since last tick" -f $ageMin)
         } else {
-            Add-Check $kv.Key "OK" "ok" ("{0:N1}m old" -f $ageMin)
+            Add-Check $feed.Name "OK" "ok" ("$($feed.Farm): {0:N1}m old (session=$($feed.Session) open=$open)" -f $ageMin)
         }
     }
 }

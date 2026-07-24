@@ -76,11 +76,18 @@ static std::mutex                              g_last_tick_mtx;
 static std::unordered_map<std::string,int64_t> g_last_tick_ts;   // symbol ? unix ms of last tick
 static std::unordered_map<std::string,double>  g_last_tick_bid;  // symbol ? last bid price
 static std::unordered_map<std::string,int>     g_frozen_count;   // symbol ? consecutive identical ticks
+static std::unordered_map<std::string,int64_t> g_last_price_change_ts; // symbol ? unix ms bid last MOVED
 static constexpr int64_t STALE_QUOTE_SEC  = 30;   // 30s without tick = genuinely stale feed
 static constexpr int     FROZEN_TICK_MAX  = 20;   // 20 consecutive identical bids = frozen feed
                                                    // At ~1 tick/10s: 20 ticks = 3.3 min of freeze
                                                    // Price-freeze detection catches brokers that
                                                    // repeat last-price with updated timestamps.
+static constexpr int64_t FROZEN_PRICE_SEC = 60;   // TIME-based freeze (2026-07-24, feed-agent fix):
+                                                   // count-based FROZEN_TICK_MAX is tick-RATE dependent
+                                                   // (unbounded wall-time if the feed slows). This
+                                                   // measures freeze DURATION directly: bid unchanged
+                                                   // for >60s = frozen regardless of tick rate. Both
+                                                   // tests run (whichever trips first blocks).
 
 // Record a tick receipt (called from on_tick per symbol)
 // Also tracks consecutive identical bids for frozen-feed detection.
@@ -96,6 +103,7 @@ static inline void stale_watchdog_ping(const std::string& sym, double bid = 0.0)
         } else {
             g_frozen_count[sym] = 0;
             g_last_tick_bid[sym] = bid;
+            g_last_price_change_ts[sym] = now_ms;   // bid MOVED -> stamp for time-based freeze
         }
     }
 }
@@ -123,7 +131,9 @@ static inline bool quote_ok_for_order(const std::string& sym) {
     if (it == g_last_tick_ts.end()) return false;          // never received -> stale
     if ((now_ms - it->second) >= STALE_QUOTE_SEC * 1000) return false;  // no tick 30s
     auto fc = g_frozen_count.find(sym);
-    if (fc != g_frozen_count.end() && fc->second >= FROZEN_TICK_MAX) return false;  // frozen
+    if (fc != g_frozen_count.end() && fc->second >= FROZEN_TICK_MAX) return false;  // frozen (count)
+    auto pc = g_last_price_change_ts.find(sym);   // frozen (time): bid unmoved > FROZEN_PRICE_SEC
+    if (pc != g_last_price_change_ts.end() && (now_ms - pc->second) >= FROZEN_PRICE_SEC * 1000) return false;
     return true;
 }
 
