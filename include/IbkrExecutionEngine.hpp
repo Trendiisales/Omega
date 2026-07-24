@@ -990,6 +990,32 @@ struct IbkrExecutionEngine : public DefaultEWrapper {
                 std::fflush(stdout);
                 if (on_reject) on_reject(rsym);
             }
+            // A3 fix (2026-07-24 audit, CODE-3): if the REJECTED order was a resting native
+            // STOP, drop it from resting_stop_oid_. Otherwise the position is naked but
+            // recorded protected, and ensure_native_stop_ / the positionEnd sweep both
+            // early-return on resting_stop_oid_.count() -> re-arm was blocked until restart.
+            // Clearing it (a) stops falsely recording a naked position as protected and
+            // (b) lets the NEXT positionEnd sweep arm a fresh stop. We do NOT auto-kick a
+            // re-arm here to avoid a reject->re-arm->reject storm on a persistently-bad stop;
+            // the loud alarm surfaces it for the monitor.
+            std::string naked_sym;
+            {
+                std::lock_guard<std::mutex> lk(rej_mtx_);
+                for (auto it = resting_stop_oid_.begin(); it != resting_stop_oid_.end(); ++it) {
+                    if (it->second == (long)id) {
+                        naked_sym = it->first;
+                        stop_contract_.erase(it->first);
+                        resting_stop_oid_.erase(it);
+                        break;
+                    }
+                }
+            }
+            if (!naked_sym.empty()) {
+                std::printf("[IBKR-EXEC] *** NATIVE STOP REJECTED %s oid=%d code=%d -- POSITION NAKED, "
+                            "cleared for re-arm on next positionEnd sweep ***\n",
+                            naked_sym.c_str(), id, code);
+                std::fflush(stdout);
+            }
         }
         // Hard socket-level failures mean the connection is dead: mark it so
         // place_order blocks and the watchdog reconnects. (1100 = upstream IB
