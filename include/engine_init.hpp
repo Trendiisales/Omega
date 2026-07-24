@@ -7184,12 +7184,16 @@ static void init_engines(const std::string& cfg_path)
         // DD-budget sizing (S-2026-06-26s) can be restored once live is proven.
         g_connors_nas.lot         = 1.0;    // dollar-normalized size (index convention)
         g_connors_nas.shadow_mode = false;
-        g_connors_nas.enabled     = false;  // S-2026-07-24 DISABLED — NAS100 not routable to a fillable
-                                            // IBKR contract (0 fills EVER); on exec reconnect it re-fired
-                                            // ~24,776 unfilled SELL NAS100 in ~40s (runaway, 0 fills, but
-                                            // real exposure). It never actually traded, so disabling loses
-                                            // nothing. Re-enable ONLY after the NAS100->MNQ contract
-                                            // resolution is fixed AND verified to FILL (was: true S-07-22j).
+        g_connors_nas.enabled     = true;   // S-2026-07-24b RE-ENABLED (operator: cornerstone engine; the
+                                            // S-07-24 disable was a bad firefight call). Routes NAS100->QQQ
+                                            // (STK/SMART) — the DELIBERATE S-07-22j ETF-proxy under the
+                                            // account's stocks permission; NOT MNQ (which margin-walls the AU
+                                            // account against the operator's "trade smaller on indices" order).
+                                            // The reconnect order-storm is now BACKSTOPPED by the circuit
+                                            // breaker (9303b06e, live: rate 25/s + per-sym-unfilled 8, sticky)
+                                            // + reject-reconcile (on_reject clears intent so a rejected order
+                                            // stops retrying). QQQ/STK fill is the system-wide 0-fills matter,
+                                            // tracked separately — the engine itself is no longer gated.
         g_connors_nas.set_exec(
             [](const std::string& sym, bool is_long, double lots, double px)->std::string {
                 return send_live_order(sym, is_long, lots, px);
