@@ -623,6 +623,19 @@ struct IbkrExecutionEngine : public DefaultEWrapper {
         so.orderType     = "STP";
         so.auxPrice      = is_long ? entry * (1.0 - native_disaster_stop_pct_ / 100.0)
                                    : entry * (1.0 + native_disaster_stop_pct_ / 100.0);
+        // ── SELF-TRIGGER CLAMP (2026-07-24, both-systems parity with Chimera's
+        //    pre-boot seed clamp). A held position that moved hard AGAINST the entry
+        //    while Omega was down (a long >pct% underwater / a short >pct% up) yields
+        //    an entry-anchored stop on the WRONG side of the market — placed, it fires
+        //    IMMEDIATELY on arming and force-closes a hold the operator may want to
+        //    keep. If a live/delayed last is known, re-anchor the trigger to market so
+        //    the stop always rests pct% away on the protective side (never through it).
+        //    last_price==0 (not ticked yet at boot) => keep the entry anchor unchanged.
+        double mkt = last_price(om);
+        if (mkt > 0.0) {
+            if (is_long  && so.auxPrice >= mkt) so.auxPrice = mkt * (1.0 - native_disaster_stop_pct_ / 100.0);
+            if (!is_long && so.auxPrice <= mkt) so.auxPrice = mkt * (1.0 + native_disaster_stop_pct_ / 100.0);
+        }
         so.auxPrice      = snap_stop_px_(om, so.auxPrice, is_long);   // conform to minTick (err 110)
         so.totalQuantity = DecimalFunctions::doubleToDecimal(std::fabs(qty));
         so.tif           = "GTC";
