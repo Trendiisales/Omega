@@ -197,6 +197,13 @@ struct IbkrExecutionEngine : public DefaultEWrapper {
     long long                     rate_win_start_ms_{0};   // guarded by mtx_
     int                           rate_win_count_{0};      // guarded by mtx_
     std::map<std::string,int>     unfilled_by_sym_;        // guarded by mtx_
+    // B1 fix (2026-07-24 audit): per-symbol unfilled counter is WINDOW-decayed. A slow
+    // legit reject (unfunded GER40, metals err-460) must NOT accumulate a lifetime trip
+    // that halts the WHOLE desk — only a burst (>=MAX_UNFILLED_PER_SYM within the window)
+    // is a runaway. If the last unfilled send for a symbol was > this window ago, its
+    // counter resets before the next increment.
+    std::map<std::string,long long> unfilled_win_start_ms_;  // guarded by mtx_
+    static constexpr long long    UNFILLED_WINDOW_MS   = 30000;   // 30s burst window
 
     // ── EXTERNAL HALT (2026-07-24): the real-time ACT actuator driven by
     //    tools/ml_loss_miner/sentinel_act.py. The sentinel writes halt_omega.flag
@@ -510,9 +517,14 @@ struct IbkrExecutionEngine : public DefaultEWrapper {
                 trip_circuit_("global rate > " + std::to_string(MAX_ORDERS_PER_SEC) + " orders/sec");
                 return -1;
             }
+            // B1 fix: window-decay so slow legit rejects don't accumulate a lifetime
+            // trip. Reset this symbol's counter if its last unfilled send aged out.
+            long long& wstart = unfilled_win_start_ms_[omega_sym];
+            if (now_ms - wstart >= UNFILLED_WINDOW_MS) { wstart = now_ms; unfilled_by_sym_[omega_sym] = 0; }
             if (++unfilled_by_sym_[omega_sym] > MAX_UNFILLED_PER_SYM) {
                 trip_circuit_(omega_sym + ": " + std::to_string(unfilled_by_sym_[omega_sym]) +
-                              " orders sent, 0 fills (runaway loop)");
+                              " orders in " + std::to_string(UNFILLED_WINDOW_MS/1000) +
+                              "s with 0 fills (runaway loop)");
                 return -1;
             }
         }
