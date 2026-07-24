@@ -94,6 +94,20 @@ struct IbkrExecutionEngine : public DefaultEWrapper {
     // already held (manage/close) always pass. Generous default; raise explicitly.
     int                                     max_book_positions_ = 12;
 
+    // ── NATIVE BROKER STOP-ON-FILL (2026-07-24, operator: protections must survive
+    //    Omega death). On every OPENING fill, place a RESTING STP order AT THE BROKER
+    //    at fill_px*(1-pct). The broker holds it -> it fires autonomously even if Omega
+    //    dies. Cancelled on flat (positionEnd, via reqPositions truth) so a stale stop
+    //    can't fire into a reverse. The stop qty equals the position, so it bypasses the
+    //    min-lot size cap (a stop must match what's held). Long-only for now (BOT->SELL
+    //    STP below); short protection is a follow-on.
+    bool                                    native_stops_enabled_ = true;
+    double                                  native_disaster_stop_pct_ = 15.0;  // % below entry
+    std::map<std::string, long>             resting_stop_oid_;    // omega sym -> broker stop orderId
+    std::map<std::string, Contract>         stop_contract_;       // omega sym -> contract (for cancel)
+    std::map<std::string, double>           broker_avgcost_;      // omega sym -> avg entry (from reqPositions)
+    std::map<std::string, Contract>         broker_contract_;     // omega sym -> contract (from reqPositions)
+
     // ---- TWS plumbing ----
     EReaderOSSignal               signal_{2000};
     std::unique_ptr<EClientSocket> client_;
@@ -514,21 +528,110 @@ struct IbkrExecutionEngine : public DefaultEWrapper {
         client_->reqPositions();
     }
     void position(const std::string& /*account*/, const Contract& contract,
-                  Decimal position, double /*avgCost*/) override {
+                  Decimal position, double avgCost) override {
         const double qty = DecimalFunctions::decimalToDouble(position);
         std::string om;
         {
             std::lock_guard<std::mutex> lk(mtx_);
             auto it = ibkr_to_omega_.find(contract.symbol);
             om = (it != ibkr_to_omega_.end()) ? it->second : contract.symbol;
+            if (std::fabs(qty) > 1e-9) {            // capture entry + contract for stop placement
+                broker_avgcost_[om]  = avgCost;
+                broker_contract_[om] = contract;
+            }
         }
         omega::g_broker_confirmed.stage(om, qty);
     }
+
+    // Place a resting native disaster stop for a held LONG that has none. Uses the
+    // broker's avg entry. Direct placeOrder (bypasses size cap; stop matches the qty).
+    void ensure_native_stop_(const std::string& om, double qty) {
+        if (!native_stops_enabled_ || qty <= 0.0) return;   // long-only for now
+        double entry = 0.0; Contract c;
+        { std::lock_guard<std::mutex> lk(mtx_);
+          auto a = broker_avgcost_.find(om); auto k = broker_contract_.find(om);
+          if (a == broker_avgcost_.end() || k == broker_contract_.end() || a->second <= 0.0) return;
+          entry = a->second; c = k->second; }
+        { std::lock_guard<std::mutex> lk(rej_mtx_); if (resting_stop_oid_.count(om)) return; }
+        Order so;
+        so.action = "SELL"; so.orderType = "STP";
+        so.auxPrice = entry * (1.0 - native_disaster_stop_pct_ / 100.0);
+        so.totalQuantity = DecimalFunctions::doubleToDecimal(qty);
+        so.tif = "GTC";
+        long soid = next_id_.fetch_add(1);
+        client_->placeOrder(soid, c, so);
+        { std::lock_guard<std::mutex> lk(rej_mtx_);
+          resting_stop_oid_[om] = soid; stop_contract_[om] = c; }
+        std::printf("[IBKR-EXEC] NATIVE STOP (held) %s SELL STP @ %.2f qty=%.0f oid=%ld "
+                    "(broker-side GTC, survives Omega death)\n", om.c_str(), so.auxPrice, qty, soid);
+        std::fflush(stdout);
+    }
     void positionEnd() override {
         omega::g_broker_confirmed.commit_snapshot();
+        // ── PROTECT EVERY HELD POSITION: place a broker-side disaster stop on any held
+        //    LONG that has none (covers positions that filled BEFORE the on-fill path
+        //    existed, and re-arms if a stop was lost). This is what makes "protections
+        //    survive Omega death" true for ALL open trades, not just future fills.
+        for (const auto& kv : omega::g_broker_confirmed.all())
+            if (kv.second > 0.0) ensure_native_stop_(kv.first, kv.second);
+        // ── CANCEL NATIVE STOP ON FLAT: for any symbol we placed a resting stop on but
+        //    the broker NO LONGER holds (position closed), cancel the stop so a stale
+        //    resting order can't fire later into a reverse (naked) position.
+        std::vector<std::string> flat_syms;
+        {
+            std::lock_guard<std::mutex> lk(rej_mtx_);
+            for (auto& kv : resting_stop_oid_)
+                if (!omega::g_broker_confirmed.holds(kv.first)) flat_syms.push_back(kv.first);
+        }
+        for (const auto& sym : flat_syms) {
+            long oid;
+            { std::lock_guard<std::mutex> lk(rej_mtx_);
+              oid = resting_stop_oid_[sym];
+              resting_stop_oid_.erase(sym); stop_contract_.erase(sym); }
+            if (client_) client_->cancelOrder(oid, OrderCancel());
+            std::printf("[IBKR-EXEC] native stop cancelled %s oid=%ld (broker flat)\n", sym.c_str(), oid);
+            std::fflush(stdout);
+        }
         std::printf("[IBKR-EXEC] reqPositions parity: broker holds %zu confirmed position(s)\n",
                     omega::g_broker_confirmed.count());
         std::fflush(stdout);
+    }
+
+    // ── SAFE TARGETED CLOSE (2026-07-24): close EXACTLY what the broker holds for one
+    //    symbol — never naked. SELL a long / BUY a short of the broker-confirmed qty.
+    //    Cancels its resting native stop first (avoid the stop firing on the close).
+    //    Returns the close orderId, or -1 if the broker holds nothing.
+    long close_broker_position(const std::string& omega_sym) {
+        double net = omega::g_broker_confirmed.net_qty(omega_sym);
+        if (std::fabs(net) < 1e-9) {
+            std::printf("[IBKR-EXEC] close %s -- broker holds nothing, nothing to close\n", omega_sym.c_str());
+            std::fflush(stdout); return -1;
+        }
+        Contract c;
+        {
+            std::lock_guard<std::mutex> lk(mtx_);
+            auto sc = stop_contract_.find(omega_sym);
+            auto rc = resolved_.find(omega_sym);
+            if (sc != stop_contract_.end())      c = sc->second;   // exact contract we traded
+            else if (rc != resolved_.end())      c = rc->second;
+            else { std::printf("[IBKR-EXEC] close %s -- no resolved contract\n", omega_sym.c_str());
+                   std::fflush(stdout); return -1; }
+        }
+        // cancel the resting stop first so it can't also fire on the flatten
+        { std::lock_guard<std::mutex> lk(rej_mtx_);
+          auto it = resting_stop_oid_.find(omega_sym);
+          if (it != resting_stop_oid_.end()) { if (client_) client_->cancelOrder(it->second, OrderCancel());
+                                               resting_stop_oid_.erase(it); stop_contract_.erase(omega_sym); } }
+        Order o;
+        o.action        = (net > 0.0) ? "SELL" : "BUY";
+        o.orderType     = "MKT";
+        o.totalQuantity = DecimalFunctions::doubleToDecimal(std::fabs(net));
+        long oid = next_id_.fetch_add(1);
+        client_->placeOrder(oid, c, o);
+        std::printf("[IBKR-EXEC] CLOSE %s %s qty=%.0f oid=%ld (exact broker qty, not naked)\n",
+                    omega_sym.c_str(), o.action.c_str(), std::fabs(net), oid);
+        std::fflush(stdout);
+        return oid;
     }
 
     void contractDetails(int reqId, const ContractDetails& cd) override {
@@ -700,6 +803,33 @@ struct IbkrExecutionEngine : public DefaultEWrapper {
         // ONLY broker-confirmed positions (never engine intent). This is the truth
         // source that ends the phantom-position display.
         omega::g_broker_confirmed.on_fill(f.omega_symbol, f.side, f.qty);
+        // ── NATIVE STOP-ON-FILL: a fresh opening LONG fill gets a RESTING broker STP
+        //    (GTC) at fill_px*(1-pct). Placed DIRECTLY (bypasses the size cap — the stop
+        //    must match the position qty, and must place even during a halt: it is
+        //    protective). The broker holds it -> it fires autonomously even if Omega dies.
+        //    Cancelled on flat in positionEnd. Long-only (BOT->SELL) for now.
+        if (native_stops_enabled_ && f.side == "BOT" && f.price > 0.0 &&
+            omega::g_broker_confirmed.holds(f.omega_symbol)) {
+            bool have;
+            { std::lock_guard<std::mutex> lk(rej_mtx_); have = resting_stop_oid_.count(f.omega_symbol) > 0; }
+            if (!have) {
+                Order so;
+                so.action        = "SELL";
+                so.orderType     = "STP";
+                so.auxPrice      = f.price * (1.0 - native_disaster_stop_pct_ / 100.0);
+                so.totalQuantity = execution.shares;
+                so.tif           = "GTC";     // survive across sessions until hit or cancelled
+                long soid = next_id_.fetch_add(1);
+                client_->placeOrder(soid, contract, so);
+                { std::lock_guard<std::mutex> lk(rej_mtx_);
+                  resting_stop_oid_[f.omega_symbol] = soid;
+                  stop_contract_[f.omega_symbol]    = contract; }
+                std::printf("[IBKR-EXEC] NATIVE STOP %s SELL STP @ %.2f qty=%.0f oid=%ld "
+                            "(broker-side GTC, survives Omega death)\n",
+                            f.omega_symbol.c_str(), so.auxPrice, f.qty, soid);
+                std::fflush(stdout);
+            }
+        }
         // CIRCUIT-BREAKER: a real fill clears this symbol's unfilled counter so
         // normal filling trades never approach the per-symbol cap.
         { std::lock_guard<std::mutex> lk(mtx_); unfilled_by_sym_[f.omega_symbol] = 0; }

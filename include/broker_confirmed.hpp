@@ -93,10 +93,25 @@ struct BrokerConfirmedPositions {
         return it != net.end() && std::fabs(it->second) > 1e-9;
     }
 
+    // Signed net broker qty for a symbol (>0 long, <0 short, 0 flat). For a safe
+    // targeted close: SELL/BUY exactly what the broker holds (never naked).
+    double net_qty(const std::string& sym) {
+        std::lock_guard<std::mutex> lk(m);
+        auto it = net.find(canonical_sym(sym));
+        return it == net.end() ? 0.0 : it->second;
+    }
+
     // Distinct broker-confirmed open symbols (book-wide exposure count, gap 4).
     size_t count() {
         std::lock_guard<std::mutex> lk(m);
         return net.size();
+    }
+
+    // Copy of the current broker-held positions (canonical sym -> signed qty). Used to
+    // place a native disaster stop on every held position.
+    std::map<std::string, double> all() {
+        std::lock_guard<std::mutex> lk(m);
+        return net;
     }
 };
 
