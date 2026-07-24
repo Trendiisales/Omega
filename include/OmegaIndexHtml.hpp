@@ -551,16 +551,15 @@ setInterval(pollFires,5000);
 /* ── ticker defs ── */
 var TKS=[['gold','XAUUSD','xau'],['sp','US500','sp'],['nq','USTEC','nq'],/* NAS100 tile removed S-2026-07-14 (operator: USTEC+NAS100 = same index twice); NAS100 books highlight the USTEC tile via TK_SYM2KEY */['dj','DJ30','dj'],
  ['ger30','GER40','ger40'],['uk100','UK100','uk100'],['cl','USOIL','cl'],['xag','XAGUSD','xag'],['vix','VIX',null],
- /* FX — 5 pairs of the FxBeFloorCompanion book; live price via telemetry <pair>_bid/_ask.
-    S-2026-07-08: t[2] wired — OmegaTelemetryServer DOES emit <pair>_curh/_curl (verified live
-    on :7779), the old "no curh" comment was stale -> FX tiles now get the day-range bottom bar.
-    VIX stays null (no vix_curh in the emit list). */
- ['eurusd','EURUSD','eurusd'],['gbpusd','GBPUSD','gbpusd'],['usdjpy','USDJPY','usdjpy'],['audusd','AUDUSD','audusd'],['nzdusd','NZDUSD','nzdusd'],['usdcad','USDCAD','usdcad']];
+ /* FX — only GBPUSD kept (operator 2026-07-24: drop unused FX tiles; GBPUSD is the only
+    live FX book). Live price via telemetry gbpusd_bid/_ask; t[2] gives the day-range bar.
+    EURUSD/USDJPY/AUDUSD/NZDUSD/USDCAD tiles removed. VIX stays null (no vix_curh emit). */
+ ['gbpusd','GBPUSD','gbpusd']];
 /* crypto legs (live from Binance public REST, CORS-open) — book roster, same strip as existing.
-)OMEGAD2"
-R"OMEGAD3(   S-2026-07-12c: +XRP/XLM/GRT/AVAX/LINK/BCH/UNI/LDO — the consolidation/universe-scan engines'
+   S-2026-07-12c: +XRP/XLM/GRT/AVAX/LINK/BCH/UNI/LDO — the consolidation/universe-scan engines'
    symbols (operator asked twice; they traded on josgp1 with no top-bar tile). */
-/* S-2026-07-23 LIVE-ONLY CULL — tiles trimmed to the LIVE-TRADED crypto set only (mirror of
+)OMEGAD2"
+R"OMEGAD3(/* S-2026-07-23 LIVE-ONLY CULL — tiles trimmed to the LIVE-TRADED crypto set only (mirror of
    OmegaIndexHtml.hpp). ~33 culled-zoo coins removed (operator: "remove all the coins we do not use").
    LIVE-TRADED = 17-leg TRENDROSTER (BTC/ETH/SOL/XRP/XLM/ADA/GRT) + 2 RSIREV (SOL/XRP) + 7 DOGE mimic
    = 8 symbols; ATOM/DOT kept for the arming RSIrev expansion. */
@@ -736,10 +735,10 @@ function markTiles(){
   /* S-18ak TRUE NEON box glow, same as the crypto tiles (drawProx) + the header beacon. */
   if(bx){if(on){bx.style.outline='2px solid #39ff14';bx.style.outlineOffset='-2px';bx.style.background='rgba(57,255,20,.14)';
     bx.style.boxShadow='inset 0 0 14px rgba(57,255,20,.5), 0 0 12px #39ff14, 0 0 26px rgba(57,255,20,.55)';bx.style.animation='neonPulse 1.2s ease-in-out infinite';}
-)OMEGAD3"
-R"OMEGAD4(   else{bx.style.outline='';bx.style.outlineOffset='';bx.style.background='';bx.style.boxShadow='';bx.style.animation='';}}});
+   else{bx.style.outline='';bx.style.outlineOffset='';bx.style.background='';bx.style.boxShadow='';bx.style.animation='';}}});
  var ca={},live=window._cc||{};
- /* S-18ak: ARMED only (idle books can emit subleg rows — subleg existence lit idle coins);
+)OMEGAD3"
+R"OMEGAD4( /* S-18ak: ARMED only (idle books can emit subleg rows — subleg existence lit idle coins);
     armed = open BE-floored book = TRADING. Label goes NEON to match the drawProx box glow. */
  Object.keys(live).forEach(function(tag){var p=live[tag];
   if(p&&p.sym&&(p.armed||(p.sublegs||[]).some(function(s){return s.armed;})))ca[p.sym]=1;});
@@ -915,10 +914,10 @@ function pollTrades(){
     var sd=[];(((res[2]||{}).books)||[]).forEach(function(b){(b.trades||[]).forEach(function(t){
       sd.push({book:'stock',engine:b.engine||('StockDip_'+(b.sym||'')),symbol:b.sym||'',side:'long',
         price:safe(t.entry),exitPrice:safe(t.exit),net_pnl:safe(t.usd_real),exitReason:t.reason||'',
-)OMEGAD4"
-R"OMEGAD5(        entryTs:safe(t.entry_ts),exitTs:safe(t.exit_ts)});});});
+        entryTs:safe(t.entry_ts),exitTs:safe(t.exit_ts)});});});
     /* S-2026-07-19h fix: the comment below always claimed "MIMIC-LIVE (real Binance cash) ...
-       still show" but no code ever turned res[3].trades (the REAL Binance-fill rows from
+)OMEGAD4"
+R"OMEGAD5(       still show" but no code ever turned res[3].trades (the REAL Binance-fill rows from
        /api/crypto_live_pnl) into LAST-15 rows -- only their total_usd was folded into the header
        above. Net effect: the ONE real-money book on the whole desk had zero row-level visibility.
        Flatten them in now, same shape as the other book arrays. */
@@ -1093,11 +1092,11 @@ function drawCCReal(){
  syms.forEach(function(sy){
   var legs=bySym[sy].sort(function(a,b){return String(a.tag).localeCompare(String(b.tag));});
   var curpx=(window._cpx||{})[sy];
-)OMEGAD5"
-R"OMEGAD6(  var coinU=0,coinGot=false;
+  var coinU=0,coinGot=false;
   legs.forEach(function(l){var u=ccrLegPnl(l);if(u!==null){coinU+=u;coinGot=true;}});
   if(coinGot){totU+=coinU;gotU=true;}
-  var cu=coinGot?'<span style="color:'+(coinU>=0?'var(--grn)':'var(--red)')+'">'+fmtc$(coinU)+'</span>':'<span class="d">—</span>';
+)OMEGAD5"
+R"OMEGAD6(  var cu=coinGot?'<span style="color:'+(coinU>=0?'var(--grn)':'var(--red)')+'">'+fmtc$(coinU)+'</span>':'<span class="d">—</span>';
   h+='<tr><td class="l" style="font-weight:600">'+esc(sy)+'</td><td colspan="4" class="l d" style="font-size:9px">'
     +legs.length+' leg'+(legs.length>1?'s':'')+'</td><td class="num">'+cu+'</td><td></td></tr>';
   legs.forEach(function(l){
@@ -1287,9 +1286,9 @@ function winRows(){if(WIN>=9999)return ROWS;
    (STOCK/CRYPTO/FX/GOLD) so the 4 chips reconcile to ALL-TIME. classOf() classifies a ledger
    row by its engine tag (+ symbol for single-name equities). The forward/paper book globals are
    routed by fixed class (see updDayPnl). STOCK = equities incl. equity indices (operator's 4
+   buckets have no separate index); GOLD includes usoil/xag per the operator's class map. */
 )OMEGAD6"
-R"OMEGAD7(   buckets have no separate index); GOLD includes usoil/xag per the operator's class map. */
-var BIGCAP_STK=/^(NVDA|AMD|AVGO|MU|MRVL|SMCI|ARM|PLTR|TSLA|META|NFLX|CRWD|SHOP|COIN|MSTR|SNOW|NOW|PANW|UBER|ABNB|DELL|ORCL|QCOM|INTC|AMZN|GOOGL|MSFT|AAPL|CRM|ADBE|IONQ|RGTI|QBTS|ASTS|RKLB|NBIS|CRWV|ALAB|CRDO|WDC|STX|DD|TPR|BMY|SWKS)$/i;
+R"OMEGAD7(var BIGCAP_STK=/^(NVDA|AMD|AVGO|MU|MRVL|SMCI|ARM|PLTR|TSLA|META|NFLX|CRWD|SHOP|COIN|MSTR|SNOW|NOW|PANW|UBER|ABNB|DELL|ORCL|QCOM|INTC|AMZN|GOOGL|MSFT|AAPL|CRM|ADBE|IONQ|RGTI|QBTS|ASTS|RKLB|NBIS|CRWV|ALAB|CRDO|WDC|STX|DD|TPR|BMY|SWKS)$/i;
 function classOf(eng,sym){var s=(eng||'')+'|'+(sym||'');
  if(/btc|eth|sol|ada|doge|near|bnb|aave|xrp|trx|crypto/i.test(s))return 'crypto';
  if(/xau|gold|mgc|xag|silver|usoil|london/i.test(s))return 'gold';/* usoil+xag land in GOLD per operator class map */
@@ -1424,10 +1423,10 @@ function drawEquity(){var cv=el("eqc");if(!cv)return;/* PRE-TRADE EQUITY panel r
   if(r.pnl>0){wins++;gp+=r.pnl;}else gl-=r.pnl;});
  var lo=Math.min(0,mdd,Math.min.apply(null,cum)),hi=Math.max.apply(null,cum.concat([1]));
  function X(i){return 4+(W-8)*i/Math.max(1,cum.length-1);}
-)OMEGAD7"
-R"OMEGAD8( function Y(v){return 8+(H-26)*(1-(v-lo)/(hi-lo||1));}
+ function Y(v){return 8+(H-26)*(1-(v-lo)/(hi-lo||1));}
  ctx.strokeStyle='rgba(255,255,255,0.06)';ctx.beginPath();
- [lo,0,hi].forEach(function(g){ctx.moveTo(0,Y(g));ctx.lineTo(W,Y(g));});ctx.stroke();
+)OMEGAD7"
+R"OMEGAD8( [lo,0,hi].forEach(function(g){ctx.moveTo(0,Y(g));ctx.lineTo(W,Y(g));});ctx.stroke();
  ctx.fillStyle='#6B7785';ctx.font='9px IBM Plex Mono';
  ctx.fillText(fmt$(hi),2,Y(hi)+9);ctx.fillText('$0',2,Y(0)-3);
  /* gradient area fill under the curve */
@@ -1560,7 +1559,7 @@ function drawHist(){var h=el('hist');if(!h)return;/* TRADE HISTORY panel removed
 
 /* ── predictive ranges ── */
 var PRD=null,PRSYM=localStorage.getItem('omega_prsym')||'XAUUSD',PRTF=localStorage.getItem('omega_prtf')||'m15';
-var PRSYMS=['XAUUSD','US500','USTEC','EURUSD','GBPUSD','USDJPY','AUDUSD','NZDUSD','USDCAD'],PRTFS=[['m5','5m'],['m15','15m'],['h1','1H']];
+var PRSYMS=['XAUUSD','US500','USTEC','GBPUSD'],PRTFS=[['m5','5m'],['m15','15m'],['h1','1H']];  /* FX trimmed to GBPUSD only (operator 2026-07-24) */
 function prBtns(){
  el('prsyms').innerHTML=PRSYMS.map(function(x){return '<button class="'+(x===PRSYM?'on':'')+'" data-s="'+x+'">'+x.replace('USD','')+'</button>';}).join('');
  el('prtfs').innerHTML=PRTFS.map(function(t){return '<button class="'+(t[0]===PRTF?'on':'')+'" data-t="'+t[0]+'">'+t[1]+'</button>';}).join('');
@@ -1604,10 +1603,10 @@ function drawPR(){var cv=el("prc");
     never drops to Y(0)/off-chart (that was hiding resistance). */
  function spts(fi){var p=[];for(var i=0;i<n;i++){var v=bars[i][fi];
   if(v<=0){p.push(null);continue;}
-)OMEGAD8"
-R"OMEGAD9(  if(i>0&&bars[i-1][fi]>0&&bars[i-1][fi]!==v)p.push([X(i),Y(bars[i-1][fi])]);
+  if(i>0&&bars[i-1][fi]>0&&bars[i-1][fi]!==v)p.push([X(i),Y(bars[i-1][fi])]);
   p.push([X(i),Y(v)]);}return p;}
- function strokeSteps(p,col,wd,dash){ctx.beginPath();var pen=false;p.forEach(function(q){
+)OMEGAD8"
+R"OMEGAD9( function strokeSteps(p,col,wd,dash){ctx.beginPath();var pen=false;p.forEach(function(q){
    if(!q){pen=false;return;}if(pen)ctx.lineTo(q[0],q[1]);else ctx.moveTo(q[0],q[1]);pen=true;});
   ctx.strokeStyle=col;ctx.lineWidth=wd;ctx.setLineDash(dash||[]);ctx.stroke();ctx.setLineDash([]);}
  function cloud(fa,fb,col){var A=spts(fa).filter(Boolean),B=spts(fb).filter(Boolean);

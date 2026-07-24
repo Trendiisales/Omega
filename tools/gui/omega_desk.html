@@ -543,11 +543,10 @@ setInterval(pollFires,5000);
 /* ── ticker defs ── */
 var TKS=[['gold','XAUUSD','xau'],['sp','US500','sp'],['nq','USTEC','nq'],/* NAS100 tile removed S-2026-07-14 (operator: USTEC+NAS100 = same index twice); NAS100 books highlight the USTEC tile via TK_SYM2KEY */['dj','DJ30','dj'],
  ['ger30','GER40','ger40'],['uk100','UK100','uk100'],['cl','USOIL','cl'],['xag','XAGUSD','xag'],['vix','VIX',null],
- /* FX — 5 pairs of the FxBeFloorCompanion book; live price via telemetry <pair>_bid/_ask.
-    S-2026-07-08: t[2] wired — OmegaTelemetryServer DOES emit <pair>_curh/_curl (verified live
-    on :7779), the old "no curh" comment was stale -> FX tiles now get the day-range bottom bar.
-    VIX stays null (no vix_curh in the emit list). */
- ['eurusd','EURUSD','eurusd'],['gbpusd','GBPUSD','gbpusd'],['usdjpy','USDJPY','usdjpy'],['audusd','AUDUSD','audusd'],['nzdusd','NZDUSD','nzdusd'],['usdcad','USDCAD','usdcad']];
+ /* FX — only GBPUSD kept (operator 2026-07-24: drop unused FX tiles; GBPUSD is the only
+    live FX book). Live price via telemetry gbpusd_bid/_ask; t[2] gives the day-range bar.
+    EURUSD/USDJPY/AUDUSD/NZDUSD/USDCAD tiles removed. VIX stays null (no vix_curh emit). */
+ ['gbpusd','GBPUSD','gbpusd']];
 /* crypto legs (live from Binance public REST, CORS-open) — book roster, same strip as existing.
    S-2026-07-12c: +XRP/XLM/GRT/AVAX/LINK/BCH/UNI/LDO — the consolidation/universe-scan engines'
    symbols (operator asked twice; they traded on josgp1 with no top-bar tile). */
@@ -1546,7 +1545,7 @@ function drawHist(){var h=el('hist');if(!h)return;/* TRADE HISTORY panel removed
 
 /* ── predictive ranges ── */
 var PRD=null,PRSYM=localStorage.getItem('omega_prsym')||'XAUUSD',PRTF=localStorage.getItem('omega_prtf')||'m15';
-var PRSYMS=['XAUUSD','US500','USTEC','EURUSD','GBPUSD','USDJPY','AUDUSD','NZDUSD','USDCAD'],PRTFS=[['m5','5m'],['m15','15m'],['h1','1H']];
+var PRSYMS=['XAUUSD','US500','USTEC','GBPUSD'],PRTFS=[['m5','5m'],['m15','15m'],['h1','1H']];  /* FX trimmed to GBPUSD only (operator 2026-07-24) */
 function prBtns(){
  el('prsyms').innerHTML=PRSYMS.map(function(x){return '<button class="'+(x===PRSYM?'on':'')+'" data-s="'+x+'">'+x.replace('USD','')+'</button>';}).join('');
  el('prtfs').innerHTML=PRTFS.map(function(t){return '<button class="'+(t[0]===PRTF?'on':'')+'" data-t="'+t[0]+'">'+t[1]+'</button>';}).join('');
