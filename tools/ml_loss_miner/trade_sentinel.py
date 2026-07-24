@@ -508,7 +508,13 @@ def pull_exec_events(local_file: str | None = None, tail: int = EXEC_EVENT_TAIL)
         except Exception as e:  # noqa: BLE001
             print(f"  WARN: exec events file {local_file} unreadable: {e}", file=sys.stderr)
             return []
-    sh = f"grep -aE '{_EXEC_GREP}' {CHIMERA_EXEC_LOG} 2>/dev/null | tail -{tail}"
+    # AGE-GATE (2026-07-24b): only order-lifecycle lines AFTER the current binary's last
+    # [STARTUP] boot. Without this, `grep whole-log | tail` reaches back to a STALE pre-
+    # restart -1013 incident and manufactures a false REJECT_STORM HALT every run (the
+    # meta-audit caught exactly this in sentinel_decisions.jsonl). A live reject is post-boot.
+    sh = (f"boot=$(grep -an 'STARTUP.*build=' {CHIMERA_EXEC_LOG} 2>/dev/null | tail -1 | cut -d: -f1); "
+          f"[ -z \"$boot\" ] && boot=1; "
+          f"tail -n +$boot {CHIMERA_EXEC_LOG} 2>/dev/null | grep -aE '{_EXEC_GREP}' | tail -{tail}")
     raw = _run(["ssh", CHIMERA_SSH_HOST, sh], timeout=45)
     if raw is None:
         print("  WARN: exec-log pull failed (chimera-direct) — outcome check UNVERIFIABLE this run",
