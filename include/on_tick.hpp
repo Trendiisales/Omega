@@ -631,10 +631,10 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     std::vector<std::string> col; std::stringstream ss(ln); std::string t;
                     while (std::getline(ss, t, ',')) col.push_back(t);
                     if (col.size() < 9 || col[0] == "ts_unix") continue;   // header/short
-                    std::string sym = col[4]; for (auto& ch : sym) ch = (char)std::toupper((unsigned char)ch);
-                    if (sym.find('.') != std::string::npos) continue;      // CMDTY/FX alias — skip
+                    std::string fsym = col[4]; for (auto& ch : fsym) ch = (char)std::toupper((unsigned char)ch);
+                    if (fsym.find('.') != std::string::npos) continue;     // CMDTY/FX alias — skip
                     double q = 0.0; try { q = std::stod(col[7]); } catch (...) { continue; }
-                    filled_net[sym] += (col[6] == "BOT") ? q : -q;
+                    filled_net[fsym] += (col[6] == "BOT") ? q : -q;
                 }
                 int voided = omega::reconcile_stockdip_phantoms(filled_net, now_ph, "periodic")
                            + omega::reconcile_dualmom_phantoms(filled_net, now_ph, "periodic");
