@@ -110,6 +110,23 @@ static inline bool stale_watchdog_ok(const std::string& sym) {
     return (now_ms - it->second) < STALE_QUOTE_SEC * 1000;
 }
 
+// ── STALE-PRICE ORDER GUARD (2026-07-24, gap 2). Fresh ENOUGH to send an order?
+// The watchdog above only widened SLs; this GATES order entry so a trade never
+// fires/sizes off a FROZEN feed (gold+NAS froze 2h13m this week). Blocks on EITHER
+// condition: no tick within STALE_QUOTE_SEC, OR the feed is price-frozen (>=
+// FROZEN_TICK_MAX identical bids). Returns false (block) when never-seen.
+static inline bool quote_ok_for_order(const std::string& sym) {
+    const int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    std::lock_guard<std::mutex> lk(g_last_tick_mtx);
+    auto it = g_last_tick_ts.find(sym);
+    if (it == g_last_tick_ts.end()) return false;          // never received -> stale
+    if ((now_ms - it->second) >= STALE_QUOTE_SEC * 1000) return false;  // no tick 30s
+    auto fc = g_frozen_count.find(sym);
+    if (fc != g_frozen_count.end() && fc->second >= FROZEN_TICK_MAX) return false;  // frozen
+    return true;
+}
+
 // ?? Weekend gap sizing ???????????????????????????????????????????????????????
 // Friday 21:00 UTC through Sunday 22:00 UTC -- markets closed, gap risk high.
 // GOLD can gap 1.5-2% on Sunday open. Size is halved, SL widened.

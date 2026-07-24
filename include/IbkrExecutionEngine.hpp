@@ -38,6 +38,7 @@
 #include "Execution.h"
 
 #include "IbkrExec.hpp"   // omega::IbkrFill (shared, TWS-free)
+#include "broker_confirmed.hpp"   // omega::g_broker_confirmed — records real fills for the display gate
 
 #include <atomic>
 #include <chrono>
@@ -81,6 +82,18 @@ struct IbkrExecutionEngine : public DefaultEWrapper {
     // engines' on_close callbacks so this header has zero ledger dependency.
     std::function<void(const IbkrFill&)> on_fill;
 
+    // reject sink (gap 3, 2026-07-24): fired with the omega sym when an order is
+    // REJECTED by the broker (201/460/10289). The TWS thin interface never routes a
+    // reject to the fill callback, so without this an engine believes it is "in
+    // position" on a rejected order (phantom-by-reject). Engines wire this to clear
+    // the corresponding intent. Decoupled like on_fill (zero engine dependency).
+    std::function<void(const std::string&)> on_reject;
+
+    // book-wide exposure cap (gap 4): reject a NEW-symbol entry once the broker
+    // already holds this many distinct confirmed positions. Orders for a symbol
+    // already held (manage/close) always pass. Generous default; raise explicitly.
+    int                                     max_book_positions_ = 12;
+
     // ---- TWS plumbing ----
     EReaderOSSignal               signal_{2000};
     std::unique_ptr<EClientSocket> client_;
@@ -119,10 +132,66 @@ struct IbkrExecutionEngine : public DefaultEWrapper {
     //    legit trading that fills never trips.
     static constexpr int          MAX_ORDERS_PER_SEC   = 25;
     static constexpr int          MAX_UNFILLED_PER_SYM = 8;
+
+    // ── PER-ORDER SIZE CAP (2026-07-24, operator: "size caps ... lowest possible
+    //    order size/lot size unless changed explicitly by me"). Hard-clamps EVERY
+    //    order's quantity to the instrument MINIMUM lot. Minimums differ per
+    //    instrument, so a single flat number is WRONG (operator: "gold min lot is
+    //    0.001" — a 1.0 gold lot = 100oz ≈ $200K would sail through a unit cap):
+    //      • FUT / STK  → fut_stk_max_lot_  (default 1.0 = 1 contract/share; this is
+    //        the ~25K mis-sized path last week)
+    //      • CASH / CFD → cash_max_lot_     (default 0.001 = gold min lot; FX raise
+    //        explicitly via the override map)
+    //    A mis-sized order is now PHYSICALLY IMPOSSIBLE — it clamps to the minimum
+    //    lot and logs loudly. This is the SIZE analog of the order-storm circuit
+    //    breaker (which caps rate/count, NOT size). Raise a cap ONLY on an explicit
+    //    operator instruction — per symbol via max_lot_override_[SYM], or the
+    //    per-secType default.
+    double                              fut_stk_max_lot_ = 1.0;
+    double                              cash_max_lot_    = 0.001;
+    std::map<std::string, double>       max_lot_override_;   // omega sym -> explicit cap
+    double max_lot_for(const std::string& sym, const std::string& secType) const {
+        auto it = max_lot_override_.find(sym);
+        if (it != max_lot_override_.end()) return it->second;
+        return (secType == "FUT" || secType == "STK") ? fut_stk_max_lot_ : cash_max_lot_;
+    }
     std::atomic<bool>             circuit_tripped_{false};
     long long                     rate_win_start_ms_{0};   // guarded by mtx_
     int                           rate_win_count_{0};      // guarded by mtx_
     std::map<std::string,int>     unfilled_by_sym_;        // guarded by mtx_
+
+    // ── EXTERNAL HALT (2026-07-24): the real-time ACT actuator driven by
+    //    tools/ml_loss_miner/sentinel_act.py. The sentinel writes halt_omega.flag
+    //    into the control dir on a CAUGHT anomaly (fill-drought / reject-storm /
+    //    stale-feed / phantom). This poll (throttled ~1/sec) flips external_halt_ so
+    //    place_order BLOCKS all new entries. FAIL-SAFE: existence == halt; halt is
+    //    the safe state, so a stale flag errs safe; the operator/sentinel CLEARS the
+    //    flag (a deliberate act) to resume. This closes the L4 ACT gap — a monitor
+    //    that DOES something, not just alerts.
+    std::atomic<bool>             external_halt_{false};
+    std::string                   halt_flag_path_ = "C:/Omega/control/halt_omega.flag";
+    long long                     last_halt_check_ms_{0};  // guarded by mtx_ (throttle)
+    void check_external_halt_() {
+        long long now_ms = (long long)std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
+        {
+            std::lock_guard<std::mutex> lk(mtx_);
+            if (now_ms - last_halt_check_ms_ < 1000) return;   // throttle to ~1/sec
+            last_halt_check_ms_ = now_ms;
+        }
+        std::FILE* f = std::fopen(halt_flag_path_.c_str(), "r");
+        if (f) {
+            std::fclose(f);
+            if (!external_halt_.exchange(true)) {
+                std::printf("[IBKR-EXEC] *** EXTERNAL HALT *** flag %s present -- blocking new "
+                            "entries until cleared (sentinel_act.py)\n", halt_flag_path_.c_str());
+                std::fflush(stdout);
+            }
+        } else if (external_halt_.exchange(false)) {
+            std::printf("[IBKR-EXEC] external halt flag cleared -- new entries re-enabled\n");
+            std::fflush(stdout);
+        }
+    }
 
     void trip_circuit_(const std::string& why) {           // call under mtx_
         if (circuit_tripped_.exchange(true)) return;       // one-shot
@@ -319,6 +388,14 @@ struct IbkrExecutionEngine : public DefaultEWrapper {
                      const std::string& type = "MKT", double px = 0.0) {
         if (!enabled.load()) { return -1; }
         if (circuit_tripped_.load()) { return -1; }   // STICKY hard halt (already logged once)
+        check_external_halt_();                        // poll the sentinel control flag (throttled)
+        // EXTERNAL HALT blocks new ENTRIES only — a broker-held symbol (exit/manage) always
+        // passes so a halt can never strand an open position (risk-reducing orders survive).
+        if (external_halt_.load() && !omega::g_broker_confirmed.holds(omega_sym)) {
+            std::printf("[IBKR-EXEC] BLOCKED %s -- EXTERNAL HALT active (entries only; held-symbol exits pass)\n",
+                        omega_sym.c_str());
+            std::fflush(stdout); return -1;
+        }
         if (!connected_.load()) {
             std::printf("[IBKR-EXEC] BLOCKED %s -- not connected\n", omega_sym.c_str());
             std::fflush(stdout); return -1;
@@ -354,6 +431,22 @@ struct IbkrExecutionEngine : public DefaultEWrapper {
         // the same integer-floor path; CASH (FX) keeps its fractional qty.
         if (c.secType == "FUT" || c.secType == "STK")
             send_qty = std::max(1.0, std::round(qty));
+        // ── PER-ORDER SIZE CAP: hard-clamp to the instrument minimum lot (operator
+        //    "lowest possible ... lot size unless changed explicitly by me", 2026-07-24).
+        //    A mis-sized order (the ~25K last week) is now physically impossible — it
+        //    clamps to the minimum and logs loudly so the sizing bug is visible.
+        {
+            const double cap = max_lot_for(omega_sym, c.secType);
+            if (send_qty > cap) {
+                std::printf("[SIZE-CAP] %s order lot %.6f CLAMPED to min %.6f "
+                            "(lowest-size policy; raise max_lot_override_[%s] explicitly to change)\n",
+                            omega_sym.c_str(), send_qty, cap, omega_sym.c_str());
+                std::fflush(stdout);
+                send_qty = cap;
+                if (c.secType == "FUT" || c.secType == "STK")
+                    send_qty = std::max(1.0, std::round(send_qty));  // keep integer floor after clamp
+            }
+        }
         o.totalQuantity = DecimalFunctions::doubleToDecimal(send_qty);
         if (type == "LMT") o.lmtPrice = px;
         if (type == "STP") o.auxPrice = px;
@@ -376,7 +469,22 @@ struct IbkrExecutionEngine : public DefaultEWrapper {
                 return -1;
             }
         }
+        // ── BOOK-WIDE EXPOSURE CAP (gap 4): refuse a new-symbol entry once the broker
+        //    already holds max_book_positions_ distinct positions. An order for a
+        //    symbol already held (manage/close) always passes. Uses broker TRUTH
+        //    (g_broker_confirmed), so it bounds REAL exposure, not intent (the storm
+        //    breaker bounds intent). Fail-safe: 0 confirmed positions => never blocks.
+        if (!omega::g_broker_confirmed.holds(omega_sym) &&
+            omega::g_broker_confirmed.count() >= (size_t)max_book_positions_) {
+            std::printf("[BOOK-CAP] BLOCKED %s -- book already holds %zu positions (cap %d)\n",
+                        omega_sym.c_str(), omega::g_broker_confirmed.count(), max_book_positions_);
+            std::fflush(stdout);
+            return -1;
+        }
         long oid = next_id_.fetch_add(1);
+        { std::lock_guard<std::mutex> lk(rej_mtx_);            // gap 3: for reject reconcile
+          oid_to_sym_[oid] = omega_sym;
+          if (oid_to_sym_.size() > 512) oid_to_sym_.erase(oid_to_sym_.begin()); }
         client_->placeOrder(oid, c, o);
         std::printf("[IBKR-EXEC] %s %s %s qty=%.0f (eng=%.2f) type=%s px=%.2f oid=%ld%s\n",
                     paper_only ? "PAPER" : "LIVE", o.action.c_str(), omega_sym.c_str(),
@@ -392,6 +500,35 @@ struct IbkrExecutionEngine : public DefaultEWrapper {
         std::printf("[IBKR-EXEC] nextValidId=%ld -- qualifying contracts\n", (long)id);
         std::fflush(stdout);
         qualify_all();
+        refresh_positions();   // gap 1: reconcile broker truth on every (re)connect
+    }
+
+    // ── BROKER POSITION PARITY (gap 1, 2026-07-24): reqPositions() -> position()* ->
+    //    positionEnd() rebuilds the AUTHORITATIVE broker holdings into
+    //    g_broker_confirmed. This is the truth source the display gate + phantom
+    //    parity read — books/desk reflect what the broker ACTUALLY holds, not engine
+    //    intent. Kicked on connect (nextValidId) and on demand (refresh_positions()).
+    void refresh_positions() {
+        if (!client_ || !connected_.load()) return;
+        omega::g_broker_confirmed.begin_snapshot();
+        client_->reqPositions();
+    }
+    void position(const std::string& /*account*/, const Contract& contract,
+                  Decimal position, double /*avgCost*/) override {
+        const double qty = DecimalFunctions::decimalToDouble(position);
+        std::string om;
+        {
+            std::lock_guard<std::mutex> lk(mtx_);
+            auto it = ibkr_to_omega_.find(contract.symbol);
+            om = (it != ibkr_to_omega_.end()) ? it->second : contract.symbol;
+        }
+        omega::g_broker_confirmed.stage(om, qty);
+    }
+    void positionEnd() override {
+        omega::g_broker_confirmed.commit_snapshot();
+        std::printf("[IBKR-EXEC] reqPositions parity: broker holds %zu confirmed position(s)\n",
+                    omega::g_broker_confirmed.count());
+        std::fflush(stdout);
     }
 
     void contractDetails(int reqId, const ContractDetails& cd) override {
@@ -559,9 +696,15 @@ struct IbkrExecutionEngine : public DefaultEWrapper {
                     f.omega_symbol.c_str(), f.ibkr_symbol.c_str(), f.side.c_str(),
                     f.qty, f.price, f.order_id, f.exec_id.c_str());
         std::fflush(stdout);
+        // BROKER-FILL GATE: record this REAL fill so the live-trades display can show
+        // ONLY broker-confirmed positions (never engine intent). This is the truth
+        // source that ends the phantom-position display.
+        omega::g_broker_confirmed.on_fill(f.omega_symbol, f.side, f.qty);
         // CIRCUIT-BREAKER: a real fill clears this symbol's unfilled counter so
         // normal filling trades never approach the per-symbol cap.
         { std::lock_guard<std::mutex> lk(mtx_); unfilled_by_sym_[f.omega_symbol] = 0; }
+        { std::lock_guard<std::mutex> lk(rej_mtx_); oid_to_sym_.erase(f.order_id); }  // gap 3: filled, drop oid
+        refresh_positions();   // gap 1: a fill changed holdings -> re-sync authoritative broker truth
         if (on_fill) on_fill(f);
     }
 
@@ -578,6 +721,7 @@ struct IbkrExecutionEngine : public DefaultEWrapper {
     // clean whatIf (margin fits, permission ok) from one followed by err 201/460.
     std::mutex rej_mtx_;
     std::map<long, bool> rejected_oids_;
+    std::map<long, std::string> oid_to_sym_;   // gap 3: orderId -> omega sym, for reject reconcile
     bool preflight_rejected(long oid) {
         std::lock_guard<std::mutex> lk(rej_mtx_);
         auto it = rejected_oids_.find(oid);
@@ -586,9 +730,24 @@ struct IbkrExecutionEngine : public DefaultEWrapper {
 
     void error(int id, int code, const std::string& msg, const std::string& /*adv*/) override {
         if (code == 201 || code == 460 || code == 10289) {
-            std::lock_guard<std::mutex> lk(rej_mtx_);
-            rejected_oids_[(long)id] = true;
-            if (rejected_oids_.size() > 512) rejected_oids_.erase(rejected_oids_.begin());
+            // ── REJECT RECONCILE (gap 3, 2026-07-24): the thin TWS interface never
+            //    routes a reject to the fill callback, so a rejected entry would
+            //    linger as phantom "in position". Map the oid back to its symbol and
+            //    fire on_reject so the engine CLEARS its intent for that order.
+            std::string rsym;
+            {
+                std::lock_guard<std::mutex> lk(rej_mtx_);
+                rejected_oids_[(long)id] = true;
+                if (rejected_oids_.size() > 512) rejected_oids_.erase(rejected_oids_.begin());
+                auto it = oid_to_sym_.find((long)id);
+                if (it != oid_to_sym_.end()) { rsym = it->second; oid_to_sym_.erase(it); }
+            }
+            if (!rsym.empty()) {
+                std::printf("[IBKR-EXEC] REJECT oid=%d code=%d sym=%s -> clearing engine intent\n",
+                            id, code, rsym.c_str());
+                std::fflush(stdout);
+                if (on_reject) on_reject(rsym);
+            }
         }
         // Hard socket-level failures mean the connection is dead: mark it so
         // place_order blocks and the watchdog reconnects. (1100 = upstream IB

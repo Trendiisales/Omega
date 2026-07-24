@@ -2,6 +2,7 @@
 // sizing.hpp -- extracted from main.cpp
 // Section: sizing (original lines 1655-1871)
 // SINGLE-TRANSLATION-UNIT include -- only include from main.cpp
+#include "broker_confirmed.hpp"   // omega::g_broker_confirmed — broker-fill display gate
 
 static double tick_value_multiplier(const std::string& symbol) noexcept {
     // ?????????????????????????????????????????????????????????????????????????
@@ -75,6 +76,13 @@ static void push_live_trade(const char* sym, const char* eng, bool il,
                              double entry, double tp, double sl,
                              double sz, int64_t ts)
 {
+    // ── BROKER-FILL GATE (2026-07-24): a position shows on the live desk ONLY when
+    //    the broker actually holds it (a real execDetails fill). Zero real fills =>
+    //    FLAT desk — this ENDS the phantom-position display (engine intent shown as
+    //    "LIVE OPEN TRADES"). Crypto uses a separate live_mirror feed, unaffected.
+    //    Escape hatch: OMEGA_SHOW_UNCONFIRMED=1 (see broker_confirmed.hpp).
+    if (omega::display_broker_confirmed_only() && !omega::g_broker_confirmed.holds(sym))
+        return;
     double cb = 0.0, ca = 0.0;
     {
         std::lock_guard<std::mutex> lk(g_book_mtx);

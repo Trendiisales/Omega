@@ -7793,6 +7793,19 @@ static void init_engines(const std::string& cfg_path)
                                         std::string(std::getenv("OMEGA_IBKR_LIVE_ORDERS")) == "1");
                 omega::ibkr_exec::configure("127.0.0.1", ib_port, ib_paper);
                 omega::ibkr_exec::set_enabled(true);
+                // ── REJECT HANDLER (gap 3, 2026-07-24): a broker reject used to be
+                //    SILENTLY logged — the engine kept believing it held a position it
+                //    never got (phantom-by-reject). Now it ACTS: loud log + re-sync
+                //    authoritative broker truth (reqPositions) so the display gate drops
+                //    the phantom, + append to a reject log the sentinel_act loop watches.
+                omega::ibkr_exec::set_on_reject([](const std::string& sym){
+                    std::cout << "[IBKR-EXEC] *** ORDER REJECTED *** " << sym
+                              << " -- re-syncing broker truth + surfacing (was silently logged)\n";
+                    std::cout.flush();
+                    omega::ibkr_exec::refresh_positions();
+                    std::ofstream rj("C:/Omega/logs/omega_rejects.log", std::ios::app);
+                    if (rj) rj << sym << " REJECT-ACTED\n";
+                });
                 omega::ibkr_exec::set_on_fill([](const omega::IbkrFill& f){
                     std::cout << "[IBKR-EXEC] LEDGER-FILL " << f.omega_symbol << " " << f.side
                               << " qty=" << f.qty << " px=" << f.price

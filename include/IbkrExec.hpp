@@ -38,6 +38,13 @@ bool is_enabled();
 
 // Set the fill sink (-> OmegaTradeLedger). Plain std::function, no TWS types.
 void set_on_fill(std::function<void(const IbkrFill&)> cb);
+// Reject sink (gap 3, 2026-07-24): fired with the omega sym when the broker REJECTS an
+// order (201/460/10289). Engines/handlers wire this to clear intent + surface the reject
+// so it is ACTED ON, not silently logged.
+void set_on_reject(std::function<void(const std::string&)> cb);
+// Force a broker-truth re-sync (reqPositions). Called from the reject handler so the
+// display gate immediately drops a phantom-by-reject.
+void refresh_positions();
 
 // Connect + login to the gateway, start the reader/pump thread, qualify contracts.
 bool connect();

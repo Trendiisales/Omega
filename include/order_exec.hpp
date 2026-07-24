@@ -4,6 +4,7 @@
 // SINGLE-TRANSLATION-UNIT include -- only include from main.cpp
 
 #include "IbkrExec.hpp"   // thin TWS-free interface to IBKR execution
+#include "broker_confirmed.hpp"   // omega::g_broker_confirmed — broker-truth for the stale/exposure guards
 
 // 2026-05-08 S21 (authorised by user in chat): FIX volume conversion.
 //
@@ -135,6 +136,32 @@ static std::string send_live_order(const std::string& symbol, bool is_long,
                                    const std::string& position_id = "") {
     // Hard SHADOW gate -- never send in shadow regardless of anything else
     if (g_cfg.mode != "LIVE") return {};
+
+    // ── STALE-PRICE ORDER GUARD (2026-07-24, gap 2): never OPEN a new position off
+    //    a frozen feed. quote_ok_for_order() blocks on no-tick-30s OR price-frozen
+    //    (the gold+NAS 2h13m freeze class). An EXISTING broker position is exempt so
+    //    manage/close still works (mirrors the crypto "exits never blocked" rule);
+    //    a fresh open on a bad price is the dangerous case this stops.
+    if (!quote_ok_for_order(symbol) && !omega::g_broker_confirmed.holds(symbol)) {
+        std::printf("[ORDER-GUARD] BLOCKED %s -- stale/frozen quote (no fresh tick); "
+                    "refusing to OPEN off a frozen feed\n", symbol.c_str());
+        std::fflush(stdout);
+        return {};
+    }
+
+    // ── FAT-FINGER QTY CEILING (2026-07-24b): a hard absolute lot ceiling that
+    //    applies to BOTH routes — the IBKR route (a second layer over its per-order
+    //    min-lot clamp) AND the legacy FIX/BlackBull route, which has NO size cap of
+    //    its own (audit gap: size cap + book cap are IBKR-exec-internal only). Engine
+    //    lots are CFD fractions (0.01-few); 100 lots is never legit, always a
+    //    fat-finger. Rejects loud so a mis-sized order cannot reach EITHER broker.
+    static constexpr double MAX_ORDER_LOTS = 100.0;
+    if (qty > MAX_ORDER_LOTS) {
+        std::printf("[ORDER-GUARD] BLOCKED %s -- qty %.4f > fat-finger ceiling %.1f lots "
+                    "(mis-sized order refused, both routes)\n", symbol.c_str(), qty, MAX_ORDER_LOTS);
+        std::fflush(stdout);
+        return {};
+    }
 
 #ifdef OMEGA_WITH_IBKR
     // IBKR execution route (2026-06-16 migration). Bypasses the FIX/BlackBull

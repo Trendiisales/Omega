@@ -29,6 +29,8 @@ void configure(const std::string& host, int port, bool paper_only) {
 void set_enabled(bool on)  { eng().enabled.store(on); }
 bool is_enabled()          { return eng().enabled.load(); }
 void set_on_fill(std::function<void(const IbkrFill&)> cb) { eng().on_fill = std::move(cb); }
+void set_on_reject(std::function<void(const std::string&)> cb) { eng().on_reject = std::move(cb); }
+void refresh_positions()   { eng().refresh_positions(); }
 bool connect()             { return eng().connect(); }
 void disconnect()          { eng().stop_watchdog(); eng().stop(); }
 void start_watchdog()      { eng().ensure_watchdog(); }
@@ -62,6 +64,8 @@ void configure(const std::string&, int, bool) {}
 void set_enabled(bool) {}
 bool is_enabled() { return false; }
 void set_on_fill(std::function<void(const IbkrFill&)>) {}
+void set_on_reject(std::function<void(const std::string&)>) {}
+void refresh_positions() {}
 bool connect() { return false; }
 void disconnect() {}
 void start_watchdog() {}
